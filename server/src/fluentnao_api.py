@@ -27,7 +27,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'main', 
 
 # Flask imports
 from flask import Flask, request, jsonify, abort
-from flask_cors import CORS
 
 # FluentNao imports
 try:
@@ -41,7 +40,6 @@ except ImportError as e:
 
 # Global variables
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 nao_robot = None
 active_operations = {}
 operation_lock = threading.Lock()

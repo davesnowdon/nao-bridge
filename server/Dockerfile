@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt /nao-bridge/requirements.txt
 WORKDIR /nao-bridge
 
-# Install Python dependencies
+# Install Python dependencies (if needed for additional packages)
 #RUN pip install -r requirements.txt
 
 # Copy source code
