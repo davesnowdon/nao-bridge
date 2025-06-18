@@ -20,11 +20,15 @@ WORKDIR /nao-bridge
 # Copy source code
 COPY src/ /nao-bridge/src/
 
+# Copy startup script
+COPY start_api.sh /nao-bridge/start_api.sh
+RUN chmod +x /nao-bridge/start_api.sh
+
 # Set working directory
 WORKDIR /nao-bridge/src
 
 # Expose port
 EXPOSE 3000
 
-# Set default command
-#CMD ["python", "server.py"]
+# Set default command to use the startup script
+CMD ["/nao-bridge/start_api.sh"]
