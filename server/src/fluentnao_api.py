@@ -25,14 +25,9 @@ from functools import wraps
 # Add FluentNao paths
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'main', 'python'))
 
-try:
-    from flask import Flask, request, jsonify, abort
-    from flask_cors import CORS
-except ImportError:
-    print("Flask not available. Installing...")
-    os.system("pip install Flask==1.1.4 Flask-CORS==3.0.10")
-    from flask import Flask, request, jsonify, abort
-    from flask_cors import CORS
+# Flask imports
+from flask import Flask, request, jsonify, abort
+from flask_cors import CORS
 
 # FluentNao imports
 try:

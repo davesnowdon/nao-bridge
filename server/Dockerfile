@@ -10,6 +10,21 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir /nao-bridge
+# Copy requirements first for better caching
+COPY requirements.txt /nao-bridge/requirements.txt
 WORKDIR /nao-bridge
-COPY src/ /nao-bridge
+
+# Install Python dependencies
+#RUN pip install -r requirements.txt
+
+# Copy source code
+COPY src/ /nao-bridge/src/
+
+# Set working directory
+WORKDIR /nao-bridge/src
+
+# Expose port
+EXPOSE 3000
+
+# Set default command
+#CMD ["python", "server.py"]
