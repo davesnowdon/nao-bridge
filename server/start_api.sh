@@ -7,9 +7,9 @@
 echo "FluentNao API Server Startup"
 echo "============================"
 
-# Set up environment paths (same as bootstrap.sh)
-export LD_LIBRARY_PATH="/nao-bridge/src/pynaoqi-python2.7-2.1.4.13-linux64:$LD_LIBRARY_PATH"
-export PYTHONPATH="/nao-bridge/src/:/nao-bridge/src/naoutil:/nao-bridge/src/fluentnao:/nao-bridge/src/pynaoqi-python2.7-2.1.4.13-linux64:${PYTHONPATH}"
+# Set up environment paths for the native libraries in pynaoqi
+export LD_LIBRARY_PATH="/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64:$LD_LIBRARY_PATH"
+export PYTHONPATH="/nao-bridge:/nao-bridge/lib:/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64:${PYTHONPATH}"
 
 # Check if NAO_IP is set
 if [ -z "$NAO_IP" ]; then
@@ -23,9 +23,6 @@ echo "NAO Robot IP: $NAO_IP"
 echo "Starting API server..."
 echo ""
 
-# Ensure we're in the correct directory
-cd /nao-bridge/src
+cd /nao-bridge
 
-# Start server
-python server.py
-
+python nao_bridge/server.py

@@ -18,14 +18,15 @@ WORKDIR /nao-bridge
 #RUN pip install -r requirements.txt
 
 # Copy source code
-COPY src/ /nao-bridge/src/
+COPY nao_bridge /nao-bridge/nao_bridge
+COPY lib/ /nao-bridge/lib/
 
 # Copy startup script
 COPY start_api.sh /nao-bridge/start_api.sh
 RUN chmod +x /nao-bridge/start_api.sh
 
 # Set working directory
-WORKDIR /nao-bridge/src
+WORKDIR /nao-bridge
 
 # Expose port
 EXPOSE 3000
