@@ -1,0 +1,305 @@
+---
+description: Python 2.7.9 compatibility rules for server code
+globs: server/**/*.py
+alwaysApply: false
+---
+
+# Python 2.7.9 Compatibility Rules
+
+This document defines the rules and guidelines for maintaining Python 2.7.9 compatibility in the server directory of the NAO Bridge project.
+
+## Overview
+
+All Python files in the server directory must be compatible with Python 2.7.9. This is required because the NAO robot SDK (pynaoqi) is only available for Python 2.7.
+
+## Required Python Features
+
+### 1. Future Imports
+All Python files must include the following future imports at the top:
+
+```python
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+```
+
+### 2. String Handling
+- Use `str` for byte strings (Python 2.7 behavior)
+- Use `unicode` for Unicode strings when needed
+- Avoid f-strings (Python 3.6+ feature)
+- Use `.format()` or `%` formatting instead
+
+```python
+# ✅ Correct
+message = "Hello {}".format(name)
+message = "Hello %s" % name
+
+# ❌ Incorrect
+message = f"Hello {name}"
+```
+
+### 3. Print Statements
+- Use `print()` as a function, not a statement
+- Always include parentheses
+
+```python
+# ✅ Correct
+print("Hello world")
+print("Value:", value)
+
+# ❌ Incorrect
+print "Hello world"
+```
+
+### 4. Division
+- Use `//` for integer division
+- Use `/` for float division (with future import)
+
+```python
+# ✅ Correct
+result = 5 // 2  # Integer division
+result = 5 / 2   # Float division (with future import)
+
+# ❌ Incorrect
+result = 5 / 2   # Integer division (without future import)
+```
+
+### 5. Exception Handling
+- Use the old-style exception syntax
+- Don't use exception groups or `except*`
+
+```python
+# ✅ Correct
+try:
+    result = some_function()
+except Exception as e:
+    print("Error:", e)
+
+# ❌ Incorrect
+try:
+    result = some_function()
+except* ExceptionGroup as eg:
+    print("Error:", eg)
+```
+
+### 6. Import Statements
+- Use absolute imports
+- Don't use relative imports with dots
+- Import from `__future__` first
+
+```python
+# ✅ Correct
+from __future__ import print_function
+import os
+import sys
+from naoutil import broker
+
+# ❌ Incorrect
+from . import some_module
+from .. import parent_module
+```
+
+## Forbidden Python 3+ Features
+
+### 1. Type Hints
+- Don't use type annotations
+- Don't use `typing` module
+
+```python
+# ❌ Forbidden
+def greet(name: str) -> str:
+    return f"Hello {name}"
+
+# ✅ Correct
+def greet(name):
+    return "Hello {}".format(name)
+```
+
+### 2. Walrus Operator
+- Don't use `:=` assignment expressions
+
+```python
+# ❌ Forbidden
+if (n := len(a)) > 10:
+    print(f"List is too long ({n} elements)")
+
+# ✅ Correct
+n = len(a)
+if n > 10:
+    print("List is too long ({} elements)".format(n))
+```
+
+### 3. Match Statements
+- Don't use `match`/`case` statements
+- Use `if`/`elif`/`else` instead
+
+```python
+# ❌ Forbidden
+match command:
+    case "start":
+        start_robot()
+    case "stop":
+        stop_robot()
+
+# ✅ Correct
+if command == "start":
+    start_robot()
+elif command == "stop":
+    stop_robot()
+```
+
+### 4. Dataclasses
+- Don't use `@dataclass` decorator
+- Use regular classes instead
+
+### 5. Pathlib
+- Don't use `pathlib` module
+- Use `os.path` functions instead
+
+```python
+# ❌ Forbidden
+from pathlib import Path
+path = Path("file.txt")
+
+# ✅ Correct
+import os
+path = os.path.join("file.txt")
+```
+
+## Allowed Libraries and Versions
+
+### Flask and Related
+- Flask==1.1.4 (last version supporting Python 2.7)
+- Werkzeug==1.0.1
+- Jinja2==2.11.3
+- MarkupSafe==1.1.1
+- itsdangerous==1.1.0
+- click==7.1.2
+
+### Other Compatible Libraries
+- `requests` (use version 2.27.1 or earlier)
+- `urllib2` (built-in)
+- `json` (built-in)
+- `os` (built-in)
+- `sys` (built-in)
+- `time` (built-in)
+- `threading` (built-in)
+
+## Code Style Guidelines
+
+### 1. File Headers
+All Python files should start with:
+
+```python
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+[File description]
+"""
+from __future__ import print_function
+from __future__ import division
+from __future__ import absolute_import
+```
+
+### 2. String Encoding
+- Always use UTF-8 encoding
+- Include encoding declaration in file header
+- Handle Unicode strings explicitly when needed
+
+### 3. Dictionary Methods
+- Use `.iteritems()`, `.iterkeys()`, `.itervalues()` for iteration
+- Use `.items()`, `.keys()`, `.values()` for lists
+
+```python
+# ✅ Correct
+for key, value in data.iteritems():
+    print(key, value)
+
+# ❌ Incorrect
+for key, value in data.items():
+    print(key, value)
+```
+
+### 4. Range vs Xrange
+- Use `xrange()` for large ranges in loops
+- Use `range()` for small ranges or when you need a list
+
+```python
+# ✅ Correct
+for i in xrange(1000000):
+    process(i)
+
+# ❌ Incorrect
+for i in range(1000000):
+    process(i)
+```
+
+## Testing Compatibility
+
+### 1. Syntax Check
+Before committing, run:
+
+```bash
+python2.7 -m py_compile your_file.py
+```
+
+### 2. Import Check
+Test imports work with Python 2.7:
+
+```bash
+python2.7 -c "import your_module"
+```
+
+### 3. Runtime Check
+Test functionality with Python 2.7:
+
+```bash
+python2.7 your_script.py
+```
+
+## Common Pitfalls
+
+### 1. Dictionary Comprehension
+- Not available in Python 2.7
+- Use `dict()` with generator expression instead
+
+```python
+# ❌ Forbidden
+result = {k: v for k, v in data.items()}
+
+# ✅ Correct
+result = dict((k, v) for k, v in data.iteritems())
+```
+
+### 2. Set Literals
+- Use `set()` constructor instead of `{}` syntax
+
+```python
+# ❌ Forbidden
+my_set = {1, 2, 3}
+
+# ✅ Correct
+my_set = set([1, 2, 3])
+```
+
+### 3. Context Managers
+- Available in Python 2.7 with `from __future__ import with_statement`
+- But better to use `try`/`finally` for clarity
+
+## Enforcement
+
+1. All new Python files must follow these rules
+2. Existing files should be updated to comply
+3. Code reviews must check for Python 2.7 compatibility
+4. CI/CD should include Python 2.7 testing
+
+## Resources
+
+- [Python 2.7 Documentation](https://docs.python.org/2.7/)
+- [Python 2.7 vs 3.x Differences](https://wiki.python.org/moin/Python2orPython3)
+- [Flask 1.1.4 Documentation](https://flask.palletsprojects.com/en/1.1.x/)
+
+## Version History
+
+- **2025-01-XX**: Initial version created for NAO Bridge project
+- Ensures compatibility with pynaoqi SDK requirements 
