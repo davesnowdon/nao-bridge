@@ -6,7 +6,7 @@ FluentNao API Swagger Specification
 Contains the OpenAPI/Swagger specification for the FluentNao API.
 This module provides the complete API documentation in OpenAPI format.
 
-Author: Manus AI
+Author: Dave Snowdon
 Date: June 18, 2025
 """
 
@@ -22,7 +22,7 @@ def get_swagger_spec(api_version):
             "description": "A REST API for controlling Aldebaran NAO robots via HTTP requests",
             "version": api_version,
             "contact": {
-                "name": "Manus AI"
+                "name": "Dave Snowdon"
             }
         },
         "host": "0.0.0.0:3000",

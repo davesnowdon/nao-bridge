@@ -6,7 +6,7 @@ FluentNao API Example Client
 Example client demonstrating how to use the FluentNao HTTP API.
 This shows various API calls and usage patterns.
 
-Author: Manus AI
+Author: Dave Snowdon
 Date: June 18, 2025
 """
 

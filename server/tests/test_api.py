@@ -7,7 +7,7 @@ Test suite for validating the FluentNao HTTP API implementation.
 Since we don't have access to a real NAO robot, this focuses on
 code validation, import testing, and mock functionality.
 
-Author: Manus AI
+Author: Dave Snowdon
 Date: June 18, 2025
 """
 

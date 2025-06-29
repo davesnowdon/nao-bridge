@@ -6,7 +6,7 @@ FluentNao API Extensions
 Additional endpoints for complex animations and sequences.
 This module extends the main API with advanced functionality.
 
-Author: Manus AI
+Author: Dave Snowdon
 Date: June 18, 2025
 """
 

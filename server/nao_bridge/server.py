@@ -6,7 +6,7 @@ FluentNao API Server with Extensions
 Main server file that includes all endpoints and extensions.
 This is the complete API server implementation.
 
-Author: Manus AI
+Author: Dave Snowdon
 Date: June 18, 2025
 """
 
