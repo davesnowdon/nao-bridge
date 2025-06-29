@@ -34,8 +34,8 @@ try:
     import naoutil.broker as broker
     from fluentnao.nao import Nao
 except ImportError as e:
-    print("FluentNao imports failed: {}".format(e))
-    print("Make sure you're running this in the FluentNao Docker container")
+    print("NAO library imports failed: {}".format(e))
+    print("Make sure you're running this in the nao-bridge Docker container")
     sys.exit(1)
 
 # Global variables
