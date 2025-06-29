@@ -8,7 +8,7 @@ for controlling Aldebaran NAO robots via HTTP requests.
 
 Compatible with Python 2.7.9 and the pynaoqi SDK.
 
-Author: Manus AI
+Author: Dave Snowdon
 Date: June 18, 2025
 """
 

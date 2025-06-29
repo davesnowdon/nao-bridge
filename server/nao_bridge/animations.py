@@ -6,7 +6,7 @@ FluentNao API Animations Module
 Implements complex predefined animations for the FluentNao HTTP API.
 These animations correspond to the examples provided in the user's request.
 
-Author: Manus AI
+Author: Dave Snowdon
 Date: June 18, 2025
 """
 

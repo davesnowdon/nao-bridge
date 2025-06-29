@@ -1,6 +1,8 @@
 # NAO Bridge
 
-A Docker-based bridge for connecting to NAO robots via a REST API. This project provides a fluent interface for controlling NAO robots through HTTP requests.
+The NAOqi python SDK is based on python 2.7.9 and relies heavily on proprietary native libraries and so would be difficult to upgrade to a more modern version of python. This project encapsulate the SDK in a docker container and exports a REST API. The hope is that modern applications can use the HTTP API without the dependency on an acient and insecure version of python. This also opens the way to using NAO from applications not written in a language for which Aldebaran provided an SDK.
+
+This project borrows heavily from the work of [Don Najd](https://github.com/dnajd) and his [FluentNAO](https://github.com/dnajd/FluentNao) project both in terms of using FluentNAO as the basis of the REST API and the idea of packaging the SDK inside a docker container.
 
 ## Prerequisites
 
@@ -36,7 +38,7 @@ docker run -p 3000:3000 -e NAO_IP=$NAO_IP nao-bridge
 The API server will be available at `http://localhost:3000`. You can test it with:
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:3000/api/v1/status
 ```
 
 ## Configuration
@@ -61,48 +63,9 @@ docker run -p 3001:3000 -e NAO_IP=$NAO_IP nao-bridge
 If you're developing the application, you can mount the source code as a volume for live reloading:
 
 ```bash
-docker run -p 3000:3000 -e NAO_IP=$NAO_IP -v $(pwd)/src:/nao-bridge/src nao-bridge
-```
-
-### Testing the API
-
-You can use the example client to test the API:
-
-```bash
-cd clients
-python example_client.py
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Container fails to start with "NAO_IP environment variable not set"**
-   - Make sure you've set the `NAO_IP` environment variable to your robot's IP address
-   - Example: `export NAO_IP=192.168.1.100`
-
-2. **Cannot connect to NAO robot**
-   - Verify the robot is powered on and accessible on your network
-   - Check that the IP address is correct
-   - Ensure there are no firewall rules blocking the connection
-
-3. **Port 3000 already in use**
-   - Use a different port in the docker run command
-   - Example: `docker run -p 3001:3000 -e NAO_IP=$NAO_IP nao-bridge`
-
-### Logs
-
-To view container logs:
-
-```bash
-docker logs <container_id>
+docker run -p 3000:3000 -e NAO_IP=$NAO_IP -v $(pwd)/server:/nao-bridge/server nao-bridge
 ```
 
 ## API Documentation
 
-The API provides endpoints for controlling various aspects of the NAO robot:
-
-- **Health Check**: `GET /health`
-- **Robot Control**: Various endpoints for movement, speech, and behavior
-
-For detailed API documentation, refer to the source code in `server/src/server.py`.
+The server exports a swagger 2.0 speciification document at http://localhost:3000/api/v1/swagger.json and hosts the swagger UI at http://localhost:3000/swagger
