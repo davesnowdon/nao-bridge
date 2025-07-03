@@ -1,0 +1,113 @@
+type: collection.insomnia.rest/5.0
+name: nao-bridge
+meta:
+  id: wrk_79da654acd8148e6b296c0d618309eb9
+  created: 1751207251153
+  modified: 1751207949218
+  description: ""
+collection:
+  - url: http://localhost:3000/api/v1/status
+    name: status
+    meta:
+      id: req_01ee3b3ecfc14dd2895c0676dc37ef9b
+      created: 1751207251167
+      modified: 1751207846794
+      isPrivate: false
+      description: ""
+      sortKey: -1751207251167
+    method: GET
+    headers:
+      - name: User-Agent
+        value: insomnia/11.2.0
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: http://localhost:3000/api/v1/posture/sit
+    name: sit
+    meta:
+      id: req_4f9050fd01044b52ae3392cb20ffc2b3
+      created: 1751207475953
+      modified: 1751207857636
+      isPrivate: false
+      description: ""
+      sortKey: -1751207475953
+    method: POST
+    headers:
+      - name: User-Agent
+        value: insomnia/11.2.0
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: http://localhost:3000/api/v1/speech/say
+    name: say
+    meta:
+      id: req_28bf9a6427974233b6701a1005477698
+      created: 1751207554019
+      modified: 1751207865938
+      isPrivate: false
+      description: ""
+      sortKey: -1751207554019
+    method: POST
+    body:
+      mimeType: application/json
+      text: |-
+        {
+        	"text":"I am being controlled by NAO bridge"
+        }
+    headers:
+      - name: Content-Type
+        value: application/json
+      - name: User-Agent
+        value: insomnia/11.2.0
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+  - url: http://localhost:3000/api/v1/posture/stand
+    name: stand
+    meta:
+      id: req_2ce4baf9160b473c9a7131e35f462ef3
+      created: 1751207875262
+      modified: 1751207887250
+      isPrivate: false
+      description: ""
+      sortKey: -1751207363560
+    method: POST
+    headers:
+      - name: User-Agent
+        value: insomnia/11.2.0
+    settings:
+      renderRequestBody: true
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+      rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_7e3c5aa62dcae9d0ca31dbe65a2dcf27be89794c
+    created: 1751207251156
+    modified: 1751207251156
+environments:
+  name: Base Environment
+  meta:
+    id: env_7e3c5aa62dcae9d0ca31dbe65a2dcf27be89794c
+    created: 1751207251155
+    modified: 1751207251155
+    isPrivate: false
