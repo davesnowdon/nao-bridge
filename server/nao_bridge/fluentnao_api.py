@@ -485,7 +485,8 @@ def speech_say():
     """Make the robot speak"""
     try:
         data = request.get_json() or {}
-        text = data.get('text', '')
+        print(data)
+        text = str(data.get('text', ''))
         blocking = data.get('blocking', False)
         animated = data.get('animated', False)
         
