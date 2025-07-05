@@ -126,6 +126,9 @@ class Nao(object):
     ###################################
     # Postures
     ###################################
+    def get_posture(self):
+        return self.env.robotPosture.getPosture()
+
     def stand_init(self, speed=.5):
         self.log("goToPosture=%s|speed=%s" % ("StandInit", speed))
         taskId = self.env.robotPosture.post.goToPosture("StandInit", speed)

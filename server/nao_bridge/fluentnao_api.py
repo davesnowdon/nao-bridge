@@ -233,8 +233,7 @@ def get_status():
             'battery_level': battery_level,
             'awake': nao_robot.is_awake(),
             'autonomous_life_state': nao_robot.autonomous_life_state(),
-            'stiffness_enabled': True,  # Would need to check actual state
-            'current_posture': 'Unknown',  # Would need to query robot
+            'current_posture': nao_robot.get_posture(),
             'active_operations': operation_manager.get_active_operations(),
             'api_version': API_VERSION
         }

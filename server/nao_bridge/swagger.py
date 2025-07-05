@@ -784,10 +784,11 @@ def get_swagger_spec(api_version):
                             "robot_connected": {"type": "boolean"},
                             "robot_ip": {"type": "string"},
                             "battery_level": {"type": "integer"},
-                            "stiffness_enabled": {"type": "boolean"},
                             "current_posture": {"type": "string"},
                             "active_operations": {"type": "array", "items": {"type": "object"}},
-                            "api_version": {"type": "string"}
+                            "api_version": {"type": "string"},
+                            "autonomous_life_state": {"type": "string"},
+                            "awake": {"type": "boolean"}
                         }
                     },
                     "message": {"type": "string"},
