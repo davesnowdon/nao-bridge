@@ -486,7 +486,7 @@ def speech_say():
     try:
         data = request.get_json() or {}
         print(data)
-        text = str(data.get('text', ''))
+        text = str(data.get('text', '')).strip()
         blocking = data.get('blocking', False)
         animated = data.get('animated', False)
         
