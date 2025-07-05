@@ -18,7 +18,7 @@ def get_swagger_spec(api_version):
     swagger_spec = {
         "swagger": "2.0",
         "info": {
-            "title": "FluentNao API",
+            "title": "NAO bridge",
             "description": "A REST API for controlling Aldebaran NAO robots via HTTP requests",
             "version": api_version,
             "contact": {
