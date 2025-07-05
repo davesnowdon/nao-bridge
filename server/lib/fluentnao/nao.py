@@ -126,6 +126,9 @@ class Nao(object):
     ###################################
     # Postures
     ###################################
+    def get_posture(self):
+        return self.env.robotPosture.getPosture()
+
     def stand_init(self, speed=.5):
         self.log("goToPosture=%s|speed=%s" % ("StandInit", speed))
         taskId = self.env.robotPosture.post.goToPosture("StandInit", speed)
@@ -195,12 +198,29 @@ class Nao(object):
         self.env.motion.rest()
         return self;
 
+    def wake(self):
+        self.env.motion.wakeUp()
+        return self;
+
+    def is_awake(self):
+        return self.env.motion.robotIsWakeUp()
+
     def relax(self):
         pNames = self.joints.Chains.Body
         pStiffnessLists = 0
         pTimeLists = 1.0
         self.env.motion.stiffnessInterpolation(pNames, pStiffnessLists, pTimeLists)
         return self;
+
+
+    ###################################
+    # Autonomous Life
+    ###################################
+    def autonomous_life_state(self):
+        return self.env.alife.getState()
+
+    def autonomous_life_set_state(self, state):
+        self.env.alife.setState(state)
 
     ###################################
     # Whole Body Motion & Balance
@@ -359,6 +379,10 @@ class Nao(object):
         if r[0] < 0.3 or r[1] < 0.3:
             return True
         return False
+
+    def get_battery_level(self):
+        return self.env.battery.getBatteryCharge()
+
 
     ###################################
     # walking

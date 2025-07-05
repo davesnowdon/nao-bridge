@@ -225,16 +225,15 @@ def get_status():
     """Get robot and API status"""
     try:
         # Get basic robot info
-        battery_level = 85  # Placeholder - would need specific API call
-        temperature = 45.2  # Placeholder
+        battery_level = nao_robot.get_battery_level()
         
         data = {
-            'robot_connected': True,
+            'robot_connected': nao_robot is not None,
             'robot_ip': os.environ.get("NAO_IP", "unknown"),
             'battery_level': battery_level,
-            'temperature': temperature,
-            'stiffness_enabled': True,  # Would need to check actual state
-            'current_posture': 'Unknown',  # Would need to query robot
+            'awake': nao_robot.is_awake(),
+            'autonomous_life_state': nao_robot.autonomous_life_state(),
+            'current_posture': nao_robot.get_posture(),
             'active_operations': operation_manager.get_active_operations(),
             'api_version': API_VERSION
         }
@@ -283,6 +282,32 @@ def robot_rest():
         
     except Exception as e:
         raise APIError("Failed to rest robot: {}".format(e), "REST_ERROR")
+
+@app.route('/api/v1/robot/wake', methods=['POST'])
+@require_robot
+def robot_wake():
+    """Wake up robot"""
+    try:
+        nao_robot.wake()
+        return create_response(message="Robot woke up")
+        
+    except Exception as e:
+        raise APIError("Failed to wake up robot: {}".format(e), "WAKE_ERROR")
+
+@app.route('/api/v1/robot/autonomous_life/state', methods=['POST'])
+@require_robot
+def robot_autonomous_life_state():
+    """Set autonomous life state. Valid values are: 'disabled', 'solitary', 'interactive', 'safeguard'"""
+    valid_states = ['disabled', 'solitary', 'interactive', 'safeguard']
+    try:
+        data = request.get_json() or {}
+        state = str(data.get('state', 'disabled')).strip()
+        if state not in valid_states:
+            raise APIError("Invalid autonomous life state: {}".format(state), "INVALID_PARAMETER")
+        nao_robot.autonomous_life_set_state(state)
+        return create_response(message="Autonomous life state set to: {}".format(state))
+    except Exception as e:
+        raise APIError("Failed to set autonomous life state: {}".format(e), "AUTONOMOUS_LIFE_ERROR")
 
 @app.route('/api/v1/posture/stand', methods=['POST'])
 @require_robot
