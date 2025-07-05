@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "myapi": {
+      "command": "mcp-openapi-proxy",
+      "args": ["--port", "8000"]
+    }
+  }
+}
+
