@@ -784,7 +784,6 @@ def get_swagger_spec(api_version):
                             "robot_connected": {"type": "boolean"},
                             "robot_ip": {"type": "string"},
                             "battery_level": {"type": "integer"},
-                            "temperature": {"type": "number"},
                             "stiffness_enabled": {"type": "boolean"},
                             "current_posture": {"type": "string"},
                             "active_operations": {"type": "array", "items": {"type": "object"}},
