@@ -131,6 +131,64 @@ def get_swagger_spec(api_version):
                     }
                 }
             },
+            "/robot/wake": {
+                "post": {
+                    "tags": ["Robot Control"],
+                    "summary": "Wake up robot",
+                    "description": "Wake up the robot from rest mode",
+                    "responses": {
+                        "200": {
+                            "description": "Robot woke up",
+                            "schema": {
+                                "$ref": "#/definitions/SuccessResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/robot/autonomous_life/state": {
+                "post": {
+                    "tags": ["Robot Control"],
+                    "summary": "Set autonomous life state",
+                    "description": "Set the autonomous life state of the robot. Valid values are: 'disabled', 'solitary', 'interactive', 'safeguard'",
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": False,
+                            "schema": {
+                                "$ref": "#/definitions/AutonomousLifeRequest"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Autonomous life state set",
+                            "schema": {
+                                "$ref": "#/definitions/SuccessResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid parameters",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
             "/posture/stand": {
                 "post": {
                     "tags": ["Posture Control"],
@@ -839,44 +897,74 @@ def get_swagger_spec(api_version):
                     "timestamp": {"type": "string"}
                 }
             },
+            "AutonomousLifeRequest": {
+                "type": "object",
+                "properties": {
+                    "state": {
+                        "type": "string",
+                        "enum": ["disabled", "solitary", "interactive", "safeguard"],
+                        "default": "disabled"
+                    }
+                }
+            },
             "StandRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"},
-                    "variant": {"type": "string"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5},
+                    "variant": {
+                        "type": "string",
+                        "enum": ["Stand", "StandInit", "StandZero"],
+                        "default": "Stand"
+                    }
                 }
             },
             "SitRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"},
-                    "variant": {"type": "string"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5},
+                    "variant": {
+                        "type": "string",
+                        "enum": ["Sit", "SitRelax"],
+                        "default": "Sit"
+                    }
                 }
             },
             "SpeedRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5}
                 }
             },
             "LieRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"},
-                    "position": {"type": "string"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5},
+                    "position": {
+                        "type": "string",
+                        "enum": ["back", "belly"],
+                        "default": "back"
+                    }
                 }
             },
             "ArmsPresetRequest": {
                 "type": "object",
                 "properties": {
                     "duration": {"type": "number"},
-                    "position": {"type": "string"},
-                    "arms": {"type": "string"},
+                    "position": {
+                        "type": "string",
+                        "enum": ["up", "down", "forward", "out", "back"],
+                        "default": "up"
+                    },
+                    "arms": {
+                        "type": "string",
+                        "enum": ["both", "left", "right"],
+                        "default": "both"
+                    },
                     "offset": {
                         "type": "object",
                         "properties": {
-                            "shoulder_pitch": {"type": "number"},
-                            "shoulder_roll": {"type": "number"}
+                            "shoulder_pitch": {"type": "number", "default": 0},
+                            "shoulder_roll": {"type": "number", "default": 0}
                         }
                     }
                 }
@@ -885,16 +973,22 @@ def get_swagger_spec(api_version):
                 "type": "object",
                 "properties": {
                     "duration": {"type": "number"},
-                    "left_hand": {"type": "string"},
-                    "right_hand": {"type": "string"}
+                    "left_hand": {
+                        "type": "string",
+                        "enum": ["open", "close"]
+                    },
+                    "right_hand": {
+                        "type": "string",
+                        "enum": ["open", "close"]
+                    }
                 }
             },
             "HeadPositionRequest": {
                 "type": "object",
                 "properties": {
                     "duration": {"type": "number"},
-                    "yaw": {"type": "number"},
-                    "pitch": {"type": "number"}
+                    "yaw": {"type": "number", "minimum": -120, "maximum": 120, "default": 0},
+                    "pitch": {"type": "number", "minimum": -40, "maximum": 30, "default": 0}
                 }
             },
             "SpeechRequest": {
@@ -902,8 +996,8 @@ def get_swagger_spec(api_version):
                 "required": ["text"],
                 "properties": {
                     "text": {"type": "string"},
-                    "blocking": {"type": "boolean"},
-                    "animated": {"type": "boolean"}
+                    "blocking": {"type": "boolean", "default": False},
+                    "animated": {"type": "boolean", "default": False}
                 }
             },
             "LEDsRequest": {
@@ -913,10 +1007,10 @@ def get_swagger_spec(api_version):
                     "leds": {
                         "type": "object",
                         "properties": {
-                            "eyes": {"type": "string"},
-                            "ears": {"type": "string"},
-                            "chest": {"type": "string"},
-                            "feet": {"type": "string"}
+                            "eyes": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"},
+                            "ears": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"},
+                            "chest": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"},
+                            "feet": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"}
                         }
                     }
                 }
@@ -924,18 +1018,22 @@ def get_swagger_spec(api_version):
             "WalkStartRequest": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "number"},
-                    "y": {"type": "number"},
-                    "theta": {"type": "number"},
-                    "speed": {"type": "number"}
+                    "x": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.0},
+                    "y": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.0},
+                    "theta": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.0},
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5}
                 }
             },
             "WalkPresetRequest": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string"},
-                    "duration": {"type": "number"},
-                    "speed": {"type": "number"}
+                    "action": {
+                        "type": "string",
+                        "enum": ["forward", "backward", "turn_left", "turn_right"],
+                        "default": "forward"
+                    },
+                    "duration": {"type": "number", "default": 3.0},
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 1.0}
                 }
             },
             "SonarResponse": {
