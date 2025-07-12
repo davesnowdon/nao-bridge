@@ -727,17 +727,14 @@ def execute_named_animation():
         # Handle duration multiplier
         duration_multiplier = parameters.get('duration_multiplier', 1.0)
         if duration_multiplier != 1.0:
-            print("Setting duration multiplier: {}".format(duration_multiplier))
             current_duration = nao_robot.globalDuration
             nao_robot.set_duration(current_duration * duration_multiplier)
-            print("Duration set to: {}".format(current_duration * duration_multiplier))
             
         # Execute the animation
         execute_animation(nao_robot, animation, parameters)
             
         # Reset duration if it was modified
         if duration_multiplier != 1.0:
-            print("Resetting duration to: {}".format(current_duration))
             nao_robot.set_duration(current_duration)
             
         return create_response(
