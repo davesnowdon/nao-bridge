@@ -18,6 +18,8 @@ Run the latest release from docker hub
 docker  run -it -p 3000:3000 -e NAO_IP=<YOUR NAO ROBOT IP> davesnowdon/nao-bridge:latest
 ```
 
+You can then navigate to http://localhost:3000/swagger in your web browser and try out the API
+
 ## Build and run the Docker image locally
 
 Navigate to the server directory and build the Docker image:
