@@ -31,7 +31,6 @@ from animations import execute_animation, get_available_animations
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 # Flask imports
-import base64
 from flask import Flask, request, jsonify, abort, send_file, Response
 
 # FluentNao imports
