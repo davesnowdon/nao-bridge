@@ -16,11 +16,14 @@ from __future__ import print_function
 import os
 import sys
 import json
+import base64
 import time
 import uuid
 import threading
 from datetime import datetime
 from functools import wraps
+from PIL import Image
+import StringIO
 
 from animations import execute_animation, get_available_animations
 
@@ -28,7 +31,8 @@ from animations import execute_animation, get_available_animations
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 # Flask imports
-from flask import Flask, request, jsonify, abort
+import base64
+from flask import Flask, request, jsonify, abort, send_file, Response
 
 # FluentNao imports
 try:
@@ -66,6 +70,22 @@ def handle_options(path):
 # Configuration
 API_VERSION = "1.0"
 DEFAULT_DURATION = 1.5
+# Camera resolution mappings
+RESOLUTION_MAP = {
+    'qqqqvga': 8,  # 40x30
+    'qqvga': 7,    # 80x60
+    'qqqvga': 0,   # 160x120
+    'qvga': 1,     # 320x240
+    'vga': 2,      # 640x480
+    'hvga': 3,     # 1280x960
+}
+
+CAMERA_MAP = {
+    'top': 0,
+    'bottom': 1,
+}
+
+RGB_COLORSPACE = 11
 
 class APIError(Exception):
     """Custom exception for API errors"""
@@ -682,6 +702,142 @@ def sensors_sonar():
         
     except Exception as e:
         raise APIError("Failed to read sonar: {}".format(e), "SENSOR_ERROR")
+
+def get_camera_image(nao_env, camera_id=0, resolution=1, colorspace=11, fps=5):
+    """Core image capture function using current API"""
+    subscriber_handle = nao_env.videoDevice.subscribeCamera("api_client", camera_id, resolution, colorspace, fps)
+    try:
+        image_container = nao_env.videoDevice.getImageRemote(subscriber_handle)
+        if image_container is None:
+            raise RuntimeError("Failed to get image from camera")
+        
+        return {
+            'width': image_container[0],
+            'height': image_container[1],
+            'channels': image_container[2],
+            'image_data': image_container[6]
+        }
+    finally:
+        nao_env.videoDevice.unsubscribe(subscriber_handle)
+
+def convert_to_jpeg(image_data, width, height, channels, quality=85):
+    """Convert raw RGB data to JPEG bytes"""
+    # Convert raw bytes to PIL Image
+    if channels == 3:  # RGB
+        mode = 'RGB'
+    elif channels == 1:  # Grayscale
+        mode = 'L'
+    else:
+        raise ValueError("Unsupported number of channels: {}".format(channels))
+    
+    # Create PIL Image from raw data
+    img = Image.frombuffer(mode, (width, height), image_data, 'raw', mode, 0, 1)
+    
+    # Convert to JPEG
+    output = StringIO.StringIO()
+    img.save(output, format='JPEG', quality=quality)
+    jpeg_data = output.getvalue()
+    output.close()
+    
+    return jpeg_data
+
+@app.route('/api/v1/vision/<camera>/<resolution>', methods=['GET'])
+@require_robot
+def vision_camera(camera, resolution):
+    """Get camera image as JPEG"""
+    try:
+        # Validate camera parameter
+        if camera not in CAMERA_MAP:
+            raise APIError("Invalid camera: {}. Must be 'top' or 'bottom'".format(camera), "INVALID_PARAMETER", 400)
+        
+        # Validate resolution parameter
+        if resolution not in RESOLUTION_MAP:
+            raise APIError("Invalid resolution: {}. Must be one of: {}".format(resolution, ', '.join(RESOLUTION_MAP.keys())), "INVALID_PARAMETER", 400)
+        
+        camera_id = CAMERA_MAP[camera]
+        resolution_id = RESOLUTION_MAP[resolution]
+        
+        # Set active camera if different from default
+        if camera_id != 0:
+            nao_robot.env.videoDevice.setActiveCamera(camera_id)
+        
+        # Capture image
+        image_data = get_camera_image(nao_robot.env, camera_id, resolution_id, RGB_COLORSPACE)
+        format_param = request.args.get('format', 'jpeg').lower()
+        
+        if format_param == 'jpeg':
+            # Convert raw RGB data to JPEG
+            print("Converting raw RGB data to JPEG")
+            jpeg_data = convert_to_jpeg(
+                image_data['image_data'],
+                image_data['width'],
+                image_data['height'],
+                image_data['channels']
+            )
+            
+            # Return JPEG response
+            response = Response(jpeg_data)
+            response.headers['Content-Type'] = 'image/jpeg'
+            response.headers['X-Image-Width'] = str(image_data['width'])
+            response.headers['X-Image-Height'] = str(image_data['height'])
+            response.headers['X-Image-Channels'] = str(image_data['channels'])
+            return response
+            
+            
+        elif format_param == 'json':
+            # Return JSON with base64 encoded image
+            print("Returning JSON with base64 encoded image")
+            return create_response({
+                'camera': camera,
+                'resolution': resolution,
+                'colorspace': RGB_COLORSPACE,
+                'width': image_data['width'],
+                'height': image_data['height'],
+                'channels': image_data['channels'],
+                'image_data': base64.b64encode(image_data['image_data']),
+                'encoding': 'base64'
+            }, "Image captured successfully")
+
+        elif format_param == 'raw':
+            # Return raw binary data
+            print("Returning raw image data")
+            response = Response(image_data['image_data'])
+            response.headers['Content-Type'] = 'application/octet-stream'
+            response.headers['X-Image-Width'] = str(image_data['width'])
+            response.headers['X-Image-Height'] = str(image_data['height'])
+            response.headers['X-Image-Channels'] = str(image_data['channels'])
+            return response
+            
+        else:
+            raise APIError("Invalid format: {}. Must be 'jpeg', 'json', or 'raw'".format(format_param), "INVALID_PARAMETER", 400)
+    
+    except APIError:
+        raise
+        
+    except Exception as e:
+        raise APIError("Failed to capture image: {}".format(e), "VISION_ERROR")
+
+@app.route('/api/v1/vision/resolutions', methods=['GET'])
+def get_available_resolutions():
+    """Get list of available camera resolutions"""
+    resolutions = []
+    for name, id_val in RESOLUTION_MAP.items():
+        # Map back to dimensions for clarity
+        dimensions = {
+            8: "40x30", 7: "80x60", 0: "160x120",
+            1: "320x240", 2: "640x480", 3: "1280x960"
+        }
+        resolutions.append({
+            'name': name,
+            'id': id_val,
+            'dimensions': dimensions[id_val]
+        })
+    
+    return create_response({
+        'resolutions': sorted(resolutions, key=lambda x: x['id']),
+        'cameras': list(CAMERA_MAP.keys()),
+        'colorspaces': ['rgb', 'yuv', 'bgr']
+    }, "Available camera options")
 
 @app.route('/api/v1/config/duration', methods=['POST'])
 @require_robot

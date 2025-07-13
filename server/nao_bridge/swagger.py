@@ -659,6 +659,91 @@ def get_swagger_spec(api_version):
                     }
                 }
             },
+            "/vision/{camera}/{resolution}": {
+                "get": {
+                    "tags": ["Vision"],
+                    "summary": "Get camera image",
+                    "description": "Capture and return an image from the specified NAO camera",
+                    "parameters": [
+                        {
+                            "name": "camera",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["top", "bottom"],
+                            "description": "Camera to use: 'top' for forward camera, 'bottom' for downward camera"
+                        },
+                        {
+                            "name": "resolution",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["qqqqvga", "qqvga", "qqqvga", "qvga", "vga", "hvga"],
+                            "description": "Image resolution (qqqqvga=40x30, qqvga=80x60, qqqvga=160x120, qvga=320x240, vga=640x480, hvga=1280x960)"
+                        },
+                        {
+                            "name": "format",
+                            "in": "query",
+                            "required": False,
+                            "type": "string",
+                            "enum": ["jpeg", "json", "raw"],
+                            "default": "jpeg",
+                            "description": "Response format: 'jpeg' for JPEG image data, 'json' for JSON with base64 encoded image, 'raw' for raw image data"
+                        }
+                    ],
+                    "produces": ["image/jpeg", "application/json", "application/octet-stream"],
+                    "responses": {
+                        "200": {
+                            "description": "Camera image retrieved",
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "file",
+                                        "format": "binary",
+                                        "description": "Raw image data when format=raw"
+                                    },
+                                    {
+                                        "$ref": "#/definitions/VisionResponse",
+                                        "description": "JSON response when format=json"
+                                    },
+                                    {
+                                        "type": "file",
+                                        "format": "binary",
+                                        "description": "JPEG image data when format=jpeg"
+                                    }
+                                ]
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid camera, resolution, or format parameter",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/vision/resolutions": {
+                "get": {
+                    "tags": ["Vision"],
+                    "summary": "Get available camera resolutions",
+                    "description": "Get list of available camera resolutions and options",
+                    "responses": {
+                        "200": {
+                            "description": "Available camera options retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/VisionResolutionsResponse"
+                            }
+                        }
+                    }
+                }
+            },
             "/config/duration": {
                 "post": {
                     "tags": ["Configuration"],
@@ -1145,6 +1230,59 @@ def get_swagger_spec(api_version):
                             "executed_steps": {
                                 "type": "array",
                                 "items": {"type": "object"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "VisionResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "camera": {"type": "string"},
+                            "resolution": {"type": "string"},
+                            "colorspace": {"type": "integer"},
+                            "width": {"type": "integer"},
+                            "height": {"type": "integer"},
+                            "channels": {"type": "integer"},
+                            "image_data": {"type": "string", "description": "Base64 encoded image data"},
+                            "encoding": {"type": "string"}
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "VisionResolutionsResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "resolutions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "id": {"type": "integer"},
+                                        "dimensions": {"type": "string"}
+                                    }
+                                }
+                            },
+                            "cameras": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            },
+                            "colorspaces": {
+                                "type": "array",
+                                "items": {"type": "string"}
                             }
                         }
                     },
