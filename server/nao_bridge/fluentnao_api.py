@@ -880,7 +880,86 @@ def get_operation(operation_id):
     except Exception as e:
         raise APIError("Failed to get operation: {}".format(e), "OPERATION_ERROR")
 
-    
+@app.route('/api/v1/behaviour/execute', methods=['POST'])
+@require_robot
+def execute_behaviour():
+    """Execute a behavior on the robot"""
+    try:
+        data = request.get_json() or {}
+        behaviour = str(data.get('behaviour'))
+        blocking = data.get('blocking', True)
+        
+        if not behaviour:
+            raise APIError("Behaviour name is required", "INVALID_PARAMETER")
+        
+        print("Executing behaviour: {}".format(behaviour))
+        print("Blocking: {}".format(blocking))
+        
+        # Execute the behaviour using the NAO robot's behavior manager
+        if blocking:
+            nao_robot.env.behaviourManager.runBehavior(behaviour)
+        else:
+            nao_robot.env.behaviourManager.startBehavior(behaviour)
+        
+        return create_response(
+            {'behaviour': behaviour, 'blocking': blocking},
+            "Behaviour '{}' executed successfully".format(behaviour)
+        )
+        
+    except Exception as e:
+        raise APIError("Failed to execute behaviour: {}".format(e), "BEHAVIOUR_ERROR")
+
+@app.route('/api/v1/behaviour/<behaviour_type>', methods=['GET'])
+@require_robot
+def list_behaviours(behaviour_type):
+    """Get list of all installed behaviours on the robot"""
+    try:
+        if behaviour_type == 'installed':
+            # Get all installed behaviours from the behavior manager
+            behaviours = nao_robot.env.behaviourManager.getInstalledBehaviors()
+        elif behaviour_type == 'default':
+            behaviours = nao_robot.env.behaviourManager.getDefaultBehaviors()
+        elif behaviour_type == 'running':
+            behaviours = nao_robot.env.behaviourManager.getRunningBehaviors()
+        else:
+            raise APIError("Invalid behaviour type: {}".format(behaviour_type), "INVALID_PARAMETER")
+
+        # Convert to list if it's not already
+        if not isinstance(behaviours, list):
+            behaviours = list(behaviours)
+        
+        return create_response(
+            {'behaviours': behaviours},
+            "Available behaviours retrieved"
+        )
+        
+    except Exception as e:
+        raise APIError("Failed to get behaviours: {}".format(e), "BEHAVIOUR_ERROR")
+
+@app.route('/api/v1/behaviour/default', methods=['POST'])
+@require_robot
+def set_behaviour_default():
+    """Set a behaviour as default"""
+    try:
+        data = request.get_json() or {}
+        behaviour_name = str(data.get('behaviour'))
+        default = data.get('default', True)
+
+        if not behaviour_name:
+            raise APIError("Behaviour name is required", "INVALID_PARAMETER")
+
+        if default:
+            nao_robot.env.behaviourManager.addDefaultBehavior(behaviour_name)
+        else:
+            nao_robot.env.behaviourManager.removeDefaultBehavior(behaviour_name)
+        
+        return create_response(
+            {'behaviour': behaviour_name},
+            "Behaviour '{}' set as {} default".format(behaviour_name, "a" if default else "not a")
+        )
+    except Exception as e:
+        raise APIError("Failed to set behaviour default: {}".format(e), "BEHAVIOUR_ERROR")
+
 @app.route('/api/v1/animations/execute', methods=['POST'])
 @require_robot
 def execute_named_animation():
