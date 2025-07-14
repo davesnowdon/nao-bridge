@@ -20,11 +20,19 @@ docker  run -it -p 3000:3000 -e NAO_IP=<YOUR NAO ROBOT IP> davesnowdon/nao-bridg
 
 You can then navigate to http://localhost:3000/swagger in your web browser and try out the API
 
-For example if you wanted a VGA resolution image from NAO's top camera you could use this curl command
+You can get basic information about the current state of the robot from `/api/v1/status` using curl this would look like
 
 ```bash
 curl -X 'GET' \
-  'http://0.0.0.0:3000/api/v1/vision/top/vga?format=jpeg' \
+  'http://localhost:3000/api/v1/status' \
+  -H 'accept: application/json'
+```
+
+Many other NAO operations are also supported, if you wanted a VGA resolution image from NAO's top camera you could use this curl command
+
+```bash
+curl -X 'GET' \
+  'http://localhost:3000/api/v1/vision/top/vga?format=jpeg' \
   -H 'accept: image/jpeg'
 ```
 
@@ -32,7 +40,7 @@ or to say something
 
 ```bash
 curl -X 'POST' \
-  'http://0.0.0.0:3000/api/v1/speech/say' \
+  'http://localhost:3000/api/v1/speech/say' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{
