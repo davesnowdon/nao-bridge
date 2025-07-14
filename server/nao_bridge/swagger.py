@@ -914,6 +914,117 @@ def get_swagger_spec(api_version):
                         }
                     }
                 }
+            },
+            "/behaviour/execute": {
+                "post": {
+                    "tags": ["Behaviours"],
+                    "summary": "Execute a behavior on the robot",
+                    "description": "Execute a behavior using the robot's behavior manager",
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": True,
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourExecuteRequest"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Behaviour executed successfully",
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid parameters",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/behaviour/{behaviour_type}": {
+                "get": {
+                    "tags": ["Behaviours"],
+                    "summary": "Get list of behaviours",
+                    "description": "Get list of all installed, default, or running behaviours on the robot",
+                    "parameters": [
+                        {
+                            "name": "behaviour_type",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["installed", "default", "running"],
+                            "description": "Type of behaviours to retrieve: 'installed' for all installed behaviours, 'default' for default behaviours, 'running' for currently running behaviours"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Available behaviours retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/BehavioursListResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid behaviour type",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/behaviour/default": {
+                "post": {
+                    "tags": ["Behaviours"],
+                    "summary": "Set a behaviour as default",
+                    "description": "Add or remove a behaviour from the default behaviours list",
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": True,
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourDefaultRequest"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Behaviour default status updated",
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid parameters",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
             }
         },
         "definitions": {
@@ -1288,6 +1399,54 @@ def get_swagger_spec(api_version):
                     },
                     "message": {"type": "string"},
                     "timestamp": {"type": "string"}
+                }
+            },
+            "BehaviourExecuteRequest": {
+                "type": "object",
+                "required": ["behaviour"],
+                "properties": {
+                    "behaviour": {"type": "string", "description": "Name of the behaviour to execute"},
+                    "blocking": {"type": "boolean", "default": True, "description": "Whether to block until behaviour completes"}
+                }
+            },
+            "BehaviourResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "behaviour": {"type": "string"},
+                            "blocking": {"type": "boolean"}
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "BehavioursListResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "behaviours": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "BehaviourDefaultRequest": {
+                "type": "object",
+                "required": ["behaviour"],
+                "properties": {
+                    "behaviour": {"type": "string", "description": "Name of the behaviour to set as default"},
+                    "default": {"type": "boolean", "default": True, "description": "Whether to set the behaviour as default (true) or remove it from defaults (false)"}
                 }
             }
         }
