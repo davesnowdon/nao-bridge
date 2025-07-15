@@ -349,7 +349,7 @@ def robot_autonomous_life_state():
     except Exception as e:
         raise APIError("Failed to set autonomous life state: {}".format(e), "AUTONOMOUS_LIFE_ERROR")
 
-@app.route('/api/v1/robot/joints/<chain>', methods=['GET'])
+@app.route('/api/v1/robot/joints/<chain>/angles', methods=['GET'])
 @require_robot
 def get_joint_angles(chain):
     """
@@ -374,6 +374,30 @@ def get_joint_angles(chain):
         )
     except Exception as e:
         raise APIError("Failed to get joint angles: {}".format(e), "JOINT_ERROR")
+
+@app.route('/api/v1/robot/joints/<chain>/names', methods=['GET'])
+@require_robot
+def get_joint_names(chain):
+    """
+    Get joint names for a specified chain.
+    Chain can be one of: Head, Body, LArm, RArm, LLeg, RLeg
+    """
+    try:
+        chain = str(chain)
+        if chain not in VALID_CHAINS:
+            raise APIError("Invalid chain: {}. Must be one of: {}".format(chain, ', '.join(VALID_CHAINS)), "INVALID_PARAMETER")
+
+        # Use ALMotion proxy to get joint names for the chain
+        joint_names = nao_robot.env.motion.getBodyNames(chain)
+        if not joint_names:
+            raise APIError("No joints found for chain: {}".format(chain), "JOINT_ERROR")
+
+        return create_response(
+            {'chain': chain, 'joint_names': joint_names},
+            "Joint names for chain '{}' retrieved".format(chain)
+        )
+    except Exception as e:
+        raise APIError("Failed to get joint names: {}".format(e), "JOINT_ERROR")
 
 @app.route('/api/v1/posture/stand', methods=['POST'])
 @require_robot

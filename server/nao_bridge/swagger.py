@@ -189,7 +189,7 @@ def get_swagger_spec(api_version):
                     }
                 }
             },
-            "/robot/joints/{chain}": {
+            "/robot/joints/{chain}/angles": {
                 "get": {
                     "tags": ["Robot Control"],
                     "summary": "Get current joint angles for a specified chain",
@@ -209,6 +209,43 @@ def get_swagger_spec(api_version):
                             "description": "Joint angles for chain retrieved",
                             "schema": {
                                 "$ref": "#/definitions/JointAnglesResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid chain parameter",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/robot/joints/{chain}/names": {
+                "get": {
+                    "tags": ["Robot Control"],
+                    "summary": "Get joint names for a specified chain",
+                    "description": "Get joint names for a specified chain. Chain can be one of: Head, Body, LArm, RArm, LLeg, RLeg",
+                    "parameters": [
+                        {
+                            "name": "chain",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["Head", "Body", "LArm", "RArm", "LLeg", "RLeg"],
+                            "description": "Joint chain to retrieve names for"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Joint names for chain retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/JointNamesResponse"
                             }
                         },
                         "400": {
@@ -1498,6 +1535,25 @@ def get_swagger_spec(api_version):
                                 "type": "object",
                                 "description": "Dictionary mapping joint names to their current angles in radians",
                                 "additionalProperties": {"type": "number"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "JointNamesResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "chain": {"type": "string", "description": "The joint chain name"},
+                            "joint_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Array of joint names in the chain"
                             }
                         }
                     },
