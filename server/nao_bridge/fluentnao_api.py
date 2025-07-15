@@ -86,6 +86,8 @@ CAMERA_MAP = {
 
 RGB_COLORSPACE = 11
 
+VALID_CHAINS = ['Head', 'Body', 'LArm', 'RArm', 'LLeg', 'RLeg']
+
 class APIError(Exception):
     """Custom exception for API errors"""
     def __init__(self, message, code="UNKNOWN_ERROR", status_code=400):
@@ -346,6 +348,32 @@ def robot_autonomous_life_state():
         return create_response(message="Autonomous life state set to: {}".format(state))
     except Exception as e:
         raise APIError("Failed to set autonomous life state: {}".format(e), "AUTONOMOUS_LIFE_ERROR")
+
+@app.route('/api/v1/robot/joints/<chain>', methods=['GET'])
+@require_robot
+def get_joint_angles(chain):
+    """
+    Get current joint angles for a specified chain.
+    Chain can be one of: Head, Body, LArm, RArm, LLeg, RLeg
+    """
+    try:
+        chain = str(chain)
+        if chain not in VALID_CHAINS:
+            raise APIError("Invalid chain: {}. Must be one of: {}".format(chain, ', '.join(VALID_CHAINS)), "INVALID_PARAMETER")
+
+        # Use ALMotion proxy to get joint names and angles for the chain
+        joint_names = nao_robot.env.motion.getBodyNames(chain)
+        if not joint_names:
+            raise APIError("No joints found for chain: {}".format(chain), "JOINT_ERROR")
+
+        angles = nao_robot.env.motion.getAngles(joint_names, True)
+        joint_data = dict(zip(joint_names, angles))
+        return create_response(
+            {'chain': chain, 'joints': joint_data},
+            "Joint angles for chain '{}' retrieved".format(chain)
+        )
+    except Exception as e:
+        raise APIError("Failed to get joint angles: {}".format(e), "JOINT_ERROR")
 
 @app.route('/api/v1/posture/stand', methods=['POST'])
 @require_robot

@@ -189,6 +189,43 @@ def get_swagger_spec(api_version):
                     }
                 }
             },
+            "/robot/joints/{chain}": {
+                "get": {
+                    "tags": ["Robot Control"],
+                    "summary": "Get current joint angles for a specified chain",
+                    "description": "Get current joint angles for a specified chain. Chain can be one of: Head, Body, LArm, RArm, LLeg, RLeg",
+                    "parameters": [
+                        {
+                            "name": "chain",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["Head", "Body", "LArm", "RArm", "LLeg", "RLeg"],
+                            "description": "Joint chain to retrieve angles for"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Joint angles for chain retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/JointAnglesResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid chain parameter",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
             "/posture/stand": {
                 "post": {
                     "tags": ["Posture Control"],
@@ -1447,6 +1484,25 @@ def get_swagger_spec(api_version):
                 "properties": {
                     "behaviour": {"type": "string", "description": "Name of the behaviour to set as default"},
                     "default": {"type": "boolean", "default": True, "description": "Whether to set the behaviour as default (true) or remove it from defaults (false)"}
+                }
+            },
+            "JointAnglesResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "chain": {"type": "string", "description": "The joint chain name"},
+                            "joints": {
+                                "type": "object",
+                                "description": "Dictionary mapping joint names to their current angles in radians",
+                                "additionalProperties": {"type": "number"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
                 }
             }
         }
