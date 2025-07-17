@@ -397,7 +397,7 @@ class NAOBridgeClient:
             timeout: Request timeout in seconds
         """
         self.base_url = base_url.rstrip('/')
-        self.api_base = f"{self.base_url}/api/v1"
+        self.api_base = f"{self.base_url}/api/v1/"
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({
@@ -467,68 +467,68 @@ class NAOBridgeClient:
     
     def get_status(self) -> StatusResponse:
         """Get robot and API status."""
-        response = self._make_request('GET', '/status')
+        response = self._make_request('GET', 'status')
         return StatusResponse(**response)
     
     def enable_stiffness(self, duration: Optional[float] = None) -> SuccessResponse:
         """Enable robot stiffness."""
         data = DurationRequest(duration=duration) if duration else None
-        response = self._make_request('POST', '/robot/stiff', data)
+        response = self._make_request('POST', 'robot/stiff', data)
         return SuccessResponse(**response)
     
     def disable_stiffness(self) -> SuccessResponse:
         """Disable robot stiffness."""
-        response = self._make_request('POST', '/robot/relax')
+        response = self._make_request('POST', 'robot/relax')
         return SuccessResponse(**response)
     
     def put_in_rest(self) -> SuccessResponse:
         """Put robot in rest mode."""
-        response = self._make_request('POST', '/robot/rest')
+        response = self._make_request('POST', 'robot/rest')
         return SuccessResponse(**response)
     
     def wake_up(self) -> SuccessResponse:
         """Wake up robot from rest mode."""
-        response = self._make_request('POST', '/robot/wake')
+        response = self._make_request('POST', 'robot/wake')
         return SuccessResponse(**response)
     
     def set_autonomous_life_state(self, state: str) -> SuccessResponse:
         """Set autonomous life state."""
         data = AutonomousLifeRequest(state=state)
-        response = self._make_request('POST', '/robot/autonomous_life/state', data)
+        response = self._make_request('POST', 'robot/autonomous_life/state', data)
         return SuccessResponse(**response)
     
     def get_joint_angles(self, chain: str) -> JointAnglesResponse:
         """Get current joint angles for a specified chain."""
-        response = self._make_request('GET', f'/robot/joints/{chain}/angles')
+        response = self._make_request('GET', f'robot/joints/{chain}/angles')
         return JointAnglesResponse(**response)
     
     def get_joint_names(self, chain: str) -> JointNamesResponse:
         """Get joint names for a specified chain."""
-        response = self._make_request('GET', f'/robot/joints/{chain}/names')
+        response = self._make_request('GET', f'robot/joints/{chain}/names')
         return JointNamesResponse(**response)
     
     def stand(self, speed: Optional[float] = None, variant: Optional[str] = None) -> SuccessResponse:
         """Move robot to standing position."""
         data = StandRequest(speed=speed, variant=variant)
-        response = self._make_request('POST', '/posture/stand', data)
+        response = self._make_request('POST', 'posture/stand', data)
         return SuccessResponse(**response)
     
     def sit(self, speed: Optional[float] = None, variant: Optional[str] = None) -> SuccessResponse:
         """Move robot to sitting position."""
         data = SitRequest(speed=speed, variant=variant)
-        response = self._make_request('POST', '/posture/sit', data)
+        response = self._make_request('POST', 'posture/sit', data)
         return SuccessResponse(**response)
     
     def crouch(self, speed: Optional[float] = None) -> SuccessResponse:
         """Move robot to crouching position."""
         data = SpeedRequest(speed=speed)
-        response = self._make_request('POST', '/posture/crouch', data)
+        response = self._make_request('POST', 'posture/crouch', data)
         return SuccessResponse(**response)
     
     def lie(self, speed: Optional[float] = None, position: Optional[str] = None) -> SuccessResponse:
         """Move robot to lying position."""
         data = LieRequest(speed=speed, position=position)
-        response = self._make_request('POST', '/posture/lie', data)
+        response = self._make_request('POST', 'posture/lie', data)
         return SuccessResponse(**response)
     
     def move_arms_preset(
@@ -545,7 +545,7 @@ class NAOBridgeClient:
             arms=arms,
             offset=offset
         )
-        response = self._make_request('POST', '/arms/preset', data)
+        response = self._make_request('POST', 'arms/preset', data)
         return SuccessResponse(**response)
     
     def control_hands(
@@ -560,7 +560,7 @@ class NAOBridgeClient:
             right_hand=right_hand,
             duration=duration
         )
-        response = self._make_request('POST', '/hands/position', data)
+        response = self._make_request('POST', 'hands/position', data)
         return SuccessResponse(**response)
     
     def move_head(
@@ -571,7 +571,7 @@ class NAOBridgeClient:
     ) -> SuccessResponse:
         """Control head positioning."""
         data = HeadPositionRequest(yaw=yaw, pitch=pitch, duration=duration)
-        response = self._make_request('POST', '/head/position', data)
+        response = self._make_request('POST', 'head/position', data)
         return SuccessResponse(**response)
     
     def say(
@@ -582,7 +582,7 @@ class NAOBridgeClient:
     ) -> SuccessResponse:
         """Make the robot speak."""
         data = SpeechRequest(text=text, blocking=blocking, animated=animated)
-        response = self._make_request('POST', '/speech/say', data)
+        response = self._make_request('POST', 'speech/say', data)
         return SuccessResponse(**response)
     
     def set_leds(
@@ -592,12 +592,12 @@ class NAOBridgeClient:
     ) -> SuccessResponse:
         """Control LED colors."""
         data = LEDsRequest(leds=leds, duration=duration)
-        response = self._make_request('POST', '/leds/set', data)
+        response = self._make_request('POST', 'leds/set', data)
         return SuccessResponse(**response)
     
     def turn_off_leds(self) -> SuccessResponse:
         """Turn off all LEDs."""
-        response = self._make_request('POST', '/leds/off')
+        response = self._make_request('POST', 'leds/off')
         return SuccessResponse(**response)
     
     def start_walking(
@@ -609,12 +609,12 @@ class NAOBridgeClient:
     ) -> SuccessResponse:
         """Start walking with specified parameters."""
         data = WalkStartRequest(x=x, y=y, theta=theta, speed=speed)
-        response = self._make_request('POST', '/walk/start', data)
+        response = self._make_request('POST', 'walk/start', data)
         return SuccessResponse(**response)
     
     def stop_walking(self) -> SuccessResponse:
         """Stop current walking motion."""
-        response = self._make_request('POST', '/walk/stop')
+        response = self._make_request('POST', 'walk/stop')
         return SuccessResponse(**response)
     
     def walk_preset(
@@ -625,12 +625,12 @@ class NAOBridgeClient:
     ) -> SuccessResponse:
         """Use predefined walking patterns."""
         data = WalkPresetRequest(action=action, duration=duration, speed=speed)
-        response = self._make_request('POST', '/walk/preset', data)
+        response = self._make_request('POST', 'walk/preset', data)
         return SuccessResponse(**response)
     
     def get_sonar(self) -> SonarResponse:
         """Get sonar sensor readings."""
-        response = self._make_request('GET', '/sensors/sonar')
+        response = self._make_request('GET', 'sensors/sonar')
         return SonarResponse(**response)
     
     def get_camera_image(
@@ -669,23 +669,23 @@ class NAOBridgeClient:
     
     def get_camera_resolutions(self) -> VisionResolutionsResponse:
         """Get available camera resolutions."""
-        response = self._make_request('GET', '/vision/resolutions')
+        response = self._make_request('GET', 'vision/resolutions')
         return VisionResolutionsResponse(**response)
     
     def set_duration(self, duration: float) -> DurationResponse:
         """Set global movement duration."""
         data = DurationRequest(duration=duration)
-        response = self._make_request('POST', '/config/duration', data)
+        response = self._make_request('POST', 'config/duration', data)
         return DurationResponse(**response)
     
     def get_operations(self) -> OperationsResponse:
         """List active operations."""
-        response = self._make_request('GET', '/operations')
+        response = self._make_request('GET', 'operations')
         return OperationsResponse(**response)
     
     def get_operation(self, operation_id: str) -> OperationResponse:
         """Get status of specific operation."""
-        response = self._make_request('GET', f'/operations/{operation_id}')
+        response = self._make_request('GET', f'operations/{operation_id}')
         return OperationResponse(**response)
     
     def execute_animation(
@@ -695,12 +695,12 @@ class NAOBridgeClient:
     ) -> AnimationResponse:
         """Execute predefined complex animations."""
         data = AnimationExecuteRequest(animation=animation, parameters=parameters)
-        response = self._make_request('POST', '/animations/execute', data)
+        response = self._make_request('POST', 'animations/execute', data)
         return AnimationResponse(**response)
     
     def get_animations(self) -> AnimationsListResponse:
         """Get list of available animations."""
-        response = self._make_request('GET', '/animations/list')
+        response = self._make_request('GET', 'animations/list')
         return AnimationsListResponse(**response)
     
     def execute_sequence(
@@ -710,7 +710,7 @@ class NAOBridgeClient:
     ) -> SequenceResponse:
         """Execute a sequence of movements."""
         data = SequenceRequest(sequence=sequence, blocking=blocking)
-        response = self._make_request('POST', '/animations/sequence', data)
+        response = self._make_request('POST', 'animations/sequence', data)
         return SequenceResponse(**response)
     
     def execute_behaviour(
@@ -720,12 +720,12 @@ class NAOBridgeClient:
     ) -> BehaviourResponse:
         """Execute a behavior on the robot."""
         data = BehaviourExecuteRequest(behaviour=behaviour, blocking=blocking)
-        response = self._make_request('POST', '/behaviour/execute', data)
+        response = self._make_request('POST', 'behaviour/execute', data)
         return BehaviourResponse(**response)
     
     def get_behaviours(self, behaviour_type: str) -> BehavioursListResponse:
         """Get list of behaviours by type."""
-        response = self._make_request('GET', f'/behaviour/{behaviour_type}')
+        response = self._make_request('GET', f'behaviour/{behaviour_type}')
         return BehavioursListResponse(**response)
     
     def set_behaviour_default(
@@ -735,7 +735,7 @@ class NAOBridgeClient:
     ) -> BehaviourResponse:
         """Set a behaviour as default."""
         data = BehaviourDefaultRequest(behaviour=behaviour, default=default)
-        response = self._make_request('POST', '/behaviour/default', data)
+        response = self._make_request('POST', 'behaviour/default', data)
         return BehaviourResponse(**response)
     
     def close(self):
