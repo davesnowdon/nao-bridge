@@ -1,0 +1,144 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nao-bridge-client"
+dynamic = ["version"]
+description = "Python client library for NAO Bridge HTTP API"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [
+    {name = "Dave Snowdon"},
+]
+keywords = [
+    "nao",
+    "robot",
+    "aldebaran",
+    "robotics",
+    "api-client",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "requests>=2.25.0",
+    "pillow>=8.0.0",
+    "typing-extensions>=3.7.4; python_version<'3.8'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "isort",
+    "mypy",
+    "pre-commit",
+]
+docs = [
+    "sphinx>=4.0",
+    "sphinx-rtd-theme",
+]
+
+[project.urls]
+Documentation = "https://github.com/davesnowdon/nao-bridge/clients/python#readme"
+Issues = "https://github.com/davesnowdon/nao-bridge/issues"
+Source = "https://github.com/davesnowdon/nao-bridge"
+
+[tool.hatch.version]
+path = "nao_bridge_client/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nao_bridge_client"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/nao_bridge_client",
+    "/tests",
+    "/README.md",
+]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "coverage[toml]>=6.5",
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest {args:tests}"
+test-cov = "coverage run -m pytest {args:tests}"
+cov-report = [
+    "- coverage combine",
+    "coverage report",
+]
+cov = [
+    "test-cov",
+    "cov-report",
+]
+
+[tool.hatch.envs.lint]
+detached = true
+dependencies = [
+    "black>=23.1.0",
+    "mypy>=1.0.0",
+    "ruff>=0.0.243",
+]
+
+[tool.hatch.envs.lint.scripts]
+typing = "mypy --install-types --non-interactive {args:src/nao_bridge_client tests}"
+style = [
+    "ruff {args:.}",
+    "black --check --diff {args:.}",
+]
+fmt = [
+    "black {args:.}",
+    "ruff --fix {args:.}",
+    "style",
+]
+all = [
+    "style",
+    "typing",
+]
+
+[tool.black]
+target-version = ["py37"]
+line-length = 88
+
+[tool.ruff]
+target-version = "py37"
+line-length = 88
+
+[tool.coverage.run]
+source_pkgs = ["nao_bridge_client", "tests"]
+branch = true
+parallel = true
+omit = [
+    "src/nao_bridge_client/__about__.py",
+]
+
+[tool.coverage.paths]
+nao_bridge_client = ["src/nao_bridge_client", "*/nao-bridge-client/src/nao_bridge_client"]
+tests = ["tests", "*/nao-bridge-client/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "no cov",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
