@@ -126,6 +126,26 @@ class SequenceRequest:
 
 
 @dataclass
+class AutonomousLifeRequest:
+    """Request model for autonomous life state"""
+    state: Optional[str] = None
+
+
+@dataclass
+class BehaviourExecuteRequest:
+    """Request model for behaviour execution"""
+    behaviour: str
+    blocking: Optional[bool] = None
+
+
+@dataclass
+class BehaviourDefaultRequest:
+    """Request model for setting default behaviours"""
+    behaviour: str
+    default: Optional[bool] = None
+
+
+@dataclass
 class StatusData:
     """Status response data"""
     robot_connected: bool
@@ -136,6 +156,8 @@ class StatusData:
     current_posture: str
     active_operations: List[Dict[str, Any]]
     api_version: str
+    autonomous_life_state: Optional[str] = None
+    awake: Optional[bool] = None
 
 
 @dataclass
@@ -145,6 +167,47 @@ class SonarData:
     right: float
     units: str
     timestamp: str
+
+
+@dataclass
+class VisionData:
+    """Vision camera data"""
+    camera: str
+    resolution: str
+    colorspace: int
+    width: int
+    height: int
+    channels: int
+    image_data: str
+    encoding: str
+
+
+@dataclass
+class VisionResolutionsData:
+    """Vision resolutions data"""
+    resolutions: List[Dict[str, Any]]
+    cameras: List[str]
+    colorspaces: List[str]
+
+
+@dataclass
+class JointAnglesData:
+    """Joint angles data"""
+    chain: str
+    joints: Dict[str, float]
+
+
+@dataclass
+class JointNamesData:
+    """Joint names data"""
+    chain: str
+    joint_names: List[str]
+
+
+@dataclass
+class BehavioursData:
+    """Behaviours data"""
+    behaviours: List[str]
 
 
 @dataclass
@@ -200,6 +263,42 @@ class SonarResponse:
 
 
 @dataclass
+class VisionResponse:
+    """Vision response"""
+    success: bool = True
+    data: Optional[VisionData] = None
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+@dataclass
+class VisionResolutionsResponse:
+    """Vision resolutions response"""
+    success: bool = True
+    data: Optional[VisionResolutionsData] = None
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+@dataclass
+class JointAnglesResponse:
+    """Joint angles response"""
+    success: bool = True
+    data: Optional[JointAnglesData] = None
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+@dataclass
+class JointNamesResponse:
+    """Joint names response"""
+    success: bool = True
+    data: Optional[JointNamesData] = None
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+@dataclass
 class AnimationsListResponse:
     """Animations list response"""
     success: bool = True
@@ -249,6 +348,24 @@ class DurationResponse:
     """Duration response"""
     success: bool = True
     data: Optional[Dict[str, float]] = None
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+@dataclass
+class BehaviourResponse:
+    """Behaviour response"""
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+@dataclass
+class BehavioursListResponse:
+    """Behaviours list response"""
+    success: bool = True
+    data: Optional[BehavioursData] = None
     message: Optional[str] = None
     timestamp: Optional[str] = None
 
@@ -368,6 +485,27 @@ class NAOBridgeClient:
         """Put robot in rest mode."""
         response = self._make_request('POST', '/robot/rest')
         return SuccessResponse(**response)
+    
+    def wake_up(self) -> SuccessResponse:
+        """Wake up robot from rest mode."""
+        response = self._make_request('POST', '/robot/wake')
+        return SuccessResponse(**response)
+    
+    def set_autonomous_life_state(self, state: str) -> SuccessResponse:
+        """Set autonomous life state."""
+        data = AutonomousLifeRequest(state=state)
+        response = self._make_request('POST', '/robot/autonomous_life/state', data)
+        return SuccessResponse(**response)
+    
+    def get_joint_angles(self, chain: str) -> JointAnglesResponse:
+        """Get current joint angles for a specified chain."""
+        response = self._make_request('GET', f'/robot/joints/{chain}/angles')
+        return JointAnglesResponse(**response)
+    
+    def get_joint_names(self, chain: str) -> JointNamesResponse:
+        """Get joint names for a specified chain."""
+        response = self._make_request('GET', f'/robot/joints/{chain}/names')
+        return JointNamesResponse(**response)
     
     def stand(self, speed: Optional[float] = None, variant: Optional[str] = None) -> SuccessResponse:
         """Move robot to standing position."""
@@ -495,6 +633,45 @@ class NAOBridgeClient:
         response = self._make_request('GET', '/sensors/sonar')
         return SonarResponse(**response)
     
+    def get_camera_image(
+        self,
+        camera: str,
+        resolution: str,
+        format: str = "jpeg"
+    ) -> Union[VisionResponse, bytes]:
+        """Get camera image from specified camera."""
+        params = {'format': format} if format != "jpeg" else {}
+        url = f"{self.api_base}/vision/{camera}/{resolution}"
+        
+        try:
+            response = self.session.get(url, params=params, timeout=self.timeout)
+            response.raise_for_status()
+            
+            if format == "jpeg":
+                return response.content
+            elif format == "raw":
+                return response.content
+            else:  # json format
+                result = response.json()
+                if not result.get('success', True):
+                    error_data = result.get('error', {})
+                    raise NAOBridgeError(
+                        message=error_data.get('message', 'Unknown error'),
+                        code=error_data.get('code'),
+                        details=error_data.get('details')
+                    )
+                return VisionResponse(**result)
+                
+        except requests.exceptions.RequestException as e:
+            raise NAOBridgeError(f"Network error: {e}")
+        except json.JSONDecodeError as e:
+            raise NAOBridgeError(f"Invalid JSON response: {e}")
+    
+    def get_camera_resolutions(self) -> VisionResolutionsResponse:
+        """Get available camera resolutions."""
+        response = self._make_request('GET', '/vision/resolutions')
+        return VisionResolutionsResponse(**response)
+    
     def set_duration(self, duration: float) -> DurationResponse:
         """Set global movement duration."""
         data = DurationRequest(duration=duration)
@@ -535,6 +712,31 @@ class NAOBridgeClient:
         data = SequenceRequest(sequence=sequence, blocking=blocking)
         response = self._make_request('POST', '/animations/sequence', data)
         return SequenceResponse(**response)
+    
+    def execute_behaviour(
+        self,
+        behaviour: str,
+        blocking: Optional[bool] = None
+    ) -> BehaviourResponse:
+        """Execute a behavior on the robot."""
+        data = BehaviourExecuteRequest(behaviour=behaviour, blocking=blocking)
+        response = self._make_request('POST', '/behaviour/execute', data)
+        return BehaviourResponse(**response)
+    
+    def get_behaviours(self, behaviour_type: str) -> BehavioursListResponse:
+        """Get list of behaviours by type."""
+        response = self._make_request('GET', f'/behaviour/{behaviour_type}')
+        return BehavioursListResponse(**response)
+    
+    def set_behaviour_default(
+        self,
+        behaviour: str,
+        default: bool = True
+    ) -> BehaviourResponse:
+        """Set a behaviour as default."""
+        data = BehaviourDefaultRequest(behaviour=behaviour, default=default)
+        response = self._make_request('POST', '/behaviour/default', data)
+        return BehaviourResponse(**response)
     
     def close(self):
         """Close the client session."""
