@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-FluentNao HTTP API Server
+HTTP API Server
 
 A Flask-based REST API server that exposes FluentNao functionality
 for controlling Aldebaran NAO robots via HTTP requests.

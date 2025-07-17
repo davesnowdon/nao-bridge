@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Import the main API server
-from fluentnao_api import *
+from nao_bridge_api import *
 from swagger import register_swagger_routes
 
 # Register Swagger routes
