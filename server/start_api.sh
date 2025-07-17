@@ -1,10 +1,10 @@
 #!/bin/bash
-# FluentNao API Server Startup Script
+# API Server Startup Script
 # 
-# This script sets up the environment and starts the FluentNao HTTP API server
+# This script sets up the environment and starts the NAO bridge HTTP API server
 # within the Docker container environment.
 
-echo "FluentNao API Server Startup"
+echo "NAO bridge API Server Startup"
 echo "============================"
 
 # Set up environment paths for the native libraries in pynaoqi

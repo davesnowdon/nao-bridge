@@ -12,7 +12,45 @@ This project borrows heavily from the work of [Don Najd](https://github.com/dnaj
 
 ## Quick Start
 
-### 1. Build the Docker Image
+Run the latest release from docker hub
+
+```bash
+docker  run -it -p 3000:3000 -e NAO_IP=<YOUR NAO ROBOT IP> davesnowdon/nao-bridge:latest
+```
+
+You can then navigate to http://localhost:3000/swagger in your web browser and try out the API
+
+You can get basic information about the current state of the robot from `/api/v1/status` using curl this would look like
+
+```bash
+curl -X 'GET' \
+  'http://localhost:3000/api/v1/status' \
+  -H 'accept: application/json'
+```
+
+Many other NAO operations are also supported, if you wanted a VGA resolution image from NAO's top camera you could use this curl command
+
+```bash
+curl -X 'GET' \
+  'http://localhost:3000/api/v1/vision/top/vga?format=jpeg' \
+  -H 'accept: image/jpeg'
+```
+
+or to say something
+
+```bash
+curl -X 'POST' \
+  'http://localhost:3000/api/v1/speech/say' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "animated": true,
+  "blocking": true,
+  "text": "This is NAO via the magic of NAO bridge"
+}'
+```
+
+## Build and run the Docker image locally
 
 Navigate to the server directory and build the Docker image:
 
@@ -21,19 +59,13 @@ cd server
 docker build -t nao-bridge .
 ```
 
-### 2. Run the Container
-
-Set your NAO robot's IP address and run the container:
+run the container:
 
 ```bash
-# Set your NAO robot's IP address
-export NAO_IP=192.168.1.100
-
-# Run the container
-docker run -p 3000:3000 -e NAO_IP=$NAO_IP nao-bridge
+docker run -p 3000:3000 -e NAO_IP=<YOUR NAO ROBOT IP> nao-bridge
 ```
 
-### 3. Verify the API is Running
+## Verify the API is Running
 
 The API server will be available at `http://localhost:3000`. You can test it with:
 

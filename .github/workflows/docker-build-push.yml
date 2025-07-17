@@ -1,0 +1,171 @@
+name: Build and Push Docker Image
+
+on:
+  # Trigger on pushes to main branch when server files change
+  push:
+    branches: [main]
+    paths: ['server/**']
+  
+  # Trigger on new releases for versioned builds
+  release:
+    types: [published]
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: 'Push image to Docker Hub'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: davesnowdon/nao-bridge
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          # Fetch full history for proper versioning
+          fetch-depth: 0
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+        with:
+          driver-opts: |
+            network=host
+      
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            # Branch-based tags
+            type=ref,event=branch
+            type=ref,event=pr
+            
+            # SHA-based tags for traceability
+            type=sha,prefix={{branch}}-,format=short
+            
+            # Latest tag for main branch
+            type=raw,value=latest,enable={{is_default_branch}}
+            
+            # Semantic versioning tags for releases
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            
+            # Date-based tags for development builds
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+          
+          labels: |
+            org.opencontainers.image.title=NAO Bridge
+            org.opencontainers.image.description=HTTP API bridge for NAO robot SDK (AMD64 only)
+            org.opencontainers.image.vendor=davesnowdon
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.documentation=https://github.com/davesnowdon/nao-bridge
+            org.opencontainers.image.source=https://github.com/davesnowdon/nao-bridge
+            org.opencontainers.image.architecture=amd64
+      
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@16ebe778df0e7752d2cfcbd924afdbbd89c1a755 # v6.6.1
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image == 'true' || inputs.push_image == true) }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          
+          # Build arguments
+          build-args: |
+            BUILDTIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+            REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+          
+          # Cache configuration for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+          # Build provenance and SBOM
+          provenance: true
+          sbom: true
+      
+      - name: Generate artifact attestation
+        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image == 'true')
+        uses: actions/attest-build-provenance@1c608d11d69870c2092266b3f9a6f3abbf17002c # v1.4.3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      
+      - name: Output build summary
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platform:** \`linux/amd64\` (NAO SDK requires AMD64 binaries)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tags" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.build.outputs.pushed }}" == "true" ]]; then
+            echo "✅ **Image successfully pushed to Docker Hub**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 **Docker Hub:** https://hub.docker.com/r/${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ **Image built but not pushed** (dry run or pull request)" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const output = `## 🐳 Docker Build Results
+            
+            **Image:** \`${{ env.IMAGE_NAME }}\`
+            **Platform:** \`linux/amd64\` (NAO SDK requires AMD64 binaries)
+            **Status:** ✅ Build successful (not pushed)
+            
+            ### Tags that would be created:
+            \`\`\`
+            ${{ steps.meta.outputs.tags }}
+            \`\`\`
+            
+            > This is a preview build. The image will be pushed when this PR is merged to main.
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+

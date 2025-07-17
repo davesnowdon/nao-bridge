@@ -18,7 +18,7 @@ def get_swagger_spec(api_version):
     swagger_spec = {
         "swagger": "2.0",
         "info": {
-            "title": "FluentNao API",
+            "title": "NAO bridge",
             "description": "A REST API for controlling Aldebaran NAO robots via HTTP requests",
             "version": api_version,
             "contact": {
@@ -120,6 +120,138 @@ def get_swagger_spec(api_version):
                             "description": "Robot in rest mode",
                             "schema": {
                                 "$ref": "#/definitions/SuccessResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/robot/wake": {
+                "post": {
+                    "tags": ["Robot Control"],
+                    "summary": "Wake up robot",
+                    "description": "Wake up the robot from rest mode",
+                    "responses": {
+                        "200": {
+                            "description": "Robot woke up",
+                            "schema": {
+                                "$ref": "#/definitions/SuccessResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/robot/autonomous_life/state": {
+                "post": {
+                    "tags": ["Robot Control"],
+                    "summary": "Set autonomous life state",
+                    "description": "Set the autonomous life state of the robot. Valid values are: 'disabled', 'solitary', 'interactive', 'safeguard'",
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": False,
+                            "schema": {
+                                "$ref": "#/definitions/AutonomousLifeRequest"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Autonomous life state set",
+                            "schema": {
+                                "$ref": "#/definitions/SuccessResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid parameters",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/robot/joints/{chain}/angles": {
+                "get": {
+                    "tags": ["Robot Control"],
+                    "summary": "Get current joint angles for a specified chain",
+                    "description": "Get current joint angles for a specified chain. Chain can be one of: Head, Body, LArm, RArm, LLeg, RLeg",
+                    "parameters": [
+                        {
+                            "name": "chain",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["Head", "Body", "LArm", "RArm", "LLeg", "RLeg"],
+                            "description": "Joint chain to retrieve angles for"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Joint angles for chain retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/JointAnglesResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid chain parameter",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/robot/joints/{chain}/names": {
+                "get": {
+                    "tags": ["Robot Control"],
+                    "summary": "Get joint names for a specified chain",
+                    "description": "Get joint names for a specified chain. Chain can be one of: Head, Body, LArm, RArm, LLeg, RLeg",
+                    "parameters": [
+                        {
+                            "name": "chain",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["Head", "Body", "LArm", "RArm", "LLeg", "RLeg"],
+                            "description": "Joint chain to retrieve names for"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Joint names for chain retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/JointNamesResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid chain parameter",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
                             }
                         },
                         "502": {
@@ -601,6 +733,91 @@ def get_swagger_spec(api_version):
                     }
                 }
             },
+            "/vision/{camera}/{resolution}": {
+                "get": {
+                    "tags": ["Vision"],
+                    "summary": "Get camera image",
+                    "description": "Capture and return an image from the specified NAO camera",
+                    "parameters": [
+                        {
+                            "name": "camera",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["top", "bottom"],
+                            "description": "Camera to use: 'top' for forward camera, 'bottom' for downward camera"
+                        },
+                        {
+                            "name": "resolution",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["qqqqvga", "qqvga", "qqqvga", "qvga", "vga", "hvga"],
+                            "description": "Image resolution (qqqqvga=40x30, qqvga=80x60, qqqvga=160x120, qvga=320x240, vga=640x480, hvga=1280x960)"
+                        },
+                        {
+                            "name": "format",
+                            "in": "query",
+                            "required": False,
+                            "type": "string",
+                            "enum": ["jpeg", "json", "raw"],
+                            "default": "jpeg",
+                            "description": "Response format: 'jpeg' for JPEG image data, 'json' for JSON with base64 encoded image, 'raw' for raw image data"
+                        }
+                    ],
+                    "produces": ["image/jpeg", "application/json", "application/octet-stream"],
+                    "responses": {
+                        "200": {
+                            "description": "Camera image retrieved",
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "file",
+                                        "format": "binary",
+                                        "description": "Raw image data when format=raw"
+                                    },
+                                    {
+                                        "$ref": "#/definitions/VisionResponse",
+                                        "description": "JSON response when format=json"
+                                    },
+                                    {
+                                        "type": "file",
+                                        "format": "binary",
+                                        "description": "JPEG image data when format=jpeg"
+                                    }
+                                ]
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid camera, resolution, or format parameter",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/vision/resolutions": {
+                "get": {
+                    "tags": ["Vision"],
+                    "summary": "Get available camera resolutions",
+                    "description": "Get list of available camera resolutions and options",
+                    "responses": {
+                        "200": {
+                            "description": "Available camera options retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/VisionResolutionsResponse"
+                            }
+                        }
+                    }
+                }
+            },
             "/config/duration": {
                 "post": {
                     "tags": ["Configuration"],
@@ -771,6 +988,117 @@ def get_swagger_spec(api_version):
                         }
                     }
                 }
+            },
+            "/behaviour/execute": {
+                "post": {
+                    "tags": ["Behaviours"],
+                    "summary": "Execute a behavior on the robot",
+                    "description": "Execute a behavior using the robot's behavior manager",
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": True,
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourExecuteRequest"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Behaviour executed successfully",
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid parameters",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/behaviour/{behaviour_type}": {
+                "get": {
+                    "tags": ["Behaviours"],
+                    "summary": "Get list of behaviours",
+                    "description": "Get list of all installed, default, or running behaviours on the robot",
+                    "parameters": [
+                        {
+                            "name": "behaviour_type",
+                            "in": "path",
+                            "required": True,
+                            "type": "string",
+                            "enum": ["installed", "default", "running"],
+                            "description": "Type of behaviours to retrieve: 'installed' for all installed behaviours, 'default' for default behaviours, 'running' for currently running behaviours"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Available behaviours retrieved",
+                            "schema": {
+                                "$ref": "#/definitions/BehavioursListResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid behaviour type",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "/behaviour/default": {
+                "post": {
+                    "tags": ["Behaviours"],
+                    "summary": "Set a behaviour as default",
+                    "description": "Add or remove a behaviour from the default behaviours list",
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "in": "body",
+                            "required": True,
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourDefaultRequest"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Behaviour default status updated",
+                            "schema": {
+                                "$ref": "#/definitions/BehaviourResponse"
+                            }
+                        },
+                        "400": {
+                            "description": "Invalid parameters",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        },
+                        "502": {
+                            "description": "Robot not connected",
+                            "schema": {
+                                "$ref": "#/definitions/ErrorResponse"
+                            }
+                        }
+                    }
+                }
             }
         },
         "definitions": {
@@ -784,11 +1112,11 @@ def get_swagger_spec(api_version):
                             "robot_connected": {"type": "boolean"},
                             "robot_ip": {"type": "string"},
                             "battery_level": {"type": "integer"},
-                            "temperature": {"type": "number"},
-                            "stiffness_enabled": {"type": "boolean"},
                             "current_posture": {"type": "string"},
                             "active_operations": {"type": "array", "items": {"type": "object"}},
-                            "api_version": {"type": "string"}
+                            "api_version": {"type": "string"},
+                            "autonomous_life_state": {"type": "string"},
+                            "awake": {"type": "boolean"}
                         }
                     },
                     "message": {"type": "string"},
@@ -839,44 +1167,74 @@ def get_swagger_spec(api_version):
                     "timestamp": {"type": "string"}
                 }
             },
+            "AutonomousLifeRequest": {
+                "type": "object",
+                "properties": {
+                    "state": {
+                        "type": "string",
+                        "enum": ["disabled", "solitary", "interactive", "safeguard"],
+                        "default": "disabled"
+                    }
+                }
+            },
             "StandRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"},
-                    "variant": {"type": "string"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5},
+                    "variant": {
+                        "type": "string",
+                        "enum": ["Stand", "StandInit", "StandZero"],
+                        "default": "Stand"
+                    }
                 }
             },
             "SitRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"},
-                    "variant": {"type": "string"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5},
+                    "variant": {
+                        "type": "string",
+                        "enum": ["Sit", "SitRelax"],
+                        "default": "Sit"
+                    }
                 }
             },
             "SpeedRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5}
                 }
             },
             "LieRequest": {
                 "type": "object",
                 "properties": {
-                    "speed": {"type": "number"},
-                    "position": {"type": "string"}
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5},
+                    "position": {
+                        "type": "string",
+                        "enum": ["back", "belly"],
+                        "default": "back"
+                    }
                 }
             },
             "ArmsPresetRequest": {
                 "type": "object",
                 "properties": {
                     "duration": {"type": "number"},
-                    "position": {"type": "string"},
-                    "arms": {"type": "string"},
+                    "position": {
+                        "type": "string",
+                        "enum": ["up", "down", "forward", "out", "back"],
+                        "default": "up"
+                    },
+                    "arms": {
+                        "type": "string",
+                        "enum": ["both", "left", "right"],
+                        "default": "both"
+                    },
                     "offset": {
                         "type": "object",
                         "properties": {
-                            "shoulder_pitch": {"type": "number"},
-                            "shoulder_roll": {"type": "number"}
+                            "shoulder_pitch": {"type": "number", "default": 0},
+                            "shoulder_roll": {"type": "number", "default": 0}
                         }
                     }
                 }
@@ -885,16 +1243,22 @@ def get_swagger_spec(api_version):
                 "type": "object",
                 "properties": {
                     "duration": {"type": "number"},
-                    "left_hand": {"type": "string"},
-                    "right_hand": {"type": "string"}
+                    "left_hand": {
+                        "type": "string",
+                        "enum": ["open", "close"]
+                    },
+                    "right_hand": {
+                        "type": "string",
+                        "enum": ["open", "close"]
+                    }
                 }
             },
             "HeadPositionRequest": {
                 "type": "object",
                 "properties": {
                     "duration": {"type": "number"},
-                    "yaw": {"type": "number"},
-                    "pitch": {"type": "number"}
+                    "yaw": {"type": "number", "minimum": -120, "maximum": 120, "default": 0},
+                    "pitch": {"type": "number", "minimum": -40, "maximum": 30, "default": 0}
                 }
             },
             "SpeechRequest": {
@@ -902,8 +1266,8 @@ def get_swagger_spec(api_version):
                 "required": ["text"],
                 "properties": {
                     "text": {"type": "string"},
-                    "blocking": {"type": "boolean"},
-                    "animated": {"type": "boolean"}
+                    "blocking": {"type": "boolean", "default": False},
+                    "animated": {"type": "boolean", "default": False}
                 }
             },
             "LEDsRequest": {
@@ -913,10 +1277,10 @@ def get_swagger_spec(api_version):
                     "leds": {
                         "type": "object",
                         "properties": {
-                            "eyes": {"type": "string"},
-                            "ears": {"type": "string"},
-                            "chest": {"type": "string"},
-                            "feet": {"type": "string"}
+                            "eyes": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"},
+                            "ears": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"},
+                            "chest": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"},
+                            "feet": {"type": "string", "description": "Hex color code (e.g., '#FF0000')"}
                         }
                     }
                 }
@@ -924,18 +1288,22 @@ def get_swagger_spec(api_version):
             "WalkStartRequest": {
                 "type": "object",
                 "properties": {
-                    "x": {"type": "number"},
-                    "y": {"type": "number"},
-                    "theta": {"type": "number"},
-                    "speed": {"type": "number"}
+                    "x": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.0},
+                    "y": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.0},
+                    "theta": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.0},
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.5}
                 }
             },
             "WalkPresetRequest": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string"},
-                    "duration": {"type": "number"},
-                    "speed": {"type": "number"}
+                    "action": {
+                        "type": "string",
+                        "enum": ["forward", "backward", "turn_left", "turn_right"],
+                        "default": "forward"
+                    },
+                    "duration": {"type": "number", "default": 3.0},
+                    "speed": {"type": "number", "minimum": 0.1, "maximum": 1.0, "default": 1.0}
                 }
             },
             "SonarResponse": {
@@ -1047,6 +1415,145 @@ def get_swagger_spec(api_version):
                             "executed_steps": {
                                 "type": "array",
                                 "items": {"type": "object"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "VisionResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "camera": {"type": "string"},
+                            "resolution": {"type": "string"},
+                            "colorspace": {"type": "integer"},
+                            "width": {"type": "integer"},
+                            "height": {"type": "integer"},
+                            "channels": {"type": "integer"},
+                            "image_data": {"type": "string", "description": "Base64 encoded image data"},
+                            "encoding": {"type": "string"}
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "VisionResolutionsResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "resolutions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "id": {"type": "integer"},
+                                        "dimensions": {"type": "string"}
+                                    }
+                                }
+                            },
+                            "cameras": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            },
+                            "colorspaces": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "BehaviourExecuteRequest": {
+                "type": "object",
+                "required": ["behaviour"],
+                "properties": {
+                    "behaviour": {"type": "string", "description": "Name of the behaviour to execute"},
+                    "blocking": {"type": "boolean", "default": True, "description": "Whether to block until behaviour completes"}
+                }
+            },
+            "BehaviourResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "behaviour": {"type": "string"},
+                            "blocking": {"type": "boolean"}
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "BehavioursListResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "behaviours": {
+                                "type": "array",
+                                "items": {"type": "string"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "BehaviourDefaultRequest": {
+                "type": "object",
+                "required": ["behaviour"],
+                "properties": {
+                    "behaviour": {"type": "string", "description": "Name of the behaviour to set as default"},
+                    "default": {"type": "boolean", "default": True, "description": "Whether to set the behaviour as default (true) or remove it from defaults (false)"}
+                }
+            },
+            "JointAnglesResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "chain": {"type": "string", "description": "The joint chain name"},
+                            "joints": {
+                                "type": "object",
+                                "description": "Dictionary mapping joint names to their current angles in radians",
+                                "additionalProperties": {"type": "number"}
+                            }
+                        }
+                    },
+                    "message": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                }
+            },
+            "JointNamesResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "chain": {"type": "string", "description": "The joint chain name"},
+                            "joint_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Array of joint names in the chain"
                             }
                         }
                     },
