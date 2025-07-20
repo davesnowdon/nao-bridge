@@ -26,7 +26,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -56,7 +55,7 @@ docs = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/davesnowdon/nao-bridge/clients/python#readme"
+Documentation = "https://github.com/davesnowdon/nao-bridge/tree/main/clients/python#readme"
 Issues = "https://github.com/davesnowdon/nao-bridge/issues"
 Source = "https://github.com/davesnowdon/nao-bridge"
 
@@ -101,7 +100,7 @@ dependencies = [
 ]
 
 [tool.hatch.envs.lint.scripts]
-typing = "mypy --install-types --non-interactive {args:src/nao_bridge_client tests}"
+typing = "mypy --install-types --non-interactive {args:nao_bridge_client tests}"
 style = [
     "ruff {args:.}",
     "black --check --diff {args:.}",
@@ -117,23 +116,20 @@ all = [
 ]
 
 [tool.black]
-target-version = ["py37"]
+target-version = ["py38"]
 line-length = 88
 
 [tool.ruff]
-target-version = "py37"
+target-version = "py38"
 line-length = 88
 
 [tool.coverage.run]
 source_pkgs = ["nao_bridge_client", "tests"]
 branch = true
 parallel = true
-omit = [
-    "src/nao_bridge_client/__about__.py",
-]
 
 [tool.coverage.paths]
-nao_bridge_client = ["src/nao_bridge_client", "*/nao-bridge-client/src/nao_bridge_client"]
+nao_bridge_client = ["nao_bridge_client", "*/nao-bridge-client/nao_bridge_client"]
 tests = ["tests", "*/nao-bridge-client/tests"]
 
 [tool.coverage.report]
