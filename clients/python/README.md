@@ -182,3 +182,11 @@ The client is based on the OpenAPI/Swagger specification available at:
 ## License
 
 This client is part of the NAO Bridge project and follows the same license terms. 
+
+## Installing from test.pypi.org
+
+Allow main index as fallback
+
+```bash
+pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ nao-bridge-client
+```
