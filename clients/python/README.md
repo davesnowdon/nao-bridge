@@ -1,22 +1,13 @@
 # NAO Bridge Client
 
-This directory contains a modern Python 3 client for the NAO Bridge HTTP API.
-
-## Features
-
-- **Modern Python 3**: Uses type annotations, dataclasses, and modern Python idioms
-- **Type Safety**: Full type hints for all request/response models
-- **Error Handling**: Proper exception handling with custom `NAOBridgeError`
-- **Context Manager**: Supports `with` statement for automatic cleanup
-- **Session Management**: Efficient HTTP session reuse with `requests.Session`
-- **Complete API Coverage**: All endpoints from the swagger specification
+This directory contains a  Python 3 client for the NAO Bridge HTTP API.
 
 ## Installation
 
-1. Install the required dependencies:
+1. Install the client package
 
 ```bash
-pip install -r requirements.txt
+pip install nao-bridge-client
 ```
 
 ## Quick Start

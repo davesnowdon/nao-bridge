@@ -1,177 +1,68 @@
-#!/usr/bin/env python3
 """
 NAO Bridge Client
 
 A modern Python 3 client for the NAO Bridge HTTP API.
 Provides type-safe access to all robot control endpoints.
 
-Author: Generated from swagger specification
-Date: 2025
+Author: Dave Snowdon  
+Date: July 2025
 """
 
 from __future__ import annotations
 
-import json
-import time
-from dataclasses import dataclass, field
+import asyncio
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urljoin
 
-import requests
-from requests import Response
+import httpx
+from pydantic import BaseModel, Field, ConfigDict
 
 
-@dataclass
-class DurationRequest:
-    """Request model for duration-based operations"""
-    duration: Optional[float] = None
+# Exception hierarchy
+class NAOBridgeError(Exception):
+    """Base exception for NAO Bridge client errors."""
+    pass
 
 
-@dataclass
-class StandRequest:
-    """Request model for standing posture"""
-    speed: Optional[float] = None
-    variant: Optional[str] = None
+class NAOBridgeAPIError(NAOBridgeError):
+    """API returned an error response."""
+    
+    def __init__(self, message: str, code: str | None = None, details: Dict[str, Any] | None = None):
+        self.code = code
+        self.details = details or {}
+        super().__init__(message)
 
 
-@dataclass
-class SitRequest:
-    """Request model for sitting posture"""
-    speed: Optional[float] = None
-    variant: Optional[str] = None
+class NAOBridgeNetworkError(NAOBridgeError):
+    """Network or HTTP-level error."""
+    pass
 
 
-@dataclass
-class SpeedRequest:
-    """Request model for speed-based operations"""
-    speed: Optional[float] = None
+# Pydantic models for structured data
+class StatusData(BaseModel):
+    """Robot status information."""
+    model_config = ConfigDict(extra='allow')  # Allow additional fields from API
+    
+    robot_connected: bool = False
+    robot_ip: str = "unknown"
+    battery_level: int = 0
+    current_posture: str = "unknown"
+    api_version: str = "1.0"
+    autonomous_life_state: str | None = None
+    awake: bool | None = None
+    active_operations: List[Dict[str, Any]] = Field(default_factory=list)
 
 
-@dataclass
-class LieRequest:
-    """Request model for lying posture"""
-    speed: Optional[float] = None
-    position: Optional[str] = None
-
-
-@dataclass
-class ArmsPresetRequest:
-    """Request model for arm preset positions"""
-    duration: Optional[float] = None
-    position: Optional[str] = None
-    arms: Optional[str] = None
-    offset: Optional[Dict[str, float]] = None
-
-
-@dataclass
-class HandsRequest:
-    """Request model for hand control"""
-    duration: Optional[float] = None
-    left_hand: Optional[str] = None
-    right_hand: Optional[str] = None
-
-
-@dataclass
-class HeadPositionRequest:
-    """Request model for head positioning"""
-    duration: Optional[float] = None
-    yaw: Optional[float] = None
-    pitch: Optional[float] = None
-
-
-@dataclass
-class SpeechRequest:
-    """Request model for speech commands"""
-    text: str
-    blocking: Optional[bool] = None
-    animated: Optional[bool] = None
-
-
-@dataclass
-class LEDsRequest:
-    """Request model for LED control"""
-    duration: Optional[float] = None
-    leds: Optional[Dict[str, str]] = None
-
-
-@dataclass
-class WalkStartRequest:
-    """Request model for walking commands"""
-    x: Optional[float] = None
-    y: Optional[float] = None
-    theta: Optional[float] = None
-    speed: Optional[float] = None
-
-
-@dataclass
-class WalkPresetRequest:
-    """Request model for preset walking patterns"""
-    action: Optional[str] = None
-    duration: Optional[float] = None
-    speed: Optional[float] = None
-
-
-@dataclass
-class AnimationExecuteRequest:
-    """Request model for animation execution"""
-    animation: str
-    parameters: Optional[Dict[str, Any]] = None
-
-
-@dataclass
-class SequenceRequest:
-    """Request model for movement sequences"""
-    sequence: List[Dict[str, Any]]
-    blocking: Optional[bool] = None
-
-
-@dataclass
-class AutonomousLifeRequest:
-    """Request model for autonomous life state"""
-    state: Optional[str] = None
-
-
-@dataclass
-class BehaviourExecuteRequest:
-    """Request model for behaviour execution"""
-    behaviour: str
-    blocking: Optional[bool] = None
-
-
-@dataclass
-class BehaviourDefaultRequest:
-    """Request model for setting default behaviours"""
-    behaviour: str
-    default: Optional[bool] = None
-
-
-@dataclass
-class StatusData:
-    """Status response data"""
-    robot_connected: bool
-    robot_ip: str
-    battery_level: int
-    temperature: float
-    stiffness_enabled: bool
-    current_posture: str
-    active_operations: List[Dict[str, Any]]
-    api_version: str
-    autonomous_life_state: Optional[str] = None
-    awake: Optional[bool] = None
-
-
-@dataclass
-class SonarData:
-    """Sonar sensor data"""
+class SonarData(BaseModel):
+    """Sonar sensor readings."""
     left: float
     right: float
-    units: str
+    units: str = "meters"
     timestamp: str
 
 
-@dataclass
-class VisionData:
-    """Vision camera data"""
+class VisionData(BaseModel):
+    """Camera image metadata."""
     camera: str
     resolution: str
     colorspace: int
@@ -179,573 +70,373 @@ class VisionData:
     height: int
     channels: int
     image_data: str
-    encoding: str
+    encoding: str = "base64"
 
 
-@dataclass
-class VisionResolutionsData:
-    """Vision resolutions data"""
-    resolutions: List[Dict[str, Any]]
-    cameras: List[str]
-    colorspaces: List[str]
-
-
-@dataclass
-class JointAnglesData:
-    """Joint angles data"""
+class JointAnglesData(BaseModel):
+    """Joint angle information."""
     chain: str
     joints: Dict[str, float]
 
 
-@dataclass
-class JointNamesData:
-    """Joint names data"""
-    chain: str
-    joint_names: List[str]
-
-
-@dataclass
-class BehavioursData:
-    """Behaviours data"""
-    behaviours: List[str]
-
-
-@dataclass
-class ErrorInfo:
-    """Error information"""
-    code: str
-    message: str
-    details: Optional[Dict[str, Any]] = None
-
-
-@dataclass
-class ApiResponse:
-    """Base API response"""
-    success: bool
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-
-
-@dataclass
-class SuccessResponse:
-    """Success response"""
+# Response models
+class BaseResponse(BaseModel):
+    """Base response structure."""
     success: bool = True
-    data: Optional[Dict[str, Any]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+    message: str | None = None
+    timestamp: str | None = None
 
 
-@dataclass
-class ErrorResponse:
-    """Error response"""
-    success: bool = False
-    error: Optional[ErrorInfo] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class StatusResponse(BaseResponse):
+    """Status endpoint response."""
+    data: StatusData
 
 
-@dataclass
-class StatusResponse:
-    """Status response"""
-    success: bool = True
-    data: Optional[StatusData] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class SonarResponse(BaseResponse):
+    """Sonar endpoint response."""
+    data: SonarData
 
 
-@dataclass
-class SonarResponse:
-    """Sonar response"""
-    success: bool = True
-    data: Optional[SonarData] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class VisionResponse(BaseResponse):
+    """Vision endpoint response."""
+    data: VisionData
 
 
-@dataclass
-class VisionResponse:
-    """Vision response"""
-    success: bool = True
-    data: Optional[VisionData] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class JointAnglesResponse(BaseResponse):
+    """Joint angles response."""
+    data: JointAnglesData
 
 
-@dataclass
-class VisionResolutionsResponse:
-    """Vision resolutions response"""
-    success: bool = True
-    data: Optional[VisionResolutionsData] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class SuccessResponse(BaseResponse):
+    """Generic success response."""
+    data: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class JointAnglesResponse:
-    """Joint angles response"""
-    success: bool = True
-    data: Optional[JointAnglesData] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+# Request models
+class DurationRequest(BaseModel):
+    """Duration parameter."""
+    duration: float | None = None
 
 
-@dataclass
-class JointNamesResponse:
-    """Joint names response"""
-    success: bool = True
-    data: Optional[JointNamesData] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class PostureRequest(BaseModel):
+    """Posture change request."""
+    speed: float | None = None
+    variant: str | None = None
 
 
-@dataclass
-class AnimationsListResponse:
-    """Animations list response"""
-    success: bool = True
-    data: Optional[Dict[str, List[str]]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class SpeechRequest(BaseModel):
+    """Speech request."""
+    text: str
+    blocking: bool | None = None
+    animated: bool | None = None
 
 
-@dataclass
-class AnimationResponse:
-    """Animation response"""
-    success: bool = True
-    data: Optional[Dict[str, Any]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
+class WalkRequest(BaseModel):
+    """Walking parameters."""
+    x: float | None = None
+    y: float | None = None
+    theta: float | None = None
+    speed: float | None = None
 
 
-@dataclass
-class SequenceResponse:
-    """Sequence response"""
-    success: bool = True
-    data: Optional[Dict[str, List[Dict[str, Any]]]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-
-
-@dataclass
-class OperationsResponse:
-    """Operations response"""
-    success: bool = True
-    data: Optional[Dict[str, List[Dict[str, Any]]]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-
-
-@dataclass
-class OperationResponse:
-    """Operation response"""
-    success: bool = True
-    data: Optional[Dict[str, Any]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-
-
-@dataclass
-class DurationResponse:
-    """Duration response"""
-    success: bool = True
-    data: Optional[Dict[str, float]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-
-
-@dataclass
-class BehaviourResponse:
-    """Behaviour response"""
-    success: bool = True
-    data: Optional[Dict[str, Any]] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-
-
-@dataclass
-class BehavioursListResponse:
-    """Behaviours list response"""
-    success: bool = True
-    data: Optional[BehavioursData] = None
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-
-
-class NAOBridgeError(Exception):
-    """Exception raised for NAO Bridge API errors"""
-    
-    def __init__(self, message: str, code: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
-        self.message = message
-        self.code = code
-        self.details = details
-        super().__init__(self.message)
+class HeadPositionRequest(BaseModel):
+    """Head positioning."""
+    yaw: float | None = None
+    pitch: float | None = None
+    duration: float | None = None
 
 
 class NAOBridgeClient:
     """
-    Modern Python 3 client for the NAO Bridge HTTP API.
+    Modern NAO Bridge HTTP API client.
     
-    Provides type-safe access to all robot control endpoints with proper error handling
-    and modern Python idioms.
+    Provides both sync and async interfaces with proper error handling,
+    type safety, and clean Python idioms.
     """
     
-    def __init__(self, base_url: str = "http://localhost:3000", timeout: int = 30):
+    def __init__(
+        self, 
+        base_url: str = "http://localhost:3000",
+        timeout: float = 30.0,
+        **httpx_kwargs
+    ):
         """
-        Initialize the NAO Bridge client.
+        Initialize the client.
         
         Args:
-            base_url: Base URL of the NAO Bridge API server
+            base_url: NAO Bridge server URL
             timeout: Request timeout in seconds
+            **httpx_kwargs: Additional arguments passed to httpx.Client
         """
         self.base_url = base_url.rstrip('/')
         self.api_base = f"{self.base_url}/api/v1/"
-        self.timeout = timeout
-        self.session = requests.Session()
-        self.session.headers.update({
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        })
+        
+        # Configure httpx client
+        client_kwargs = {
+            'timeout': timeout,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            **httpx_kwargs
+        }
+        
+        self._client = httpx.Client(**client_kwargs)
+        self._async_client: httpx.AsyncClient | None = None
     
-    def _make_request(
+    def _get_async_client(self) -> httpx.AsyncClient:
+        """Get or create async client."""
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(
+                timeout=self._client.timeout,
+                headers=self._client.headers
+            )
+        return self._async_client
+    
+    def _handle_response(self, response: httpx.Response) -> Dict[str, Any]:
+        """Process HTTP response and handle errors."""
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise NAOBridgeNetworkError(f"HTTP {e.response.status_code}: {e.response.text}")
+        except httpx.RequestError as e:
+            raise NAOBridgeNetworkError(f"Network error: {e}")
+        
+        try:
+            data = response.json()
+        except Exception as e:
+            raise NAOBridgeNetworkError(f"Invalid JSON response: {e}")
+        
+        # Check API-level errors
+        if not data.get('success', True):
+            error_info = data.get('error', {})
+            raise NAOBridgeAPIError(
+                message=error_info.get('message', 'Unknown API error'),
+                code=error_info.get('code'),
+                details=error_info.get('details')
+            )
+        
+        return data
+    
+    def _request(
         self, 
         method: str, 
         endpoint: str, 
-        data: Optional[Union[Dict[str, Any], Any]] = None
+        data: BaseModel | Dict[str, Any] | None = None
     ) -> Dict[str, Any]:
-        """
-        Make an HTTP request to the API.
-        
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            endpoint: API endpoint path
-            data: Request data (will be JSON serialized)
-            
-        Returns:
-            API response as dictionary
-            
-        Raises:
-            NAOBridgeError: If the API returns an error
-            requests.RequestException: For network/HTTP errors
-        """
+        """Make synchronous HTTP request."""
         url = urljoin(self.api_base, endpoint)
         
-        try:
-            if data is not None:
-                # Handle dataclass objects
-                if hasattr(data, '__dict__'):
-                    data = {k: v for k, v in data.__dict__.items() if v is not None}
-                elif not isinstance(data, dict):
-                    data = {'data': data}
-                
-                # Remove None values
-                if isinstance(data, dict):
-                    data = {k: v for k, v in data.items() if v is not None}
-            
-            response = self.session.request(
-                method=method,
-                url=url,
-                json=data,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            if not result.get('success', True):
-                error_data = result.get('error', {})
-                raise NAOBridgeError(
-                    message=error_data.get('message', 'Unknown error'),
-                    code=error_data.get('code'),
-                    details=error_data.get('details')
-                )
-            
-            return result
-            
-        except requests.exceptions.RequestException as e:
-            raise NAOBridgeError(f"Network error: {e}")
-        except json.JSONDecodeError as e:
-            raise NAOBridgeError(f"Invalid JSON response: {e}")
+        # Serialize data
+        json_data = None
+        if data is not None:
+            if isinstance(data, BaseModel):
+                json_data = data.model_dump(exclude_none=True)
+            else:
+                json_data = {k: v for k, v in data.items() if v is not None}
+        
+        response = self._client.request(method, url, json=json_data)
+        return self._handle_response(response)
+    
+    async def _async_request(
+        self, 
+        method: str, 
+        endpoint: str, 
+        data: BaseModel | Dict[str, Any] | None = None
+    ) -> Dict[str, Any]:
+        """Make asynchronous HTTP request."""
+        url = urljoin(self.api_base, endpoint)
+        client = self._get_async_client()
+        
+        # Serialize data
+        json_data = None
+        if data is not None:
+            if isinstance(data, BaseModel):
+                json_data = data.model_dump(exclude_none=True)
+            else:
+                json_data = {k: v for k, v in data.items() if v is not None}
+        
+        response = await client.request(method, url, json=json_data)
+        return self._handle_response(response)
+    
+    # === SYNC API ===
     
     def get_status(self) -> StatusResponse:
-        """Get robot and API status."""
-        response = self._make_request('GET', 'status')
-        return StatusResponse(**response)
+        """Get robot status."""
+        response = self._request('GET', 'status')
+        return StatusResponse.model_validate(response)
     
-    def enable_stiffness(self, duration: Optional[float] = None) -> SuccessResponse:
+    def enable_stiffness(self, duration: float | None = None) -> SuccessResponse:
         """Enable robot stiffness."""
         data = DurationRequest(duration=duration) if duration else None
-        response = self._make_request('POST', 'robot/stiff', data)
-        return SuccessResponse(**response)
+        response = self._request('POST', 'robot/stiff', data)
+        return SuccessResponse.model_validate(response)
     
     def disable_stiffness(self) -> SuccessResponse:
         """Disable robot stiffness."""
-        response = self._make_request('POST', 'robot/relax')
-        return SuccessResponse(**response)
+        response = self._request('POST', 'robot/relax')
+        return SuccessResponse.model_validate(response)
     
-    def put_in_rest(self) -> SuccessResponse:
-        """Put robot in rest mode."""
-        response = self._make_request('POST', 'robot/rest')
-        return SuccessResponse(**response)
-    
-    def wake_up(self) -> SuccessResponse:
-        """Wake up robot from rest mode."""
-        response = self._make_request('POST', 'robot/wake')
-        return SuccessResponse(**response)
-    
-    def set_autonomous_life_state(self, state: str) -> SuccessResponse:
-        """Set autonomous life state."""
-        data = AutonomousLifeRequest(state=state)
-        response = self._make_request('POST', 'robot/autonomous_life/state', data)
-        return SuccessResponse(**response)
-    
-    def get_joint_angles(self, chain: str) -> JointAnglesResponse:
-        """Get current joint angles for a specified chain."""
-        response = self._make_request('GET', f'robot/joints/{chain}/angles')
-        return JointAnglesResponse(**response)
-    
-    def get_joint_names(self, chain: str) -> JointNamesResponse:
-        """Get joint names for a specified chain."""
-        response = self._make_request('GET', f'robot/joints/{chain}/names')
-        return JointNamesResponse(**response)
-    
-    def stand(self, speed: Optional[float] = None, variant: Optional[str] = None) -> SuccessResponse:
+    def stand(self, speed: float | None = None, variant: str | None = None) -> SuccessResponse:
         """Move robot to standing position."""
-        data = StandRequest(speed=speed, variant=variant)
-        response = self._make_request('POST', 'posture/stand', data)
-        return SuccessResponse(**response)
+        data = PostureRequest(speed=speed, variant=variant)
+        response = self._request('POST', 'posture/stand', data)
+        return SuccessResponse.model_validate(response)
     
-    def sit(self, speed: Optional[float] = None, variant: Optional[str] = None) -> SuccessResponse:
+    def sit(self, speed: float | None = None, variant: str | None = None) -> SuccessResponse:
         """Move robot to sitting position."""
-        data = SitRequest(speed=speed, variant=variant)
-        response = self._make_request('POST', 'posture/sit', data)
-        return SuccessResponse(**response)
+        data = PostureRequest(speed=speed, variant=variant)
+        response = self._request('POST', 'posture/sit', data)
+        return SuccessResponse.model_validate(response)
     
-    def crouch(self, speed: Optional[float] = None) -> SuccessResponse:
-        """Move robot to crouching position."""
-        data = SpeedRequest(speed=speed)
-        response = self._make_request('POST', 'posture/crouch', data)
-        return SuccessResponse(**response)
-    
-    def lie(self, speed: Optional[float] = None, position: Optional[str] = None) -> SuccessResponse:
-        """Move robot to lying position."""
-        data = LieRequest(speed=speed, position=position)
-        response = self._make_request('POST', 'posture/lie', data)
-        return SuccessResponse(**response)
-    
-    def move_arms_preset(
-        self, 
-        position: Optional[str] = None,
-        duration: Optional[float] = None,
-        arms: Optional[str] = None,
-        offset: Optional[Dict[str, float]] = None
-    ) -> SuccessResponse:
-        """Control arms using preset positions."""
-        data = ArmsPresetRequest(
-            position=position,
-            duration=duration,
-            arms=arms,
-            offset=offset
-        )
-        response = self._make_request('POST', 'arms/preset', data)
-        return SuccessResponse(**response)
-    
-    def control_hands(
-        self,
-        left_hand: Optional[str] = None,
-        right_hand: Optional[str] = None,
-        duration: Optional[float] = None
-    ) -> SuccessResponse:
-        """Control hand opening and closing."""
-        data = HandsRequest(
-            left_hand=left_hand,
-            right_hand=right_hand,
-            duration=duration
-        )
-        response = self._make_request('POST', 'hands/position', data)
-        return SuccessResponse(**response)
-    
-    def move_head(
-        self,
-        yaw: Optional[float] = None,
-        pitch: Optional[float] = None,
-        duration: Optional[float] = None
-    ) -> SuccessResponse:
-        """Control head positioning."""
-        data = HeadPositionRequest(yaw=yaw, pitch=pitch, duration=duration)
-        response = self._make_request('POST', 'head/position', data)
-        return SuccessResponse(**response)
-    
-    def say(
-        self,
-        text: str,
-        blocking: Optional[bool] = None,
-        animated: Optional[bool] = None
-    ) -> SuccessResponse:
+    def say(self, text: str, *, blocking: bool | None = None, animated: bool | None = None) -> SuccessResponse:
         """Make the robot speak."""
         data = SpeechRequest(text=text, blocking=blocking, animated=animated)
-        response = self._make_request('POST', 'speech/say', data)
-        return SuccessResponse(**response)
-    
-    def set_leds(
-        self,
-        leds: Optional[Dict[str, str]] = None,
-        duration: Optional[float] = None
-    ) -> SuccessResponse:
-        """Control LED colors."""
-        data = LEDsRequest(leds=leds, duration=duration)
-        response = self._make_request('POST', 'leds/set', data)
-        return SuccessResponse(**response)
-    
-    def turn_off_leds(self) -> SuccessResponse:
-        """Turn off all LEDs."""
-        response = self._make_request('POST', 'leds/off')
-        return SuccessResponse(**response)
+        response = self._request('POST', 'speech/say', data)
+        return SuccessResponse.model_validate(response)
     
     def start_walking(
-        self,
-        x: Optional[float] = None,
-        y: Optional[float] = None,
-        theta: Optional[float] = None,
-        speed: Optional[float] = None
+        self, 
+        *, 
+        x: float | None = None, 
+        y: float | None = None, 
+        theta: float | None = None, 
+        speed: float | None = None
     ) -> SuccessResponse:
-        """Start walking with specified parameters."""
-        data = WalkStartRequest(x=x, y=y, theta=theta, speed=speed)
-        response = self._make_request('POST', 'walk/start', data)
-        return SuccessResponse(**response)
+        """Start walking."""
+        data = WalkRequest(x=x, y=y, theta=theta, speed=speed)
+        response = self._request('POST', 'walk/start', data)
+        return SuccessResponse.model_validate(response)
     
     def stop_walking(self) -> SuccessResponse:
-        """Stop current walking motion."""
-        response = self._make_request('POST', 'walk/stop')
-        return SuccessResponse(**response)
+        """Stop walking."""
+        response = self._request('POST', 'walk/stop')
+        return SuccessResponse.model_validate(response)
     
-    def walk_preset(
-        self,
-        action: Optional[str] = None,
-        duration: Optional[float] = None,
-        speed: Optional[float] = None
+    def move_head(
+        self, 
+        *, 
+        yaw: float | None = None, 
+        pitch: float | None = None, 
+        duration: float | None = None
     ) -> SuccessResponse:
-        """Use predefined walking patterns."""
-        data = WalkPresetRequest(action=action, duration=duration, speed=speed)
-        response = self._make_request('POST', 'walk/preset', data)
-        return SuccessResponse(**response)
+        """Move robot head."""
+        data = HeadPositionRequest(yaw=yaw, pitch=pitch, duration=duration)
+        response = self._request('POST', 'head/position', data)
+        return SuccessResponse.model_validate(response)
     
     def get_sonar(self) -> SonarResponse:
-        """Get sonar sensor readings."""
-        response = self._make_request('GET', 'sensors/sonar')
-        return SonarResponse(**response)
+        """Get sonar readings."""
+        response = self._request('GET', 'sensors/sonar')
+        return SonarResponse.model_validate(response)
     
-    def get_camera_image(
-        self,
-        camera: str,
-        resolution: str,
-        format: str = "jpeg"
-    ) -> Union[VisionResponse, bytes]:
-        """Get camera image from specified camera."""
-        params = {'format': format} if format != "jpeg" else {}
-        url = f"{self.api_base}/vision/{camera}/{resolution}"
+    def get_joint_angles(self, chain: str) -> JointAnglesResponse:
+        """Get joint angles for chain."""
+        response = self._request('GET', f'robot/joints/{chain}/angles')
+        return JointAnglesResponse.model_validate(response)
+    
+    def get_camera_image_json(self, camera: str, resolution: str) -> VisionResponse:
+        """Get camera image as JSON with base64 data."""
+        response = self._request('GET', f'vision/{camera}/{resolution}?format=json')
+        return VisionResponse.model_validate(response)
+    
+    def get_camera_image_bytes(self, camera: str, resolution: str) -> bytes:
+        """Get camera image as raw JPEG bytes."""
+        url = urljoin(self.api_base, f'vision/{camera}/{resolution}')
+        response = self._client.get(url)
         
         try:
-            response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
-            
-            if format == "jpeg":
-                return response.content
-            elif format == "raw":
-                return response.content
-            else:  # json format
-                result = response.json()
-                if not result.get('success', True):
-                    error_data = result.get('error', {})
-                    raise NAOBridgeError(
-                        message=error_data.get('message', 'Unknown error'),
-                        code=error_data.get('code'),
-                        details=error_data.get('details')
-                    )
-                return VisionResponse(**result)
-                
-        except requests.exceptions.RequestException as e:
-            raise NAOBridgeError(f"Network error: {e}")
-        except json.JSONDecodeError as e:
-            raise NAOBridgeError(f"Invalid JSON response: {e}")
+        except httpx.HTTPStatusError as e:
+            raise NAOBridgeNetworkError(f"HTTP {e.response.status_code}: {e.response.text}")
+        
+        return response.content
     
-    def get_camera_resolutions(self) -> VisionResolutionsResponse:
-        """Get available camera resolutions."""
-        response = self._make_request('GET', 'vision/resolutions')
-        return VisionResolutionsResponse(**response)
+    # === ASYNC API ===
     
-    def set_duration(self, duration: float) -> DurationResponse:
-        """Set global movement duration."""
-        data = DurationRequest(duration=duration)
-        response = self._make_request('POST', 'config/duration', data)
-        return DurationResponse(**response)
+    async def async_get_status(self) -> StatusResponse:
+        """Get robot status (async)."""
+        response = await self._async_request('GET', 'status')
+        return StatusResponse.model_validate(response)
     
-    def get_operations(self) -> OperationsResponse:
-        """List active operations."""
-        response = self._make_request('GET', 'operations')
-        return OperationsResponse(**response)
+    async def async_say(self, text: str, *, blocking: bool | None = None, animated: bool | None = None) -> SuccessResponse:
+        """Make the robot speak (async)."""
+        data = SpeechRequest(text=text, blocking=blocking, animated=animated)
+        response = await self._async_request('POST', 'speech/say', data)
+        return SuccessResponse.model_validate(response)
     
-    def get_operation(self, operation_id: str) -> OperationResponse:
-        """Get status of specific operation."""
-        response = self._make_request('GET', f'operations/{operation_id}')
-        return OperationResponse(**response)
+    async def async_start_walking(
+        self, 
+        *, 
+        x: float | None = None, 
+        y: float | None = None, 
+        theta: float | None = None, 
+        speed: float | None = None
+    ) -> SuccessResponse:
+        """Start walking (async)."""
+        data = WalkRequest(x=x, y=y, theta=theta, speed=speed)
+        response = await self._async_request('POST', 'walk/start', data)
+        return SuccessResponse.model_validate(response)
     
-    def execute_animation(
-        self,
-        animation: str,
-        parameters: Optional[Dict[str, Any]] = None
-    ) -> AnimationResponse:
-        """Execute predefined complex animations."""
-        data = AnimationExecuteRequest(animation=animation, parameters=parameters)
-        response = self._make_request('POST', 'animations/execute', data)
-        return AnimationResponse(**response)
+    # === Context Managers ===
     
-    def get_animations(self) -> AnimationsListResponse:
-        """Get list of available animations."""
-        response = self._make_request('GET', 'animations/list')
-        return AnimationsListResponse(**response)
+    def close(self) -> None:
+        """Close HTTP clients."""
+        self._client.close()
+        if self._async_client:
+            asyncio.create_task(self._async_client.aclose())
     
-    def execute_sequence(
-        self,
-        sequence: List[Dict[str, Any]],
-        blocking: Optional[bool] = None
-    ) -> SequenceResponse:
-        """Execute a sequence of movements."""
-        data = SequenceRequest(sequence=sequence, blocking=blocking)
-        response = self._make_request('POST', 'animations/sequence', data)
-        return SequenceResponse(**response)
-    
-    def execute_behaviour(
-        self,
-        behaviour: str,
-        blocking: Optional[bool] = None
-    ) -> BehaviourResponse:
-        """Execute a behavior on the robot."""
-        data = BehaviourExecuteRequest(behaviour=behaviour, blocking=blocking)
-        response = self._make_request('POST', 'behaviour/execute', data)
-        return BehaviourResponse(**response)
-    
-    def get_behaviours(self, behaviour_type: str) -> BehavioursListResponse:
-        """Get list of behaviours by type."""
-        response = self._make_request('GET', f'behaviour/{behaviour_type}')
-        return BehavioursListResponse(**response)
-    
-    def set_behaviour_default(
-        self,
-        behaviour: str,
-        default: bool = True
-    ) -> BehaviourResponse:
-        """Set a behaviour as default."""
-        data = BehaviourDefaultRequest(behaviour=behaviour, default=default)
-        response = self._make_request('POST', 'behaviour/default', data)
-        return BehaviourResponse(**response)
-    
-    def close(self):
-        """Close the client session."""
-        self.session.close()
+    async def aclose(self) -> None:
+        """Close HTTP clients (async)."""
+        self._client.close()
+        if self._async_client:
+            await self._async_client.aclose()
     
     def __enter__(self):
-        """Context manager entry."""
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.close() 
+        self.close()
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.aclose()
+
+
+# Convenience functions for quick usage
+def get_robot_status(base_url: str = "http://localhost:3000") -> StatusData:
+    """Quick function to get robot status."""
+    with NAOBridgeClient(base_url) as client:
+        response = client.get_status()
+        return response.data
+
+
+async def async_get_robot_status(base_url: str = "http://localhost:3000") -> StatusData:
+    """Quick async function to get robot status."""
+    async with NAOBridgeClient(base_url) as client:
+        response = await client.async_get_status()
+        return response.data
+
+
+if __name__ == "__main__":
+    # Example usage
+    client = NAOBridgeClient("http://localhost:3000")
+    
+    try:
+        # Type-safe access with IDE support
+        status = client.get_status()
+        print(f"Robot connected: {status.data.robot_connected}")
+        print(f"Battery: {status.data.battery_level}%")
+        
+        # Clean API with keyword-only arguments
+        client.say("Hello, world!", animated=True)
+        client.move_head(yaw=0.5, pitch=-0.2)
+        
+    except NAOBridgeAPIError as e:
+        print(f"API Error [{e.code}]: {e}")
+    except NAOBridgeNetworkError as e:
+        print(f"Network Error: {e}")
+    finally:
+        client.close()
