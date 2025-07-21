@@ -262,7 +262,7 @@ class NAOBridgeClient:
     # === SYNC API ===
     
     def get_status(self) -> StatusResponse:
-        """Get robot status."""
+        """Get robot and AP Istatus."""
         response = self._request('GET', 'status')
         return StatusResponse.model_validate(response)
     
@@ -403,40 +403,3 @@ class NAOBridgeClient:
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.aclose()
-
-
-# Convenience functions for quick usage
-def get_robot_status(base_url: str = "http://localhost:3000") -> StatusData:
-    """Quick function to get robot status."""
-    with NAOBridgeClient(base_url) as client:
-        response = client.get_status()
-        return response.data
-
-
-async def async_get_robot_status(base_url: str = "http://localhost:3000") -> StatusData:
-    """Quick async function to get robot status."""
-    async with NAOBridgeClient(base_url) as client:
-        response = await client.async_get_status()
-        return response.data
-
-
-if __name__ == "__main__":
-    # Example usage
-    client = NAOBridgeClient("http://localhost:3000")
-    
-    try:
-        # Type-safe access with IDE support
-        status = client.get_status()
-        print(f"Robot connected: {status.data.robot_connected}")
-        print(f"Battery: {status.data.battery_level}%")
-        
-        # Clean API with keyword-only arguments
-        client.say("Hello, world!", animated=True)
-        client.move_head(yaw=0.5, pitch=-0.2)
-        
-    except NAOBridgeAPIError as e:
-        print(f"API Error [{e.code}]: {e}")
-    except NAOBridgeNetworkError as e:
-        print(f"Network Error: {e}")
-    finally:
-        client.close()
