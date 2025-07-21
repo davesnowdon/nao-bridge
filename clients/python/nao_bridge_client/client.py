@@ -146,6 +146,126 @@ class HeadPositionRequest(BaseModel):
     duration: float | None = None
 
 
+# Additional missing request models
+class AutonomousLifeRequest(BaseModel):
+    """Autonomous life state request."""
+    state: str | None = None
+
+
+class SpeedRequest(BaseModel):
+    """Speed-based operation request."""
+    speed: float | None = None
+
+
+class LieRequest(BaseModel):
+    """Lie posture request."""
+    speed: float | None = None
+    position: str | None = None
+
+
+class ArmsPresetRequest(BaseModel):
+    """Arms preset position request."""
+    duration: float | None = None
+    position: str | None = None
+    arms: str | None = None
+    offset: Dict[str, float] | None = None
+
+
+class HandsRequest(BaseModel):
+    """Hand control request."""
+    duration: float | None = None
+    left_hand: str | None = None
+    right_hand: str | None = None
+
+
+class LEDsRequest(BaseModel):
+    """LED control request."""
+    duration: float | None = None
+    leds: Dict[str, str] | None = None
+
+
+class WalkPresetRequest(BaseModel):
+    """Walk preset request."""
+    action: str | None = None
+    duration: float | None = None
+    speed: float | None = None
+
+
+class AnimationExecuteRequest(BaseModel):
+    """Animation execution request."""
+    animation: str
+    parameters: Dict[str, Any] | None = None
+
+
+class SequenceRequest(BaseModel):
+    """Movement sequence request."""
+    sequence: List[Dict[str, Any]]
+    blocking: bool | None = None
+
+
+class BehaviourExecuteRequest(BaseModel):
+    """Behaviour execution request."""
+    behaviour: str
+    blocking: bool | None = None
+
+
+class BehaviourDefaultRequest(BaseModel):
+    """Behaviour default setting request."""
+    behaviour: str
+    default: bool | None = None
+
+
+# Additional missing response models
+class DurationResponse(BaseResponse):
+    """Duration response."""
+    data: Dict[str, float] = Field(default_factory=dict)
+
+
+class OperationsResponse(BaseResponse):
+    """Operations list response."""
+    data: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+
+
+class OperationResponse(BaseResponse):
+    """Single operation response."""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AnimationResponse(BaseResponse):
+    """Animation response."""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AnimationsListResponse(BaseResponse):
+    """Animations list response."""
+    data: Dict[str, List[str]] = Field(default_factory=dict)
+
+
+class SequenceResponse(BaseResponse):
+    """Sequence response."""
+    data: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+
+
+class VisionResolutionsResponse(BaseResponse):
+    """Vision resolutions response."""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class BehaviourResponse(BaseResponse):
+    """Behaviour response."""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class BehavioursListResponse(BaseResponse):
+    """Behaviours list response."""
+    data: Dict[str, List[str]] = Field(default_factory=dict)
+
+
+class JointNamesResponse(BaseResponse):
+    """Joint names response."""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
 class NAOBridgeClient:
     """
     Modern NAO Bridge HTTP API client.
@@ -352,6 +472,188 @@ class NAOBridgeClient:
         
         return response.content
     
+    # === ADDITIONAL ROBOT CONTROL METHODS ===
+    
+    def put_in_rest(self) -> SuccessResponse:
+        """Put robot in rest mode."""
+        response = self._request('POST', 'robot/rest')
+        return SuccessResponse.model_validate(response)
+    
+    def wake_up(self) -> SuccessResponse:
+        """Wake up robot from rest mode."""
+        response = self._request('POST', 'robot/wake')
+        return SuccessResponse.model_validate(response)
+    
+    def set_autonomous_life_state(self, state: str) -> SuccessResponse:
+        """Set autonomous life state."""
+        data = AutonomousLifeRequest(state=state)
+        response = self._request('POST', 'robot/autonomous_life/state', data)
+        return SuccessResponse.model_validate(response)
+    
+    def get_joint_names(self, chain: str) -> JointNamesResponse:
+        """Get joint names for a specified chain."""
+        response = self._request('GET', f'robot/joints/{chain}/names')
+        return JointNamesResponse.model_validate(response)
+    
+    # === ADDITIONAL POSTURE CONTROL METHODS ===
+    
+    def crouch(self, speed: float | None = None) -> SuccessResponse:
+        """Move robot to crouching position."""
+        data = PostureRequest(speed=speed) if speed else None
+        response = self._request('POST', 'posture/crouch', data)
+        return SuccessResponse.model_validate(response)
+    
+    def lie(self, speed: float | None = None, position: str | None = None) -> SuccessResponse:
+        """Move robot to lying position."""
+        data = LieRequest(speed=speed, position=position)
+        response = self._request('POST', 'posture/lie', data)
+        return SuccessResponse.model_validate(response)
+    
+    # === ARM AND HAND CONTROL METHODS ===
+    
+    def move_arms_preset(
+        self, 
+        position: str | None = None,
+        duration: float | None = None,
+        arms: str | None = None,
+        offset: Dict[str, float] | None = None
+    ) -> SuccessResponse:
+        """Control arms using preset positions."""
+        data = ArmsPresetRequest(
+            position=position,
+            duration=duration,
+            arms=arms,
+            offset=offset
+        )
+        response = self._request('POST', 'arms/preset', data)
+        return SuccessResponse.model_validate(response)
+    
+    def control_hands(
+        self,
+        left_hand: str | None = None,
+        right_hand: str | None = None,
+        duration: float | None = None
+    ) -> SuccessResponse:
+        """Control hand opening and closing."""
+        data = HandsRequest(
+            left_hand=left_hand,
+            right_hand=right_hand,
+            duration=duration
+        )
+        response = self._request('POST', 'hands/position', data)
+        return SuccessResponse.model_validate(response)
+    
+    # === LED CONTROL METHODS ===
+    
+    def set_leds(
+        self,
+        leds: Dict[str, str] | None = None,
+        duration: float | None = None
+    ) -> SuccessResponse:
+        """Control LED colors."""
+        data = LEDsRequest(leds=leds, duration=duration)
+        response = self._request('POST', 'leds/set', data)
+        return SuccessResponse.model_validate(response)
+    
+    def turn_off_leds(self) -> SuccessResponse:
+        """Turn off all LEDs."""
+        response = self._request('POST', 'leds/off')
+        return SuccessResponse.model_validate(response)
+    
+    # === ADDITIONAL WALKING METHODS ===
+    
+    def walk_preset(
+        self,
+        action: str | None = None,
+        duration: float | None = None,
+        speed: float | None = None
+    ) -> SuccessResponse:
+        """Use predefined walking patterns."""
+        data = WalkPresetRequest(action=action, duration=duration, speed=speed)
+        response = self._request('POST', 'walk/preset', data)
+        return SuccessResponse.model_validate(response)
+    
+    # === VISION METHODS ===
+    
+    def get_camera_resolutions(self) -> VisionResolutionsResponse:
+        """Get available camera resolutions."""
+        response = self._request('GET', 'vision/resolutions')
+        return VisionResolutionsResponse.model_validate(response)
+    
+    # === CONFIGURATION METHODS ===
+    
+    def set_duration(self, duration: float) -> DurationResponse:
+        """Set global movement duration."""
+        data = DurationRequest(duration=duration)
+        response = self._request('POST', 'config/duration', data)
+        return DurationResponse.model_validate(response)
+    
+    # === OPERATIONS METHODS ===
+    
+    def get_operations(self) -> OperationsResponse:
+        """List active operations."""
+        response = self._request('GET', 'operations')
+        return OperationsResponse.model_validate(response)
+    
+    def get_operation(self, operation_id: str) -> OperationResponse:
+        """Get status of specific operation."""
+        response = self._request('GET', f'operations/{operation_id}')
+        return OperationResponse.model_validate(response)
+    
+    # === ANIMATIONS METHODS ===
+    
+    def execute_animation(
+        self,
+        animation: str,
+        parameters: Dict[str, Any] | None = None
+    ) -> AnimationResponse:
+        """Execute predefined complex animations."""
+        data = AnimationExecuteRequest(animation=animation, parameters=parameters)
+        response = self._request('POST', 'animations/execute', data)
+        return AnimationResponse.model_validate(response)
+    
+    def get_animations(self) -> AnimationsListResponse:
+        """Get list of available animations."""
+        response = self._request('GET', 'animations/list')
+        return AnimationsListResponse.model_validate(response)
+    
+    def execute_sequence(
+        self,
+        sequence: List[Dict[str, Any]],
+        blocking: bool | None = None
+    ) -> SequenceResponse:
+        """Execute a sequence of movements."""
+        data = SequenceRequest(sequence=sequence, blocking=blocking)
+        response = self._request('POST', 'animations/sequence', data)
+        return SequenceResponse.model_validate(response)
+    
+    # === BEHAVIOUR METHODS ===
+    
+    def execute_behaviour(
+        self,
+        behaviour: str,
+        blocking: bool | None = None
+    ) -> BehaviourResponse:
+        """Execute a behavior on the robot."""
+        data = BehaviourExecuteRequest(behaviour=behaviour, blocking=blocking)
+        response = self._request('POST', 'behaviour/execute', data)
+        return BehaviourResponse.model_validate(response)
+    
+    def get_behaviours(self, behaviour_type: str) -> BehavioursListResponse:
+        """Get list of behaviours by type."""
+        response = self._request('GET', f'behaviour/{behaviour_type}')
+        return BehavioursListResponse.model_validate(response)
+    
+    def set_behaviour_default(
+        self,
+        behaviour: str,
+        default: bool = True
+    ) -> BehaviourResponse:
+        """Set a behaviour as default."""
+        data = BehaviourDefaultRequest(behaviour=behaviour, default=default)
+        response = self._request('POST', 'behaviour/default', data)
+        return BehaviourResponse.model_validate(response)
+    
     # === ASYNC API ===
     
     async def async_get_status(self) -> StatusResponse:
@@ -377,6 +679,38 @@ class NAOBridgeClient:
         data = WalkRequest(x=x, y=y, theta=theta, speed=speed)
         response = await self._async_request('POST', 'walk/start', data)
         return SuccessResponse.model_validate(response)
+    
+    async def async_stop_walking(self) -> SuccessResponse:
+        """Stop walking (async)."""
+        response = await self._async_request('POST', 'walk/stop')
+        return SuccessResponse.model_validate(response)
+    
+    async def async_move_head(
+        self, 
+        *, 
+        yaw: float | None = None, 
+        pitch: float | None = None, 
+        duration: float | None = None
+    ) -> SuccessResponse:
+        """Move robot head (async)."""
+        data = HeadPositionRequest(yaw=yaw, pitch=pitch, duration=duration)
+        response = await self._async_request('POST', 'head/position', data)
+        return SuccessResponse.model_validate(response)
+    
+    async def async_get_sonar(self) -> SonarResponse:
+        """Get sonar readings (async)."""
+        response = await self._async_request('GET', 'sensors/sonar')
+        return SonarResponse.model_validate(response)
+    
+    async def async_get_joint_angles(self, chain: str) -> JointAnglesResponse:
+        """Get joint angles for chain (async)."""
+        response = await self._async_request('GET', f'robot/joints/{chain}/angles')
+        return JointAnglesResponse.model_validate(response)
+    
+    async def async_get_camera_image_json(self, camera: str, resolution: str) -> VisionResponse:
+        """Get camera image as JSON with base64 data (async)."""
+        response = await self._async_request('GET', f'vision/{camera}/{resolution}?format=json')
+        return VisionResponse.model_validate(response)
     
     # === Context Managers ===
     
