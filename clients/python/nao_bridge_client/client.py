@@ -379,12 +379,28 @@ class NAOBridgeClient:
         response = await client.request(method, url, json=json_data)
         return self._handle_response(response)
     
-    # === SYNC API ===
+    # ============================================================================
+    # Status and Information Methods
+    # ============================================================================
     
     def get_status(self) -> StatusResponse:
-        """Get robot and AP Istatus."""
+        """Get robot and API status."""
         response = self._request('GET', 'status')
         return StatusResponse.model_validate(response)
+    
+    def get_operations(self) -> OperationsResponse:
+        """List active operations."""
+        response = self._request('GET', 'operations')
+        return OperationsResponse.model_validate(response)
+    
+    def get_operation(self, operation_id: str) -> OperationResponse:
+        """Get status of specific operation."""
+        response = self._request('GET', f'operations/{operation_id}')
+        return OperationResponse.model_validate(response)
+    
+    # ============================================================================
+    # Robot Control Methods
+    # ============================================================================
     
     def enable_stiffness(self, duration: float | None = None) -> SuccessResponse:
         """Enable robot stiffness."""
@@ -396,6 +412,26 @@ class NAOBridgeClient:
         """Disable robot stiffness."""
         response = self._request('POST', 'robot/relax')
         return SuccessResponse.model_validate(response)
+    
+    def put_in_rest(self) -> SuccessResponse:
+        """Put robot in rest mode."""
+        response = self._request('POST', 'robot/rest')
+        return SuccessResponse.model_validate(response)
+    
+    def wake_up(self) -> SuccessResponse:
+        """Wake up robot from rest mode."""
+        response = self._request('POST', 'robot/wake')
+        return SuccessResponse.model_validate(response)
+    
+    def set_autonomous_life_state(self, state: str) -> SuccessResponse:
+        """Set autonomous life state."""
+        data = AutonomousLifeRequest(state=state)
+        response = self._request('POST', 'robot/autonomous_life/state', data)
+        return SuccessResponse.model_validate(response)
+    
+    # ============================================================================
+    # Posture Control Methods
+    # ============================================================================
     
     def stand(self, speed: float | None = None, variant: str | None = None) -> SuccessResponse:
         """Move robot to standing position."""
@@ -409,11 +445,21 @@ class NAOBridgeClient:
         response = self._request('POST', 'posture/sit', data)
         return SuccessResponse.model_validate(response)
     
-    def say(self, text: str, *, blocking: bool | None = None, animated: bool | None = None) -> SuccessResponse:
-        """Make the robot speak."""
-        data = SpeechRequest(text=text, blocking=blocking, animated=animated)
-        response = self._request('POST', 'speech/say', data)
+    def crouch(self, speed: float | None = None) -> SuccessResponse:
+        """Move robot to crouching position."""
+        data = PostureRequest(speed=speed) if speed else None
+        response = self._request('POST', 'posture/crouch', data)
         return SuccessResponse.model_validate(response)
+    
+    def lie(self, speed: float | None = None, position: str | None = None) -> SuccessResponse:
+        """Move robot to lying position."""
+        data = LieRequest(speed=speed, position=position)
+        response = self._request('POST', 'posture/lie', data)
+        return SuccessResponse.model_validate(response)
+    
+    # ============================================================================
+    # Movement and Walking Methods
+    # ============================================================================
     
     def start_walking(
         self, 
@@ -433,6 +479,21 @@ class NAOBridgeClient:
         response = self._request('POST', 'walk/stop')
         return SuccessResponse.model_validate(response)
     
+    def walk_preset(
+        self,
+        action: str | None = None,
+        duration: float | None = None,
+        speed: float | None = None
+    ) -> SuccessResponse:
+        """Use predefined walking patterns."""
+        data = WalkPresetRequest(action=action, duration=duration, speed=speed)
+        response = self._request('POST', 'walk/preset', data)
+        return SuccessResponse.model_validate(response)
+    
+    # ============================================================================
+    # Head Control Methods
+    # ============================================================================
+    
     def move_head(
         self, 
         *, 
@@ -445,71 +506,9 @@ class NAOBridgeClient:
         response = self._request('POST', 'head/position', data)
         return SuccessResponse.model_validate(response)
     
-    def get_sonar(self) -> SonarResponse:
-        """Get sonar readings."""
-        response = self._request('GET', 'sensors/sonar')
-        return SonarResponse.model_validate(response)
-    
-    def get_joint_angles(self, chain: str) -> JointAnglesResponse:
-        """Get joint angles for chain."""
-        response = self._request('GET', f'robot/joints/{chain}/angles')
-        return JointAnglesResponse.model_validate(response)
-    
-    def get_camera_image_json(self, camera: str, resolution: str) -> VisionResponse:
-        """Get camera image as JSON with base64 data."""
-        response = self._request('GET', f'vision/{camera}/{resolution}?format=json')
-        return VisionResponse.model_validate(response)
-    
-    def get_camera_image_bytes(self, camera: str, resolution: str) -> bytes:
-        """Get camera image as raw JPEG bytes."""
-        url = urljoin(self.api_base, f'vision/{camera}/{resolution}')
-        response = self._client.get(url)
-        
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            raise NAOBridgeNetworkError(f"HTTP {e.response.status_code}: {e.response.text}")
-        
-        return response.content
-    
-    # === ADDITIONAL ROBOT CONTROL METHODS ===
-    
-    def put_in_rest(self) -> SuccessResponse:
-        """Put robot in rest mode."""
-        response = self._request('POST', 'robot/rest')
-        return SuccessResponse.model_validate(response)
-    
-    def wake_up(self) -> SuccessResponse:
-        """Wake up robot from rest mode."""
-        response = self._request('POST', 'robot/wake')
-        return SuccessResponse.model_validate(response)
-    
-    def set_autonomous_life_state(self, state: str) -> SuccessResponse:
-        """Set autonomous life state."""
-        data = AutonomousLifeRequest(state=state)
-        response = self._request('POST', 'robot/autonomous_life/state', data)
-        return SuccessResponse.model_validate(response)
-    
-    def get_joint_names(self, chain: str) -> JointNamesResponse:
-        """Get joint names for a specified chain."""
-        response = self._request('GET', f'robot/joints/{chain}/names')
-        return JointNamesResponse.model_validate(response)
-    
-    # === ADDITIONAL POSTURE CONTROL METHODS ===
-    
-    def crouch(self, speed: float | None = None) -> SuccessResponse:
-        """Move robot to crouching position."""
-        data = PostureRequest(speed=speed) if speed else None
-        response = self._request('POST', 'posture/crouch', data)
-        return SuccessResponse.model_validate(response)
-    
-    def lie(self, speed: float | None = None, position: str | None = None) -> SuccessResponse:
-        """Move robot to lying position."""
-        data = LieRequest(speed=speed, position=position)
-        response = self._request('POST', 'posture/lie', data)
-        return SuccessResponse.model_validate(response)
-    
-    # === ARM AND HAND CONTROL METHODS ===
+    # ============================================================================
+    # Arms and Hands Control Methods
+    # ============================================================================
     
     def move_arms_preset(
         self, 
@@ -543,7 +542,9 @@ class NAOBridgeClient:
         response = self._request('POST', 'hands/position', data)
         return SuccessResponse.model_validate(response)
     
-    # === LED CONTROL METHODS ===
+    # ============================================================================
+    # LED Control Methods
+    # ============================================================================
     
     def set_leds(
         self,
@@ -560,47 +561,64 @@ class NAOBridgeClient:
         response = self._request('POST', 'leds/off')
         return SuccessResponse.model_validate(response)
     
-    # === ADDITIONAL WALKING METHODS ===
+    # ============================================================================
+    # Speech Methods
+    # ============================================================================
     
-    def walk_preset(
-        self,
-        action: str | None = None,
-        duration: float | None = None,
-        speed: float | None = None
-    ) -> SuccessResponse:
-        """Use predefined walking patterns."""
-        data = WalkPresetRequest(action=action, duration=duration, speed=speed)
-        response = self._request('POST', 'walk/preset', data)
+    def say(self, text: str, *, blocking: bool | None = None, animated: bool | None = None) -> SuccessResponse:
+        """Make the robot speak."""
+        data = SpeechRequest(text=text, blocking=blocking, animated=animated)
+        response = self._request('POST', 'speech/say', data)
         return SuccessResponse.model_validate(response)
     
-    # === VISION METHODS ===
+    # ============================================================================
+    # Sensor Methods
+    # ============================================================================
+    
+    def get_sonar(self) -> SonarResponse:
+        """Get sonar readings."""
+        response = self._request('GET', 'sensors/sonar')
+        return SonarResponse.model_validate(response)
+    
+    def get_joint_angles(self, chain: str) -> JointAnglesResponse:
+        """Get joint angles for chain."""
+        response = self._request('GET', f'robot/joints/{chain}/angles')
+        return JointAnglesResponse.model_validate(response)
+    
+    def get_joint_names(self, chain: str) -> JointNamesResponse:
+        """Get joint names for a specified chain."""
+        response = self._request('GET', f'robot/joints/{chain}/names')
+        return JointNamesResponse.model_validate(response)
+    
+    # ============================================================================
+    # Vision and Camera Methods
+    # ============================================================================
+    
+    def get_camera_image_json(self, camera: str, resolution: str) -> VisionResponse:
+        """Get camera image as JSON with base64 data."""
+        response = self._request('GET', f'vision/{camera}/{resolution}?format=json')
+        return VisionResponse.model_validate(response)
+    
+    def get_camera_image_bytes(self, camera: str, resolution: str) -> bytes:
+        """Get camera image as raw JPEG bytes."""
+        url = urljoin(self.api_base, f'vision/{camera}/{resolution}')
+        response = self._client.get(url)
+        
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise NAOBridgeNetworkError(f"HTTP {e.response.status_code}: {e.response.text}")
+        
+        return response.content
     
     def get_camera_resolutions(self) -> VisionResolutionsResponse:
         """Get available camera resolutions."""
         response = self._request('GET', 'vision/resolutions')
         return VisionResolutionsResponse.model_validate(response)
     
-    # === CONFIGURATION METHODS ===
-    
-    def set_duration(self, duration: float) -> DurationResponse:
-        """Set global movement duration."""
-        data = DurationRequest(duration=duration)
-        response = self._request('POST', 'config/duration', data)
-        return DurationResponse.model_validate(response)
-    
-    # === OPERATIONS METHODS ===
-    
-    def get_operations(self) -> OperationsResponse:
-        """List active operations."""
-        response = self._request('GET', 'operations')
-        return OperationsResponse.model_validate(response)
-    
-    def get_operation(self, operation_id: str) -> OperationResponse:
-        """Get status of specific operation."""
-        response = self._request('GET', f'operations/{operation_id}')
-        return OperationResponse.model_validate(response)
-    
-    # === ANIMATIONS METHODS ===
+    # ============================================================================
+    # Animation and Behavior Methods
+    # ============================================================================
     
     def execute_animation(
         self,
@@ -627,8 +645,6 @@ class NAOBridgeClient:
         response = self._request('POST', 'animations/sequence', data)
         return SequenceResponse.model_validate(response)
     
-    # === BEHAVIOUR METHODS ===
-    
     def execute_behaviour(
         self,
         behaviour: str,
@@ -654,7 +670,19 @@ class NAOBridgeClient:
         response = self._request('POST', 'behaviour/default', data)
         return BehaviourResponse.model_validate(response)
     
-    # === ASYNC API ===
+    # ============================================================================
+    # Configuration Methods
+    # ============================================================================
+    
+    def set_duration(self, duration: float) -> DurationResponse:
+        """Set global movement duration."""
+        data = DurationRequest(duration=duration)
+        response = self._request('POST', 'config/duration', data)
+        return DurationResponse.model_validate(response)
+    
+    # ============================================================================
+    # Async Methods
+    # ============================================================================
     
     async def async_get_status(self) -> StatusResponse:
         """Get robot status (async)."""
@@ -712,7 +740,9 @@ class NAOBridgeClient:
         response = await self._async_request('GET', f'vision/{camera}/{resolution}?format=json')
         return VisionResponse.model_validate(response)
     
-    # === Context Managers ===
+    # ============================================================================
+    # Resource Management Methods
+    # ============================================================================
     
     def close(self) -> None:
         """Close HTTP clients."""
