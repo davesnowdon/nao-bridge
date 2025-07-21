@@ -1,0 +1,173 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nao-bridge-client"
+dynamic = ["version"]
+description = "Python client library for NAO Bridge HTTP API"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [
+    {name = "Dave Snowdon"},
+]
+keywords = [
+    "nao",
+    "robot",
+    "aldebaran",
+    "robotics",
+    "api-client",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: AsyncIO",
+]
+dependencies = [
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+    "pillow>=8.0.0",
+    "typing-extensions>=4.0.0; python_version<'3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-httpx>=0.21.0",
+    "black>=23.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.0.0",
+]
+docs = [
+    "sphinx>=4.0",
+    "sphinx-rtd-theme",
+]
+
+[project.urls]
+Documentation = "https://github.com/davesnowdon/nao-bridge/tree/main/clients/python#readme"
+Issues = "https://github.com/davesnowdon/nao-bridge/issues"
+Source = "https://github.com/davesnowdon/nao-bridge"
+
+[tool.hatch.version]
+path = "nao_bridge_client/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nao_bridge_client"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/nao_bridge_client",
+    "/tests",
+    "/README.md",
+]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "coverage[toml]>=7.0",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-httpx>=0.21.0",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest {args:tests}"
+test-cov = "coverage run -m pytest {args:tests}"
+cov-report = [
+    "- coverage combine",
+    "coverage report",
+]
+cov = [
+    "test-cov",
+    "cov-report",
+]
+
+[tool.hatch.envs.lint]
+detached = true
+dependencies = [
+    "black>=23.1.0",
+    "mypy>=1.5.0",
+    "ruff>=0.1.0",
+]
+
+[tool.hatch.envs.lint.scripts]
+typing = "mypy --install-types --non-interactive {args:nao_bridge_client tests}"
+style = [
+    "ruff {args:.}",
+    "black --check --diff {args:.}",
+]
+fmt = [
+    "black {args:.}",
+    "ruff --fix {args:.}",
+    "style",
+]
+all = [
+    "style",
+    "typing",
+]
+
+[tool.black]
+target-version = ["py38"]
+line-length = 88
+
+[tool.ruff]
+target-version = "py38"
+line-length = 88
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "UP", # pyupgrade
+]
+
+[tool.mypy]
+python_version = "3.8"
+check_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+show_error_codes = true
+strict_equality = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.coverage.run]
+source_pkgs = ["nao_bridge_client", "tests"]
+branch = true
+parallel = true
+
+[tool.coverage.paths]
+nao_bridge_client = ["nao_bridge_client", "*/nao-bridge-client/nao_bridge_client"]
+tests = ["tests", "*/nao-bridge-client/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "no cov",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "--cov=nao_bridge_client",
+    "--cov-report=term-missing",
+]
+testpaths = ["tests"]
+asyncio_mode = "auto"
