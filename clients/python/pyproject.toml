@@ -122,11 +122,11 @@ all = [
 
 [tool.black]
 target-version = ["py38"]
-line-length = 88
+line-length = 132
 
 [tool.ruff]
 target-version = "py38"
-line-length = 88
+line-length = 132
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -148,7 +148,7 @@ warn_return_any = true
 warn_unused_ignores = true
 
 [tool.coverage.run]
-source_pkgs = ["nao_bridge_client", "tests"]
+source_pkgs = ["nao_bridge_client"]
 branch = true
 parallel = true
 
