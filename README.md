@@ -88,6 +88,37 @@ The API server runs on port 3000 by default. You can change this by modifying th
 docker run -p 3001:3000 -e NAO_IP=$NAO_IP nao-bridge
 ```
 
+## API Documentation
+
+The server exports a swagger 2.0 speciification document at http://localhost:3000/api/v1/swagger.json and hosts the swagger UI at http://localhost:3000/swagger
+
+## Multiple NAOs
+
+If you're lucky enough to have more than one NAO you can run a container for each one at a different port and then a single program can create clients for each one
+
+```bash
+# run in one shell (or in background)
+docker run -it -p 3000:3000 -e NAO_IP=192.168.0.184 nao-bridge
+
+# and in a different shell (unless other container running in background)
+docker run -it -p 3001:3000 -e NAO_IP=192.168.0.241 nao-bridge
+```
+
+The internal port (the second number) is always 3000, change the first port to be whatever value you like as long as it's unique for each container.
+
+Then in a client application you can create clients for each robot
+
+```python
+from nao_bridge_client import NAOBridgeClient
+romulus = NAOBridgeClient("http://localhost:3000")
+rommie = NAOBridgeClient("http://localhost:3001")
+romulus.say("This is Romulus")
+# SuccessResponse(success=True, message='Speech command executed', timestamp='2025-07-23T06:50:52.262432Z', data={})
+
+rommie.say("This is Rommie")
+#SuccessResponse(success=True, message='Speech command executed', timestamp='2025-07-23T06:51:03.503145Z', data={})
+```
+
 ## Development
 
 ### Building for Development
@@ -97,7 +128,3 @@ If you're developing the application, you can mount the source code as a volume 
 ```bash
 docker run -p 3000:3000 -e NAO_IP=$NAO_IP -v $(pwd)/server:/nao-bridge/server nao-bridge
 ```
-
-## API Documentation
-
-The server exports a swagger 2.0 speciification document at http://localhost:3000/api/v1/swagger.json and hosts the swagger UI at http://localhost:3000/swagger
