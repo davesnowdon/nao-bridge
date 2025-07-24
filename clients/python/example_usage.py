@@ -47,9 +47,10 @@ def print_error(message: str, e :NAOBridgeError | None = None):
     """Print an error message."""
     print(f"❌ {message}")
     if e:
-        print(f"Error code: {e.code}")
-        print(f"Error details: {e.details}")
-        print(f"Error status code: {e.status_code}")
+        print(f"Error: {e.code} {str(e)}")
+        if e.details:
+            print(f"Error details: {e.details}")
+        print(f"HTTP status code: {e.status_code}")
 
 
 def print_info(message: str):

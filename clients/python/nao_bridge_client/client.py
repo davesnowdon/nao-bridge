@@ -307,10 +307,21 @@ class NAOBridgeClient:
         """Process HTTP response and handle errors."""
         try:
             response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            raise NAOBridgeError(e.response.text, status_code=e.response.status_code)
-        except httpx.RequestError as e:
-            raise NAOBridgeError(e.response.text, status_code=e.response.status_code)
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            try:
+                data = e.response.json()
+                error_info = data.get('error', {})
+                raise NAOBridgeError(
+                     message=error_info.get('message', e.response.text),
+                     code=error_info.get('code'),
+                     status_code=e.response.status_code,
+                     details=error_info.get('details')
+                )
+            except (ValueError, TypeError, AttributeError):
+                raise NAOBridgeError(
+                    message=e.response.text,
+                    status_code=e.response.status_code
+                )
         
         try:
             data = response.json()
