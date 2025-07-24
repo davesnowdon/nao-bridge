@@ -1,6 +1,6 @@
 import pytest
 import httpx
-from nao_bridge_client import NAOBridgeClient, NAOBridgeError, NAOBridgeAPIError
+from nao_bridge_client import NAOBridgeClient, NAOBridgeError
 
 
 def test_success_response(httpx_mock):
@@ -46,7 +46,7 @@ def test_error_response(httpx_mock):
         "timestamp": "2025-07-22T19:20:12.856711Z"
     })
 
-    with pytest.raises(NAOBridgeAPIError) as e:
+    with pytest.raises(NAOBridgeError) as e:
         with NAOBridgeClient("http://localhost:3000") as client:
             client.get_status()
 

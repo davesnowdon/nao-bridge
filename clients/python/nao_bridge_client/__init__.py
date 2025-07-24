@@ -9,8 +9,6 @@ from .client import (
     NAOBridgeClient,
     # Exception classes
     NAOBridgeError,
-    NAOBridgeAPIError,
-    NAOBridgeNetworkError,
     # Data models
     StatusData,
     SonarData,
@@ -52,14 +50,12 @@ from .client import (
     BehaviourDefaultRequest,
 )
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __all__ = [
     # Main client
     "NAOBridgeClient",
     # Exceptions
     "NAOBridgeError",
-    "NAOBridgeAPIError", 
-    "NAOBridgeNetworkError",
     # Data models
     "StatusData",
     "SonarData",
