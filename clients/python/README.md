@@ -56,22 +56,18 @@ with NAOBridgeClient("http://localhost:3000") as client:
 The client provides proper error handling with custom exceptions:
 
 ```python
-from nao_bridge_client import NAOBridgeClient, NAOBridgeError, NAOBridgeAPIError, NAOBridgeNetworkError
+from nao_bridge_client import NAOBridgeClient, NAOBridgeError
 
 client = NAOBridgeClient("http://localhost:3000")
 
 try:
     status = client.get_status()
     print("Success!")
-except NAOBridgeAPIError as e:
+except NAOBridgeError as e:
     print(f"API Error: {e.message}")
     print(f"Error Code: {e.code}")
     if e.details:
         print(f"Details: {e.details}")
-except NAOBridgeNetworkError as e:
-    print(f"Network Error: {e}")
-except NAOBridgeError as e:
-    print(f"General NAO Bridge Error: {e}")
 except Exception as e:
     print(f"Unexpected error: {e}")
 ```
@@ -212,11 +208,7 @@ The client uses Pydantic models for type-safe request and response handling:
 
 ## Exception Types
 
-The client provides specific exception types for different error scenarios:
-
 - `NAOBridgeError` - Base exception for all NAO Bridge errors
-- `NAOBridgeAPIError` - API-level errors (4xx/5xx responses)
-- `NAOBridgeNetworkError` - Network/HTTP-level errors
 
 ## Example Usage
 

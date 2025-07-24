@@ -2,8 +2,7 @@
 """
 NAO Bridge Client Example Usage
 
-This file demonstrates how to use the modern NAO Bridge client
-to control a NAO robot through the HTTP API.
+This file demonstrates how to use the NAO Bridge client to control a NAO robot
 
 Features demonstrated:
 - Basic robot control (stiffness, posture)
@@ -15,7 +14,7 @@ Features demonstrated:
 - Context manager usage
 
 Author: Generated from swagger specification
-Date: 2025
+Date: July 2025
 """
 
 import asyncio
@@ -44,9 +43,13 @@ def print_success(message: str):
     print(f"✅ {message}")
 
 
-def print_error(message: str):
+def print_error(message: str, e :NAOBridgeError | None = None):
     """Print an error message."""
     print(f"❌ {message}")
+    if e:
+        print(f"Error code: {e.code}")
+        print(f"Error details: {e.details}")
+        print(f"Error status code: {e.status_code}")
 
 
 def print_info(message: str):
@@ -64,9 +67,9 @@ def demo_basic_connection(client: NAOBridgeClient):
         print_info(f"Robot connected: {status.data.robot_connected}")
         print_info(f"Robot IP: {status.data.robot_ip}")
         print_info(f"Battery level: {status.data.battery_level}%")
-        print_info(f"Temperature: {status.data.temperature}°C")
         print_info(f"Current posture: {status.data.current_posture}")
-        print_info(f"Stiffness enabled: {status.data.stiffness_enabled}")
+        print_info(f"Awake: {status.data.awake}")
+        print_info(f"Autonomous life state: {status.data.autonomous_life_state}")
         print_info(f"API version: {status.data.api_version}")
         
         if not status.data.robot_connected:
@@ -76,7 +79,7 @@ def demo_basic_connection(client: NAOBridgeClient):
         return True
         
     except NAOBridgeError as e:
-        print_error(f"Failed to get status: {e.message}")
+        print_error(f"Failed to get status", e)
         return False
 
 
@@ -101,7 +104,7 @@ def demo_robot_control(client: NAOBridgeClient):
         print_info("Moving to sitting position...")
         response = client.sit(speed=0.5, variant="Sit")
         print_success("Robot is now sitting")
-        time.sleep(3)
+        time.sleep(5)
         
         # Disable stiffness
         print_info("Disabling robot stiffness...")
@@ -109,7 +112,7 @@ def demo_robot_control(client: NAOBridgeClient):
         print_success("Robot stiffness disabled")
         
     except NAOBridgeError as e:
-        print_error(f"Robot control failed: {e.message}")
+        print_error(f"Robot control failed", e)
 
 
 def demo_movement_and_positioning(client: NAOBridgeClient):
@@ -117,8 +120,8 @@ def demo_movement_and_positioning(client: NAOBridgeClient):
     print_section("Movement & Positioning")
     
     try:
-        # Enable stiffness first
-        client.enable_stiffness()
+        # Wake up robot
+        client.wake_up()
         time.sleep(1)
         
         # Stand up
@@ -160,11 +163,11 @@ def demo_movement_and_positioning(client: NAOBridgeClient):
         client.sit()
         time.sleep(2)
         
-        # Disable stiffness
-        client.disable_stiffness()
+        # Put robot in rest mode
+        client.put_in_rest()
         
     except NAOBridgeError as e:
-        print_error(f"Movement control failed: {e.message}")
+        print_error(f"Movement control failed", e)
 
 
 def demo_speech_and_leds(client: NAOBridgeClient):
@@ -172,14 +175,6 @@ def demo_speech_and_leds(client: NAOBridgeClient):
     print_section("Speech & LED Control")
     
     try:
-        # Enable stiffness
-        client.enable_stiffness()
-        time.sleep(1)
-        
-        # Stand up
-        client.stand()
-        time.sleep(2)
-        
         # Make robot speak
         print_info("Making robot speak...")
         client.say("Hello! I am a NAO robot. Let me show you my LED capabilities.", blocking=True)
@@ -207,17 +202,10 @@ def demo_speech_and_leds(client: NAOBridgeClient):
         time.sleep(1)
         
         # Speak again
-        client.say("That was fun! Now I'll sit down.", blocking=True)
-        
-        # Sit down
-        client.sit()
-        time.sleep(2)
-        
-        # Disable stiffness
-        client.disable_stiffness()
+        client.say("That was fun!", blocking=True)
         
     except NAOBridgeError as e:
-        print_error(f"Speech/LED control failed: {e.message}")
+        print_error(f"Speech/LED control failed", e)
 
 
 def demo_sensors(client: NAOBridgeClient):
@@ -235,7 +223,7 @@ def demo_sensors(client: NAOBridgeClient):
             time.sleep(1)
             
     except NAOBridgeError as e:
-        print_error(f"Sensor reading failed: {e.message}")
+        print_error(f"Sensor reading failed", e)
 
 
 def demo_animations(client: NAOBridgeClient):
@@ -276,7 +264,7 @@ def demo_animations(client: NAOBridgeClient):
             print_info("No animations available")
             
     except NAOBridgeError as e:
-        print_error(f"Animation execution failed: {e.message}")
+        print_error(f"Animation execution failed", e)
 
 
 def demo_walking(client: NAOBridgeClient):
@@ -315,7 +303,7 @@ def demo_walking(client: NAOBridgeClient):
         client.disable_stiffness()
         
     except NAOBridgeError as e:
-        print_error(f"Walking control failed: {e.message}")
+        print_error(f"Walking control failed", e)
 
 
 def demo_sequence_execution(client: NAOBridgeClient):
@@ -346,7 +334,7 @@ def demo_sequence_execution(client: NAOBridgeClient):
         client.disable_stiffness()
         
     except NAOBridgeError as e:
-        print_error(f"Sequence execution failed: {e.message}")
+        print_error(f"Sequence execution failed", e)
 
 
 def demo_error_handling(client: NAOBridgeClient):
@@ -359,7 +347,7 @@ def demo_error_handling(client: NAOBridgeClient):
         client.get_operation("non-existent-id")
         
     except NAOBridgeError as e:
-        print_error(f"Expected error caught: {e.message}")
+        print_error(f"Expected error caught", e)
         print_info(f"Error code: {e.code}")
         if e.details:
             print_info(f"Error details: {e.details}")
@@ -370,7 +358,7 @@ def demo_error_handling(client: NAOBridgeClient):
         client.execute_animation("non-existent-animation")
         
     except NAOBridgeError as e:
-        print_error(f"Expected error caught: {e.message}")
+        print_error(f"Expected error caught", e)
 
 
 def demo_context_manager():
@@ -405,12 +393,13 @@ def main():
             return
         
         # Run demonstrations
-        demo_robot_control(client)
-        demo_movement_and_positioning(client)
+        #demo_robot_control(client)
+        #demo_movement_and_positioning(client)
         demo_speech_and_leds(client)
         demo_sensors(client)
         demo_animations(client)
-        demo_walking(client)
+        # don't want robot walking around by default, uncomment if you want to test it
+        #demo_walking(client)
         demo_sequence_execution(client)
         demo_error_handling(client)
         

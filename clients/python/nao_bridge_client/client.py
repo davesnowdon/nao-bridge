@@ -18,24 +18,14 @@ import httpx
 from pydantic import BaseModel, Field, ConfigDict
 
 
-# Exception hierarchy
 class NAOBridgeError(Exception):
-    """Base exception for NAO Bridge client errors."""
-    pass
-
-
-class NAOBridgeAPIError(NAOBridgeError):
     """API returned an error response."""
     
-    def __init__(self, message: str, code: str | None = None, details: Dict[str, Any] | None = None):
+    def __init__(self, message: str, code: str | None = None, status_code: int = 500, details: Dict[str, Any] | None = None):
         self.code = code
+        self.status_code = status_code
         self.details = details or {}
         super().__init__(message)
-
-
-class NAOBridgeNetworkError(NAOBridgeError):
-    """Network or HTTP-level error."""
-    pass
 
 
 # Pydantic models for structured data
@@ -318,21 +308,22 @@ class NAOBridgeClient:
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            raise NAOBridgeNetworkError(f"HTTP {e.response.status_code}: {e.response.text}")
+            raise NAOBridgeError(e.response.text, status_code=e.response.status_code)
         except httpx.RequestError as e:
-            raise NAOBridgeNetworkError(f"Network error: {e}")
+            raise NAOBridgeError(e.response.text, status_code=e.response.status_code)
         
         try:
             data = response.json()
         except Exception as e:
-            raise NAOBridgeNetworkError(f"Invalid JSON response: {e}")
+            raise NAOBridgeError(f"Invalid JSON response: {e}")
         
         # Check API-level errors
         if not data.get('success', True):
             error_info = data.get('error', {})
-            raise NAOBridgeAPIError(
+            raise NAOBridgeError(
                 message=error_info.get('message', 'Unknown API error'),
                 code=error_info.get('code'),
+                status_code=response.status_code,
                 details=error_info.get('details')
             )
         
