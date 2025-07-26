@@ -88,6 +88,8 @@ RGB_COLORSPACE = 11
 
 VALID_CHAINS = ['Head', 'Body', 'LArm', 'RArm', 'LLeg', 'RLeg']
 
+VALID_COLOURS = ['white','red', 'green', 'blue', 'yellow', 'magenta', 'cyan']
+
 class APIError(Exception):
     """Custom exception for API errors"""
     def __init__(self, message, code="UNKNOWN_ERROR", status_code=400):
@@ -620,6 +622,93 @@ def speech_say():
     except Exception as e:
         raise APIError("Failed to speak: {}".format(e), "SPEECH_ERROR")
 
+def parse_color_value(color_value):
+    """
+    Parse color value from hex string, color name, or integer.
+    
+    Args:
+        color_value: Can be hex string ('#FF0000' or 'FF0000'), 
+                    color name ('red'), or integer (0xFF0000)
+    
+    Returns:
+        tuple: (color_type, parsed_value) where color_type is 'hex', 'name', or 'int'
+               and parsed_value is the appropriate value for the NAO API
+    
+    Raises:
+        ValueError: If color value is invalid
+    """
+    if isinstance(color_value, int):
+        # Already an integer hex value
+        return ('int', color_value)
+    
+    if isinstance(color_value, (str, unicode)):
+        color_str = str(color_value).strip().lower()
+        
+        # Check if it's a valid color name
+        if color_str in VALID_COLOURS:
+            return ('name', color_str)
+        
+        # Check if it's a hex string
+        if color_str.startswith('#'):
+            hex_str = color_str[1:]
+        else:
+            hex_str = color_str
+
+        if len(hex_str) == 6 and all(c in '0123456789abcdef' for c in hex_str):
+            try:
+                return ('int', int(hex_str, 16))
+            except ValueError:
+                pass
+    
+    raise ValueError("Invalid color value: {}. Must be hex string, color name, or integer".format(color_value))
+
+def set_led_color(led_method, color_value, duration):
+    """
+    Set LED color using the most appropriate NAO API method.
+    
+    Args:
+        led_method: The LED method to call (e.g., nao_robot.leds.eyes)
+        color_value: Color as hex string, color name, or integer
+        duration: Duration for the fade effect
+    """
+    color_type, parsed_value = parse_color_value(color_value)
+    
+    if color_type == 'name':
+        # Use the color name directly with the NAO API
+        # Note: This would require calling the NAO API directly since FluentNao 
+        # doesn't expose the color name variant. For now, convert to hex.
+        color_map = {
+            'white': 0xFFFFFF,
+            'red': 0xFF0000,
+            'green': 0x00FF00,
+            'blue': 0x0000FF,
+            'yellow': 0xFFFF00,
+            'magenta': 0xFF00FF,
+            'cyan': 0x00FFFF
+        }
+        led_method(color_map[parsed_value], duration)
+    else:
+        # Use integer hex value
+        led_method(parsed_value, duration)
+
+def _set_leds(leds, duration):
+    """Set LED colors"""
+    led_groups = [
+            ('eyes', nao_robot.leds.eyes),
+            ('ears', nao_robot.leds.ears),
+            ('chest', nao_robot.leds.chest),
+            ('feet', nao_robot.leds.feet)
+        ]
+
+    for led_name, led_method in led_groups:
+        if led_name in leds:
+            try:
+                set_led_color(led_method, leds[led_name], duration or 0)
+            except ValueError as e:
+                raise APIError("Invalid color for {}: {}".format(led_name, str(e)), "INVALID_COLOR")
+
+    nao_robot.go()
+
 @app.route('/api/v1/leds/set', methods=['POST'])
 @require_robot
 def leds_set():
@@ -632,22 +721,7 @@ def leds_set():
         if duration:
             nao_robot.set_duration(duration)
         
-        # Convert hex colors to integer values
-        def hex_to_int(hex_color):
-            if hex_color.startswith('#'):
-                hex_color = hex_color[1:]
-            return int(hex_color, 16)
-        
-        if 'eyes' in leds:
-            nao_robot.leds.eyes(hex_to_int(leds['eyes']))
-        if 'ears' in leds:
-            nao_robot.leds.ears(hex_to_int(leds['ears']))
-        if 'chest' in leds:
-            nao_robot.leds.chest(hex_to_int(leds['chest']))
-        if 'feet' in leds:
-            nao_robot.leds.feet(hex_to_int(leds['feet']))
-        
-        nao_robot.go()
+        _set_leds(leds, duration)
         
         return create_response(message="LED colors updated")
         
@@ -1259,22 +1333,8 @@ def _execute_leds_step(nao_robot, step):
     
     if action == 'set':
         leds = step.get('leds', {})
+        _set_leds(leds, duration)
         
-        def hex_to_int(hex_color):
-            if hex_color.startswith('#'):
-                hex_color = hex_color[1:]
-            return int(hex_color, 16)
-        
-        if 'eyes' in leds:
-            nao_robot.leds.eyes(hex_to_int(leds['eyes']))
-        if 'ears' in leds:
-            nao_robot.leds.ears(hex_to_int(leds['ears']))
-        if 'chest' in leds:
-            nao_robot.leds.chest(hex_to_int(leds['chest']))
-        if 'feet' in leds:
-            nao_robot.leds.feet(hex_to_int(leds['feet']))
-        
-        nao_robot.go()
     elif action == 'off':
         nao_robot.leds.off()
         nao_robot.go()
