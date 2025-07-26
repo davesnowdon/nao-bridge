@@ -88,6 +88,8 @@ RGB_COLORSPACE = 11
 
 VALID_CHAINS = ['Head', 'Body', 'LArm', 'RArm', 'LLeg', 'RLeg']
 
+VALID_COLOURS = ['white','red', 'green', 'blue', 'yellow', 'magenta', 'cyan']
+
 class APIError(Exception):
     """Custom exception for API errors"""
     def __init__(self, message, code="UNKNOWN_ERROR", status_code=400):
@@ -620,6 +622,93 @@ def speech_say():
     except Exception as e:
         raise APIError("Failed to speak: {}".format(e), "SPEECH_ERROR")
 
+def parse_color_value(color_value):
+    """
+    Parse color value from hex string, color name, or integer.
+    
+    Args:
+        color_value: Can be hex string ('#FF0000' or 'FF0000'), 
+                    color name ('red'), or integer (0xFF0000)
+    
+    Returns:
+        tuple: (color_type, parsed_value) where color_type is 'hex', 'name', or 'int'
+               and parsed_value is the appropriate value for the NAO API
+    
+    Raises:
+        ValueError: If color value is invalid
+    """
+    if isinstance(color_value, int):
+        # Already an integer hex value
+        return ('int', color_value)
+    
+    if isinstance(color_value, (str, unicode)):
+        color_str = str(color_value).strip().lower()
+        
+        # Check if it's a valid color name
+        if color_str in VALID_COLOURS:
+            return ('name', color_str)
+        
+        # Check if it's a hex string
+        if color_str.startswith('#'):
+            hex_str = color_str[1:]
+        else:
+            hex_str = color_str
+
+        if len(hex_str) == 6 and all(c in '0123456789abcdef' for c in hex_str):
+            try:
+                return ('int', int(hex_str, 16))
+            except ValueError:
+                pass
+    
+    raise ValueError("Invalid color value: {}. Must be hex string, color name, or integer".format(color_value))
+
+def set_led_color(led_method, color_value, duration):
+    """
+    Set LED color using the most appropriate NAO API method.
+    
+    Args:
+        led_method: The LED method to call (e.g., nao_robot.leds.eyes)
+        color_value: Color as hex string, color name, or integer
+        duration: Duration for the fade effect
+    """
+    color_type, parsed_value = parse_color_value(color_value)
+    
+    if color_type == 'name':
+        # Use the color name directly with the NAO API
+        # Note: This would require calling the NAO API directly since FluentNao 
+        # doesn't expose the color name variant. For now, convert to hex.
+        color_map = {
+            'white': 0xFFFFFF,
+            'red': 0xFF0000,
+            'green': 0x00FF00,
+            'blue': 0x0000FF,
+            'yellow': 0xFFFF00,
+            'magenta': 0xFF00FF,
+            'cyan': 0x00FFFF
+        }
+        led_method(color_map[parsed_value], duration)
+    else:
+        # Use integer hex value
+        led_method(parsed_value, duration)
+
+def _set_leds(leds, duration):
+    """Set LED colors"""
+    led_groups = [
+            ('eyes', nao_robot.leds.eyes),
+            ('ears', nao_robot.leds.ears),
+            ('chest', nao_robot.leds.chest),
+            ('feet', nao_robot.leds.feet)
+        ]
+
+    for led_name, led_method in led_groups:
+        if led_name in leds:
+            try:
+                set_led_color(led_method, leds[led_name], duration or 0)
+            except ValueError as e:
+                raise APIError("Invalid color for {}: {}".format(led_name, str(e)), "INVALID_COLOR")
+
+    nao_robot.go()
+
 @app.route('/api/v1/leds/set', methods=['POST'])
 @require_robot
 def leds_set():
@@ -632,22 +721,7 @@ def leds_set():
         if duration:
             nao_robot.set_duration(duration)
         
-        # Convert hex colors to integer values
-        def hex_to_int(hex_color):
-            if hex_color.startswith('#'):
-                hex_color = hex_color[1:]
-            return int(hex_color, 16)
-        
-        if 'eyes' in leds:
-            nao_robot.leds.eyes(hex_to_int(leds['eyes']))
-        if 'ears' in leds:
-            nao_robot.leds.ears(hex_to_int(leds['ears']))
-        if 'chest' in leds:
-            nao_robot.leds.chest(hex_to_int(leds['chest']))
-        if 'feet' in leds:
-            nao_robot.leds.feet(hex_to_int(leds['feet']))
-        
-        nao_robot.go()
+        _set_leds(leds, duration)
         
         return create_response(message="LED colors updated")
         
@@ -1077,8 +1151,8 @@ def execute_sequence():
         executed_steps = []
             
         for i, step in enumerate(sequence):
-            step_type = step.get('type')
-            action = step.get('action')
+            step_type = str(step.get('type')).lower()
+            action = str(step.get('action')).lower()
                 
             try:
                 if step_type == 'posture':
@@ -1130,7 +1204,7 @@ def execute_sequence():
 
 def _execute_posture_step(nao_robot, step):
     """Execute a posture step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     speed = step.get('speed', 0.5)
     
@@ -1148,7 +1222,7 @@ def _execute_posture_step(nao_robot, step):
 
 def _execute_speech_step(nao_robot, step):
     """Execute a speech step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     text = step.get('text', '')
     blocking = step.get('blocking', False)
     animated = step.get('animated', False)
@@ -1165,49 +1239,48 @@ def _execute_speech_step(nao_robot, step):
 
 def _execute_arms_step(nao_robot, step):
     """Execute an arms step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
         nao_robot.set_duration(duration)
     
-    if action == 'preset':
-        position = step.get('position', 'up')
-        arms = step.get('arms', 'both')
+    position = str(step.get('position', 'up')).lower()
+    arms = str(step.get('arms', 'both')).lower()
         
-        if position == 'up':
-            if arms in ['both', 'left']:
-                nao_robot.arms.left_up()
-            if arms in ['both', 'right']:
-                nao_robot.arms.right_up()
-        elif position == 'down':
-            if arms in ['both', 'left']:
-                nao_robot.arms.left_down()
-            if arms in ['both', 'right']:
-                nao_robot.arms.right_down()
-        elif position == 'forward':
-            if arms in ['both', 'left']:
-                nao_robot.arms.left_forward()
-            if arms in ['both', 'right']:
-                nao_robot.arms.right_forward()
-        elif position == 'out':
-            nao_robot.arms.out()
-        
-        nao_robot.go()
+    if position == 'up':
+        if arms in ['both', 'left']:
+            nao_robot.arms.left_up()
+        if arms in ['both', 'right']:
+            nao_robot.arms.right_up()
+    elif position == 'down':
+        if arms in ['both', 'left']:
+            nao_robot.arms.left_down()
+        if arms in ['both', 'right']:
+            nao_robot.arms.right_down()
+    elif position == 'forward':
+        if arms in ['both', 'left']:
+            nao_robot.arms.left_forward()
+        if arms in ['both', 'right']:
+            nao_robot.arms.right_forward()
+    elif position == 'out':
+        nao_robot.arms.out()
     else:
         raise ValueError("Unknown arms action: {}".format(action))
+        
+    nao_robot.go()
 
 def _execute_hands_step(nao_robot, step):
     """Execute a hands step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
         nao_robot.set_duration(duration)
     
     if action == 'position':
-        left_hand = step.get('left_hand')
-        right_hand = step.get('right_hand')
+        left_hand = str(step.get('left_hand')).lower()
+        right_hand = str(step.get('right_hand')).lower()    
         
         if left_hand == 'open':
             nao_robot.hands.left_open()
@@ -1225,15 +1298,15 @@ def _execute_hands_step(nao_robot, step):
 
 def _execute_head_step(nao_robot, step):
     """Execute a head step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
         nao_robot.set_duration(duration)
     
     if action == 'position':
-        yaw = step.get('yaw', 0)
-        pitch = step.get('pitch', 0)
+        yaw = float(step.get('yaw', 0))
+        pitch = float(step.get('pitch', 0))
         
         if yaw > 0:
             nao_robot.head.right(0, yaw)
@@ -1244,14 +1317,24 @@ def _execute_head_step(nao_robot, step):
             nao_robot.head.up(0, pitch)
         elif pitch < 0:
             nao_robot.head.down(0, abs(pitch))
-        
-        nao_robot.go()
+    elif action == 'look_left':
+        nao_robot.head.left(0, 1)
+    elif action == 'look_right':
+        nao_robot.head.right(0, 1)
+    elif action == 'look_up':
+        nao_robot.head.up(0, 1)
+    elif action == 'look_down':
+        nao_robot.head.down(0, 1)
+    elif action == 'center':
+        nao_robot.head.center(0, 0)
     else:
         raise ValueError("Unknown head action: {}".format(action))
+    
+    nao_robot.go()
 
 def _execute_leds_step(nao_robot, step):
     """Execute a LEDs step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
@@ -1259,22 +1342,8 @@ def _execute_leds_step(nao_robot, step):
     
     if action == 'set':
         leds = step.get('leds', {})
+        _set_leds(leds, duration)
         
-        def hex_to_int(hex_color):
-            if hex_color.startswith('#'):
-                hex_color = hex_color[1:]
-            return int(hex_color, 16)
-        
-        if 'eyes' in leds:
-            nao_robot.leds.eyes(hex_to_int(leds['eyes']))
-        if 'ears' in leds:
-            nao_robot.leds.ears(hex_to_int(leds['ears']))
-        if 'chest' in leds:
-            nao_robot.leds.chest(hex_to_int(leds['chest']))
-        if 'feet' in leds:
-            nao_robot.leds.feet(hex_to_int(leds['feet']))
-        
-        nao_robot.go()
     elif action == 'off':
         nao_robot.leds.off()
         nao_robot.go()

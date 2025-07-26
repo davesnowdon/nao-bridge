@@ -13,7 +13,7 @@ Features demonstrated:
 - Error handling
 - Context manager usage
 
-Author: Generated from swagger specification
+Author: Dave Snowdon
 Date: July 2025
 """
 
@@ -83,35 +83,55 @@ def demo_basic_connection(client: NAOBridgeClient):
         print_error(f"Failed to get status", e)
         return False
 
+def demo_is_robot_awake(client: NAOBridgeClient):
+    """Demonstrate checking if the robot is awake."""
+    status = client.get_status()
+    return status.data.awake
+
+def demo_get_robot_posture(client: NAOBridgeClient):
+    """Demonstrate getting the robot's posture."""
+    status = client.get_status()
+    return status.data.current_posture.lower()
+
+def demo_wake_up_robot(client: NAOBridgeClient):
+    """Demonstrate waking up the robot."""
+    print_info("Waking up robot...")
+    client.wake_up()
+    print_success("Robot woke up")
+
+def demo_put_robot_in_rest(client: NAOBridgeClient):
+    """Demonstrate putting the robot in rest mode."""
+    print_info("Putting robot in rest mode...")
+    client.put_in_rest()
+    print_success("Robot is now in rest mode")
 
 def demo_robot_control(client: NAOBridgeClient):
     """Demonstrate basic robot control operations."""
     print_section("Robot Control")
     
     try:
-        # Enable stiffness
-        print_info("Enabling robot stiffness...")
-        response = client.enable_stiffness(duration=2.0)
-        print_success("Robot stiffness enabled")
-        time.sleep(2)
-        
+        # disable autonomous life
+        print_info("Disabling autonomous life...")
+        client.set_autonomous_life_state(state="disabled")
+        print_success("Autonomous life disabled")
+
+        robot_awake = demo_is_robot_awake(client)
+        if not robot_awake:
+            # Wake up robot
+            demo_wake_up_robot(client)
+
         # Move to standing position
         print_info("Moving to standing position...")
         response = client.stand(speed=0.5, variant="Stand")
         print_success("Robot is now standing")
-        time.sleep(3)
+        time.sleep(5)
         
         # Move to sitting position
         print_info("Moving to sitting position...")
         response = client.sit(speed=0.5, variant="Sit")
         print_success("Robot is now sitting")
-        time.sleep(5)
-        
-        # Disable stiffness
-        print_info("Disabling robot stiffness...")
-        response = client.disable_stiffness()
-        print_success("Robot stiffness disabled")
-        
+        time.sleep(10)
+
     except NAOBridgeError as e:
         print_error(f"Robot control failed", e)
 
@@ -121,13 +141,15 @@ def demo_movement_and_positioning(client: NAOBridgeClient):
     print_section("Movement & Positioning")
     
     try:
-        # Wake up robot
-        client.wake_up()
-        time.sleep(1)
-        
-        # Stand up
-        client.stand()
-        time.sleep(2)
+        posture = demo_get_robot_posture(client)
+        if posture != "stand":
+            # Stand up
+            print_info("Standing up...")
+            client.stand()
+            print_success("Robot is now standing")
+            time.sleep(2)
+        else:
+            print_info("Robot is already standing")
         
         # Move arms to different positions
         print_info("Moving arms to 'up' position...")
@@ -159,13 +181,6 @@ def demo_movement_and_positioning(client: NAOBridgeClient):
         print_info("Moving head center...")
         client.move_head(yaw=0, pitch=0, duration=2.0)
         time.sleep(2)
-        
-        # Sit down
-        client.sit()
-        time.sleep(2)
-        
-        # Put robot in rest mode
-        client.put_in_rest()
         
     except NAOBridgeError as e:
         print_error(f"Movement control failed", e)
@@ -245,10 +260,6 @@ def demo_animations(client: NAOBridgeClient):
                 first_animation = animations[0]
                 print_info(f"Executing animation: {first_animation}")
                 
-                # Enable stiffness first
-                client.enable_stiffness()
-                time.sleep(1)
-                
                 # Execute animation
                 response = client.execute_animation(
                     animation=first_animation,
@@ -259,8 +270,6 @@ def demo_animations(client: NAOBridgeClient):
                 # Wait for animation to complete
                 time.sleep(5)
                 
-                # Disable stiffness
-                client.disable_stiffness()
         else:
             print_info("No animations available")
             
@@ -312,9 +321,6 @@ def demo_sequence_execution(client: NAOBridgeClient):
     print_section("Sequence Execution")
     
     try:
-        # Enable stiffness
-        client.enable_stiffness()
-        time.sleep(1)
         
         # Define a sequence of movements
         sequence = [
@@ -324,15 +330,12 @@ def demo_sequence_execution(client: NAOBridgeClient):
             {"type": "head", "action": "look_right", "duration": 1.0},
             {"type": "head", "action": "center", "duration": 1.0},
             {"type": "arms", "action": "down", "duration": 2.0},
-            {"type": "posture", "action": "sit", "speed": 0.5}
+            #{"type": "posture", "action": "sit", "speed": 0.5}
         ]
         
         print_info("Executing movement sequence...")
         response = client.execute_sequence(sequence, blocking=True)
         print_success("Sequence executed successfully")
-        
-        # Disable stiffness
-        client.disable_stiffness()
         
     except NAOBridgeError as e:
         print_error(f"Sequence execution failed", e)
@@ -394,8 +397,8 @@ def main():
             return
         
         # Run demonstrations
-        #demo_robot_control(client)
-        #demo_movement_and_positioning(client)
+        demo_robot_control(client)
+        demo_movement_and_positioning(client)
         demo_speech_and_leds(client)
         demo_sensors(client)
         demo_animations(client)
@@ -406,6 +409,9 @@ def main():
         
         # Demonstrate context manager
         demo_context_manager()
+
+        # put robot in rest mode
+        demo_put_robot_in_rest(client)
         
         print_section("Demonstration Complete")
         print_success("All demonstrations completed successfully!")
