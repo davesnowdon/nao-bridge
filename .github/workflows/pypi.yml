@@ -148,17 +148,31 @@ jobs:
       with:
         packages-dir: clients/python/dist/
         print-hash: true
-    
-    - name: Create GitHub release comment
+
+    - name: Update GitHub release with PyPI info
       uses: actions/github-script@v6
       with:
         script: |
           const version = "${{ needs.build.outputs.version }}";
-          github.rest.issues.createComment({
-            issue_number: context.payload.release.id,
+            
+          // Get the current release
+          const release = await github.rest.repos.getRelease({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: `🎉 Successfully published version ${version} to PyPI!\n\nInstall with: \`pip install nao-bridge-client==${version}\``
+            release_id: context.payload.release.id
+          });
+            
+          // Append PyPI info to the release body
+          const pypiInfo = `\n\n---\n\n🎉 **Published to PyPI!**\n\nInstall with:\n\`\`\`bash\npip install nao-bridge-client==${version}\n\`\`\``;
+            
+          const updatedBody = (release.data.body || '') + pypiInfo;
+            
+          // Update the release
+          await github.rest.repos.updateRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: context.payload.release.id,
+            body: updatedBody
           });
 
   notify-failure:
