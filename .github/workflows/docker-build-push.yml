@@ -65,8 +65,8 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             
-            # SHA-based tags for traceability
-            type=sha,prefix={{branch}}-,format=short
+            # SHA-based tags for traceability (only for branch builds)
+            type=sha,prefix={{branch}}-,format=short,enable={{is_default_branch}}
             
             # Latest tag for main branch
             type=raw,value=latest,enable={{is_default_branch}}
