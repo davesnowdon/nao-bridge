@@ -1151,8 +1151,8 @@ def execute_sequence():
         executed_steps = []
             
         for i, step in enumerate(sequence):
-            step_type = step.get('type')
-            action = step.get('action')
+            step_type = str(step.get('type')).lower()
+            action = str(step.get('action')).lower()
                 
             try:
                 if step_type == 'posture':
@@ -1204,7 +1204,7 @@ def execute_sequence():
 
 def _execute_posture_step(nao_robot, step):
     """Execute a posture step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     speed = step.get('speed', 0.5)
     
@@ -1222,7 +1222,7 @@ def _execute_posture_step(nao_robot, step):
 
 def _execute_speech_step(nao_robot, step):
     """Execute a speech step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     text = step.get('text', '')
     blocking = step.get('blocking', False)
     animated = step.get('animated', False)
@@ -1239,49 +1239,48 @@ def _execute_speech_step(nao_robot, step):
 
 def _execute_arms_step(nao_robot, step):
     """Execute an arms step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
         nao_robot.set_duration(duration)
     
-    if action == 'preset':
-        position = step.get('position', 'up')
-        arms = step.get('arms', 'both')
+    position = str(step.get('position', 'up')).lower()
+    arms = str(step.get('arms', 'both')).lower()
         
-        if position == 'up':
-            if arms in ['both', 'left']:
-                nao_robot.arms.left_up()
-            if arms in ['both', 'right']:
-                nao_robot.arms.right_up()
-        elif position == 'down':
-            if arms in ['both', 'left']:
-                nao_robot.arms.left_down()
-            if arms in ['both', 'right']:
-                nao_robot.arms.right_down()
-        elif position == 'forward':
-            if arms in ['both', 'left']:
-                nao_robot.arms.left_forward()
-            if arms in ['both', 'right']:
-                nao_robot.arms.right_forward()
-        elif position == 'out':
-            nao_robot.arms.out()
-        
-        nao_robot.go()
+    if position == 'up':
+        if arms in ['both', 'left']:
+            nao_robot.arms.left_up()
+        if arms in ['both', 'right']:
+            nao_robot.arms.right_up()
+    elif position == 'down':
+        if arms in ['both', 'left']:
+            nao_robot.arms.left_down()
+        if arms in ['both', 'right']:
+            nao_robot.arms.right_down()
+    elif position == 'forward':
+        if arms in ['both', 'left']:
+            nao_robot.arms.left_forward()
+        if arms in ['both', 'right']:
+            nao_robot.arms.right_forward()
+    elif position == 'out':
+        nao_robot.arms.out()
     else:
         raise ValueError("Unknown arms action: {}".format(action))
+        
+    nao_robot.go()
 
 def _execute_hands_step(nao_robot, step):
     """Execute a hands step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
         nao_robot.set_duration(duration)
     
     if action == 'position':
-        left_hand = step.get('left_hand')
-        right_hand = step.get('right_hand')
+        left_hand = str(step.get('left_hand')).lower()
+        right_hand = str(step.get('right_hand')).lower()    
         
         if left_hand == 'open':
             nao_robot.hands.left_open()
@@ -1299,15 +1298,15 @@ def _execute_hands_step(nao_robot, step):
 
 def _execute_head_step(nao_robot, step):
     """Execute a head step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
         nao_robot.set_duration(duration)
     
     if action == 'position':
-        yaw = step.get('yaw', 0)
-        pitch = step.get('pitch', 0)
+        yaw = float(step.get('yaw', 0))
+        pitch = float(step.get('pitch', 0))
         
         if yaw > 0:
             nao_robot.head.right(0, yaw)
@@ -1318,14 +1317,24 @@ def _execute_head_step(nao_robot, step):
             nao_robot.head.up(0, pitch)
         elif pitch < 0:
             nao_robot.head.down(0, abs(pitch))
-        
-        nao_robot.go()
+    elif action == 'look_left':
+        nao_robot.head.left(0, 1)
+    elif action == 'look_right':
+        nao_robot.head.right(0, 1)
+    elif action == 'look_up':
+        nao_robot.head.up(0, 1)
+    elif action == 'look_down':
+        nao_robot.head.down(0, 1)
+    elif action == 'center':
+        nao_robot.head.center(0, 0)
     else:
         raise ValueError("Unknown head action: {}".format(action))
+    
+    nao_robot.go()
 
 def _execute_leds_step(nao_robot, step):
     """Execute a LEDs step in a sequence"""
-    action = step.get('action')
+    action = str(step.get('action')).lower()
     duration = step.get('duration')
     
     if duration:
