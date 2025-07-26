@@ -12,7 +12,7 @@ on:
         type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -135,6 +135,7 @@ jobs:
     
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
+      contents: write
     
     steps:
     - name: Download distribution artifacts
