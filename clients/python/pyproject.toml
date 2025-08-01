@@ -47,8 +47,7 @@ dev = [
     "pytest-cov>=4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-httpx>=0.21.0",
-    "black>=23.1.0",
-    "ruff>=0.1.0",
+    "ruff>=0.12.5",
     "mypy>=1.5.0",
     "pre-commit>=3.0.0",
 ]
@@ -99,19 +98,16 @@ cov = [
 [tool.hatch.envs.lint]
 detached = true
 dependencies = [
-    "black>=23.1.0",
     "mypy>=1.5.0",
-    "ruff>=0.1.0",
+    "ruff>=0.12.5",
 ]
 
 [tool.hatch.envs.lint.scripts]
 typing = "mypy --install-types --non-interactive {args:nao_bridge_client tests}"
 style = [
     "ruff {args:.}",
-    "black --check --diff {args:.}",
 ]
 fmt = [
-    "black {args:.}",
     "ruff --fix {args:.}",
     "style",
 ]
@@ -119,10 +115,6 @@ all = [
     "style",
     "typing",
 ]
-
-[tool.black]
-target-version = ["py38"]
-line-length = 132
 
 [tool.ruff]
 target-version = "py38"

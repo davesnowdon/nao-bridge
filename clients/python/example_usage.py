@@ -17,17 +17,11 @@ Author: Dave Snowdon
 Date: July 2025
 """
 
-import asyncio
 import time
-from typing import List
 
 from nao_bridge_client import (
     NAOBridgeClient,
     NAOBridgeError,
-    StatusResponse,
-    SuccessResponse,
-    SonarResponse,
-    AnimationsListResponse
 )
 
 

@@ -1,53 +1,48 @@
 """
-NAO Bridge Client Package
+NAO Bridge Client
 
-A modern Python client for the NAO Bridge HTTP API.
+A Python client for the NAO Bridge HTTP API.
 """
 
 from .client import (
-    # Main client class
-    NAOBridgeClient,
-    # Exception classes
-    NAOBridgeError,
-    # Data models
-    StatusData,
-    SonarData,
-    VisionData,
-    JointAnglesData,
-    # Response models
-    BaseResponse,
-    StatusResponse,
-    SonarResponse,
-    VisionResponse,
-    JointAnglesResponse,
-    SuccessResponse,
-    DurationResponse,
-    OperationsResponse,
-    OperationResponse,
+    AnimationExecuteRequest,
     AnimationResponse,
     AnimationsListResponse,
-    SequenceResponse,
-    VisionResolutionsResponse,
+    ArmsPresetRequest,
+    AutonomousLifeRequest,
+    BaseResponse,
+    BehaviourDefaultRequest,
+    BehaviourExecuteRequest,
     BehaviourResponse,
     BehavioursListResponse,
-    JointNamesResponse,
-    # Request models
     DurationRequest,
-    PostureRequest,
-    SpeechRequest,
-    WalkRequest,
-    HeadPositionRequest,
-    AutonomousLifeRequest,
-    SpeedRequest,
-    LieRequest,
-    ArmsPresetRequest,
+    DurationResponse,
     HandsRequest,
+    HeadPositionRequest,
+    JointAnglesData,
+    JointAnglesResponse,
+    JointNamesResponse,
     LEDsRequest,
-    WalkPresetRequest,
-    AnimationExecuteRequest,
+    LieRequest,
+    NAOBridgeClient,
+    NAOBridgeError,
+    OperationResponse,
+    OperationsResponse,
+    PostureRequest,
     SequenceRequest,
-    BehaviourExecuteRequest,
-    BehaviourDefaultRequest,
+    SequenceResponse,
+    SonarData,
+    SonarResponse,
+    SpeechRequest,
+    SpeedRequest,
+    StatusData,
+    StatusResponse,
+    SuccessResponse,
+    VisionData,
+    VisionResolutionsResponse,
+    VisionResponse,
+    WalkPresetRequest,
+    WalkRequest,
 )
 
 __version__ = "0.1.5"
