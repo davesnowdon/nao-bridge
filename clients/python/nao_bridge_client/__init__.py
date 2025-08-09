@@ -54,7 +54,7 @@ __all__ = [
     # Data models
     "StatusData",
     "SonarData",
-    "VisionData", 
+    "VisionData",
     "JointAnglesData",
     # Response models
     "BaseResponse",
@@ -76,7 +76,7 @@ __all__ = [
     # Request models
     "DurationRequest",
     "PostureRequest",
-    "SpeechRequest", 
+    "SpeechRequest",
     "WalkRequest",
     "HeadPositionRequest",
     "AutonomousLifeRequest",
