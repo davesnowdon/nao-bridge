@@ -114,7 +114,7 @@ fmt = [
 [tool.ruff]
 target-version = "py38"
 line-length = 132
-select = [
+lint.select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
     "F",  # pyflakes
