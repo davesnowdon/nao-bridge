@@ -11,12 +11,16 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt /nao-bridge/requirements.txt
-WORKDIR /nao-bridge
+# Install paho-mqtt (last Py2-compatible release) without pip
+ARG PAHO_VER=1.3.1
+RUN set -eux; \
+    curl -L https://github.com/eclipse-paho/paho.mqtt.python/archive/refs/tags/v${PAHO_VER}.tar.gz -o /tmp/paho-mqtt.tar.gz; \
+    tar -xzf /tmp/paho-mqtt.tar.gz -C /tmp; \
+    cd /tmp/paho.mqtt.python-${PAHO_VER}; \
+    python setup.py install; \
+    rm -rf /tmp/paho*
 
-# Install Python dependencies (if needed for additional packages)
-#RUN pip install -r requirements.txt
+WORKDIR /nao-bridge
 
 # Copy source code
 COPY nao_bridge /nao-bridge/nao_bridge
@@ -25,9 +29,6 @@ COPY lib/ /nao-bridge/lib/
 # Copy startup script
 COPY start_api.sh /nao-bridge/start_api.sh
 RUN chmod +x /nao-bridge/start_api.sh
-
-# Set working directory
-WORKDIR /nao-bridge
 
 # Expose port
 EXPOSE 3000
