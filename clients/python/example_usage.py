@@ -27,9 +27,9 @@ from nao_bridge_client import (
 
 def print_section(title: str):
     """Print a formatted section header."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {title}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def print_success(message: str):
@@ -37,7 +37,7 @@ def print_success(message: str):
     print(f"✅ {message}")
 
 
-def print_error(message: str, e :NAOBridgeError | None = None):
+def print_error(message: str, e: NAOBridgeError | None = None):
     """Print an error message."""
     print(f"❌ {message}")
     if e:
@@ -77,15 +77,18 @@ def demo_basic_connection(client: NAOBridgeClient):
         print_error("Failed to get status", e)
         return False
 
+
 def demo_is_robot_awake(client: NAOBridgeClient):
     """Demonstrate checking if the robot is awake."""
     status = client.get_status()
     return status.data.awake
 
+
 def demo_get_robot_posture(client: NAOBridgeClient):
     """Demonstrate getting the robot's posture."""
     status = client.get_status()
     return status.data.current_posture.lower()
+
 
 def demo_wake_up_robot(client: NAOBridgeClient):
     """Demonstrate waking up the robot."""
@@ -93,11 +96,13 @@ def demo_wake_up_robot(client: NAOBridgeClient):
     client.wake_up()
     print_success("Robot woke up")
 
+
 def demo_put_robot_in_rest(client: NAOBridgeClient):
     """Demonstrate putting the robot in rest mode."""
     print_info("Putting robot in rest mode...")
     client.put_in_rest()
     print_success("Robot is now in rest mode")
+
 
 def demo_robot_control(client: NAOBridgeClient):
     """Demonstrate basic robot control operations."""
@@ -226,7 +231,7 @@ def demo_sensors(client: NAOBridgeClient):
         # Read sonar sensors multiple times
         for i in range(5):
             sonar = client.get_sonar()
-            print_info(f"Sonar reading {i+1}:")
+            print_info(f"Sonar reading {i + 1}:")
             print(f"   Left: {sonar.data.left} {sonar.data.units}")
             print(f"   Right: {sonar.data.right} {sonar.data.units}")
             print(f"   Timestamp: {sonar.data.timestamp}")
@@ -255,10 +260,7 @@ def demo_animations(client: NAOBridgeClient):
                 print_info(f"Executing animation: {first_animation}")
 
                 # Execute animation
-                client.execute_animation(
-                    animation=first_animation,
-                    parameters={"duration_multiplier": 1.0}
-                )
+                client.execute_animation(animation=first_animation, parameters={"duration_multiplier": 1.0})
                 print_success(f"Animation '{first_animation}' executed successfully")
 
                 # Wait for animation to complete
@@ -315,7 +317,6 @@ def demo_sequence_execution(client: NAOBridgeClient):
     print_section("Sequence Execution")
 
     try:
-
         # Define a sequence of movements
         sequence = [
             {"type": "posture", "action": "stand", "speed": 0.5},
@@ -324,7 +325,7 @@ def demo_sequence_execution(client: NAOBridgeClient):
             {"type": "head", "action": "look_right", "duration": 1.0},
             {"type": "head", "action": "center", "duration": 1.0},
             {"type": "arms", "action": "down", "duration": 2.0},
-            #{"type": "posture", "action": "sit", "speed": 0.5}
+            # {"type": "posture", "action": "sit", "speed": 0.5}
         ]
 
         print_info("Executing movement sequence...")
@@ -397,7 +398,7 @@ def main():
         demo_sensors(client)
         demo_animations(client)
         # don't want robot walking around by default, uncomment if you want to test it
-        #demo_walking(client)
+        # demo_walking(client)
         demo_sequence_execution(client)
         demo_error_handling(client)
 
