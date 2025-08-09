@@ -316,17 +316,17 @@ class NAOBridgeClient:
                      code=error_info.get('code'),
                      status_code=e.response.status_code,
                      details=error_info.get('details')
-                )
+                ) from e
             except (ValueError, TypeError, AttributeError):
                 raise NAOBridgeError(
                     message=e.response.text,
                     status_code=e.response.status_code
-                )
+                ) from e
 
         try:
             data = response.json()
         except Exception as e:
-            raise NAOBridgeError(f"Invalid JSON response: {e}")
+            raise NAOBridgeError(f"Invalid JSON response: {e}") from e
 
         # Check API-level errors
         if not data.get('success', True):
@@ -336,7 +336,7 @@ class NAOBridgeClient:
                 code=error_info.get('code'),
                 status_code=response.status_code,
                 details=error_info.get('details')
-            )
+            ) from e
 
         return data
 
@@ -609,7 +609,7 @@ class NAOBridgeClient:
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            raise NAOBridgeNetworkError(f"HTTP {e.response.status_code}: {e.response.text}")
+            raise NAOBridgeError(f"HTTP {e.response.status_code}: {e.response.text}") from e
 
         return response.content
 
