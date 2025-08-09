@@ -116,13 +116,13 @@ def demo_robot_control(client: NAOBridgeClient):
 
         # Move to standing position
         print_info("Moving to standing position...")
-        response = client.stand(speed=0.5, variant="Stand")
+        client.stand(speed=0.5, variant="Stand")
         print_success("Robot is now standing")
         time.sleep(5)
 
         # Move to sitting position
         print_info("Moving to sitting position...")
-        response = client.sit(speed=0.5, variant="Sit")
+        client.sit(speed=0.5, variant="Sit")
         print_success("Robot is now sitting")
         time.sleep(10)
 
@@ -255,7 +255,7 @@ def demo_animations(client: NAOBridgeClient):
                 print_info(f"Executing animation: {first_animation}")
 
                 # Execute animation
-                response = client.execute_animation(
+                client.execute_animation(
                     animation=first_animation,
                     parameters={"duration_multiplier": 1.0}
                 )
@@ -328,7 +328,7 @@ def demo_sequence_execution(client: NAOBridgeClient):
         ]
 
         print_info("Executing movement sequence...")
-        response = client.execute_sequence(sequence, blocking=True)
+        client.execute_sequence(sequence, blocking=True)
         print_success("Sequence executed successfully")
 
     except NAOBridgeError as e:

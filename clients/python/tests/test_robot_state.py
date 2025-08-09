@@ -26,13 +26,13 @@ def test_success_response(httpx_mock):
     assert response.data.active_operations == []
     assert response.data.api_version == "1.0"
     assert response.data.autonomous_life_state == "disabled"
-    assert response.data.awake == False
+    assert not response.data.awake
     assert response.data.battery_level == 39
     assert response.data.current_posture == "Crouch"
-    assert response.data.robot_connected == True
+    assert response.data.robot_connected
     assert response.data.robot_ip == "192.168.0.184"
     assert response.message == "Status retrieved successfully"
-    assert response.success == True
+    assert response.success
 
 
 def test_error_response(httpx_mock):

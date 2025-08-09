@@ -4,14 +4,14 @@ NAO Bridge Client
 A modern Python 3 client for the NAO Bridge HTTP API.
 Provides type-safe access to all robot control endpoints.
 
-Author: Dave Snowdon  
+Author: Dave Snowdon
 Date: July 2025
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class NAOBridgeError(Exception):
     """API returned an error response."""
 
-    def __init__(self, message: str, code: str | None = None, status_code: int = 500, details: Dict[str, Any] | None = None):
+    def __init__(self, message: str, code: str | None = None, status_code: int = 500, details: dict[str, Any] | None = None):
         self.code = code
         self.status_code = status_code
         self.details = details or {}
@@ -40,7 +40,7 @@ class StatusData(BaseModel):
     api_version: str = "1.0"
     autonomous_life_state: str | None = None
     awake: bool | None = None
-    active_operations: List[Dict[str, Any]] = Field(default_factory=list)
+    active_operations: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SonarData(BaseModel):
@@ -66,7 +66,7 @@ class VisionData(BaseModel):
 class JointAnglesData(BaseModel):
     """Joint angle information."""
     chain: str
-    joints: Dict[str, float]
+    joints: dict[str, float]
 
 
 # Response models
@@ -99,7 +99,7 @@ class JointAnglesResponse(BaseResponse):
 
 class SuccessResponse(BaseResponse):
     """Generic success response."""
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 # Request models
@@ -158,7 +158,7 @@ class ArmsPresetRequest(BaseModel):
     duration: float | None = None
     position: str | None = None
     arms: str | None = None
-    offset: Dict[str, float] | None = None
+    offset: dict[str, float] | None = None
 
 
 class HandsRequest(BaseModel):
@@ -171,7 +171,7 @@ class HandsRequest(BaseModel):
 class LEDsRequest(BaseModel):
     """LED control request."""
     duration: float | None = None
-    leds: Dict[str, str] | None = None
+    leds: dict[str, str] | None = None
 
 
 class WalkPresetRequest(BaseModel):
@@ -184,12 +184,12 @@ class WalkPresetRequest(BaseModel):
 class AnimationExecuteRequest(BaseModel):
     """Animation execution request."""
     animation: str
-    parameters: Dict[str, Any] | None = None
+    parameters: dict[str, Any] | None = None
 
 
 class SequenceRequest(BaseModel):
     """Movement sequence request."""
-    sequence: List[Dict[str, Any]]
+    sequence: list[dict[str, Any]]
     blocking: bool | None = None
 
 
@@ -208,58 +208,58 @@ class BehaviourDefaultRequest(BaseModel):
 # Additional missing response models
 class DurationResponse(BaseResponse):
     """Duration response."""
-    data: Dict[str, float] = Field(default_factory=dict)
+    data: dict[str, float] = Field(default_factory=dict)
 
 
 class OperationsResponse(BaseResponse):
     """Operations list response."""
-    data: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    data: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
 
 class OperationResponse(BaseResponse):
     """Single operation response."""
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnimationResponse(BaseResponse):
     """Animation response."""
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnimationsListResponse(BaseResponse):
     """Animations list response."""
-    data: Dict[str, List[str]] = Field(default_factory=dict)
+    data: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class SequenceResponse(BaseResponse):
     """Sequence response."""
-    data: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+    data: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
 
 class VisionResolutionsResponse(BaseResponse):
     """Vision resolutions response."""
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class BehaviourResponse(BaseResponse):
     """Behaviour response."""
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class BehavioursListResponse(BaseResponse):
     """Behaviours list response."""
-    data: Dict[str, List[str]] = Field(default_factory=dict)
+    data: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class JointNamesResponse(BaseResponse):
     """Joint names response."""
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class NAOBridgeClient:
     """
     Modern NAO Bridge HTTP API client.
-    
+
     Provides both sync and async interfaces with proper error handling,
     type safety, and clean Python idioms.
     """
@@ -272,7 +272,7 @@ class NAOBridgeClient:
     ):
         """
         Initialize the client.
-        
+
         Args:
             base_url: NAO Bridge server URL
             timeout: Request timeout in seconds
@@ -303,7 +303,7 @@ class NAOBridgeClient:
             )
         return self._async_client
 
-    def _handle_response(self, response: httpx.Response) -> Dict[str, Any]:
+    def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
         """Process HTTP response and handle errors."""
         try:
             response.raise_for_status()
@@ -344,8 +344,8 @@ class NAOBridgeClient:
         self,
         method: str,
         endpoint: str,
-        data: BaseModel | Dict[str, Any] | None = None
-    ) -> Dict[str, Any]:
+        data: BaseModel | dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Make synchronous HTTP request."""
         url = urljoin(self.api_base, endpoint)
 
@@ -364,8 +364,8 @@ class NAOBridgeClient:
         self,
         method: str,
         endpoint: str,
-        data: BaseModel | Dict[str, Any] | None = None
-    ) -> Dict[str, Any]:
+        data: BaseModel | dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Make asynchronous HTTP request."""
         url = urljoin(self.api_base, endpoint)
         client = self._get_async_client()
@@ -517,7 +517,7 @@ class NAOBridgeClient:
         position: str | None = None,
         duration: float | None = None,
         arms: str | None = None,
-        offset: Dict[str, float] | None = None
+        offset: dict[str, float] | None = None
     ) -> SuccessResponse:
         """Control arms using preset positions."""
         data = ArmsPresetRequest(
@@ -550,7 +550,7 @@ class NAOBridgeClient:
 
     def set_leds(
         self,
-        leds: Dict[str, str] | None = None,
+        leds: dict[str, str] | None = None,
         duration: float | None = None
     ) -> SuccessResponse:
         """Control LED colors."""
@@ -625,7 +625,7 @@ class NAOBridgeClient:
     def execute_animation(
         self,
         animation: str,
-        parameters: Dict[str, Any] | None = None
+        parameters: dict[str, Any] | None = None
     ) -> AnimationResponse:
         """Execute predefined complex animations."""
         data = AnimationExecuteRequest(animation=animation, parameters=parameters)
@@ -639,7 +639,7 @@ class NAOBridgeClient:
 
     def execute_sequence(
         self,
-        sequence: List[Dict[str, Any]],
+        sequence: list[dict[str, Any]],
         blocking: bool | None = None
     ) -> SequenceResponse:
         """Execute a sequence of movements."""
