@@ -104,16 +104,11 @@ dependencies = [
 
 [tool.hatch.envs.lint.scripts]
 typing = "mypy --install-types --non-interactive {args:nao_bridge_client tests}"
-style = [
-    "ruff {args:.}",
-]
+style = "ruff check {args:.}"
 fmt = [
-    "ruff --fix {args:.}",
+    "ruff check --fix {args:.}",
+    "ruff format {args:.}",
     "style",
-]
-all = [
-    "style",
-    "typing",
 ]
 
 [tool.ruff]
