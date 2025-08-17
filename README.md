@@ -18,6 +18,12 @@ Run the latest release from docker hub
 docker  run -it -p 3000:3000 -e NAO_IP=<YOUR NAO ROBOT IP> davesnowdon/nao-bridge:latest
 ```
 
+**Please note:** on Macs with Apple silicon you will need to specify the platform as AMD64 using `--platform linux/amd64` so the command to launch the docker container becomes:
+
+```bash
+docker run -it -p 3000:3000 -e NAO_IP=192.168.1.81 --platform linux/amd64 davesnowdon/nao-bridge:latest
+```
+
 You can then navigate to http://localhost:3000/swagger in your web browser and try out the API
 
 You can get basic information about the current state of the robot from `/api/v1/status` using curl this would look like
