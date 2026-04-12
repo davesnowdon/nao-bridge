@@ -43,16 +43,16 @@ def test_error_response(httpx_mock):
             "error": {
                 "code": "STATUS_ERROR",
                 "details": {},
-                "message": "Failed to get robot status: \tALBattery::getBatteryCharge\n\tmodule destroyed",
+                "message": "Failed to get robot status: "
+                "\tALBattery::getBatteryCharge\n\tmodule destroyed",
             },
             "success": False,
             "timestamp": "2025-07-22T19:20:12.856711Z",
         }
     )
 
-    with pytest.raises(NAOBridgeError) as e:
-        with NAOBridgeClient("http://localhost:3000") as client:
-            client.get_status()
+    with pytest.raises(NAOBridgeError) as e, NAOBridgeClient("http://localhost:3000") as client:
+        client.get_status()
 
     assert str(e.value).startswith("Failed to get robot status:")
     assert e.value.code == "STATUS_ERROR"

@@ -4,6 +4,8 @@ NAO Bridge Client
 A Python client for the NAO Bridge HTTP API.
 """
 
+from importlib.metadata import version
+
 from .client import (
     AnimationExecuteRequest,
     AnimationResponse,
@@ -45,7 +47,7 @@ from .client import (
     WalkRequest,
 )
 
-__version__ = "0.1.5"
+__version__ = version("nao-bridge-client")
 __all__ = [
     # Main client
     "NAOBridgeClient",

@@ -21,7 +21,13 @@ from pydantic import BaseModel, ConfigDict, Field
 class NAOBridgeError(Exception):
     """API returned an error response."""
 
-    def __init__(self, message: str, code: str | None = None, status_code: int = 500, details: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        message: str,
+        code: str | None = None,
+        status_code: int = 500,
+        details: dict[str, Any] | None = None,
+    ):
         self.code = code
         self.status_code = status_code
         self.details = details or {}
@@ -300,7 +306,9 @@ class NAOBridgeClient:
     type safety, and clean Python idioms.
     """
 
-    def __init__(self, base_url: str = "http://localhost:3000", timeout: float = 30.0, **httpx_kwargs):
+    def __init__(
+        self, base_url: str = "http://localhost:3000", timeout: float = 30.0, **httpx_kwargs
+    ):
         """
         Initialize the client.
 
@@ -325,14 +333,16 @@ class NAOBridgeClient:
     def _get_async_client(self) -> httpx.AsyncClient:
         """Get or create async client."""
         if self._async_client is None:
-            self._async_client = httpx.AsyncClient(timeout=self._client.timeout, headers=self._client.headers)
+            self._async_client = httpx.AsyncClient(
+                timeout=self._client.timeout, headers=self._client.headers
+            )
         return self._async_client
 
     def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
         """Process HTTP response and handle errors."""
         try:
             response.raise_for_status()
-        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        except httpx.HTTPStatusError as e:
             try:
                 data = e.response.json()
                 error_info = data.get("error", {})
@@ -343,7 +353,9 @@ class NAOBridgeClient:
                     details=error_info.get("details"),
                 ) from e
             except (ValueError, TypeError, AttributeError):
-                raise NAOBridgeError(message=e.response.text, status_code=e.response.status_code) from e
+                raise NAOBridgeError(
+                    message=e.response.text, status_code=e.response.status_code
+                ) from e
 
         try:
             data = response.json()
@@ -362,7 +374,9 @@ class NAOBridgeClient:
 
         return data
 
-    def _request(self, method: str, endpoint: str, data: BaseModel | dict[str, Any] | None = None) -> dict[str, Any]:
+    def _request(
+        self, method: str, endpoint: str, data: BaseModel | dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Make synchronous HTTP request."""
         url = urljoin(self.api_base, endpoint)
 
@@ -377,7 +391,9 @@ class NAOBridgeClient:
         response = self._client.request(method, url, json=json_data)
         return self._handle_response(response)
 
-    async def _async_request(self, method: str, endpoint: str, data: BaseModel | dict[str, Any] | None = None) -> dict[str, Any]:
+    async def _async_request(
+        self, method: str, endpoint: str, data: BaseModel | dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Make asynchronous HTTP request."""
         url = urljoin(self.api_base, endpoint)
         client = self._get_async_client()
@@ -476,7 +492,12 @@ class NAOBridgeClient:
     # ============================================================================
 
     def start_walking(
-        self, *, x: float | None = None, y: float | None = None, theta: float | None = None, speed: float | None = None
+        self,
+        *,
+        x: float | None = None,
+        y: float | None = None,
+        theta: float | None = None,
+        speed: float | None = None,
     ) -> SuccessResponse:
         """Start walking."""
         data = WalkRequest(x=x, y=y, theta=theta, speed=speed)
@@ -488,7 +509,9 @@ class NAOBridgeClient:
         response = self._request("POST", "walk/stop")
         return SuccessResponse.model_validate(response)
 
-    def walk_preset(self, action: str | None = None, duration: float | None = None, speed: float | None = None) -> SuccessResponse:
+    def walk_preset(
+        self, action: str | None = None, duration: float | None = None, speed: float | None = None
+    ) -> SuccessResponse:
         """Use predefined walking patterns."""
         data = WalkPresetRequest(action=action, duration=duration, speed=speed)
         response = self._request("POST", "walk/preset", data)
@@ -498,7 +521,9 @@ class NAOBridgeClient:
     # Head Control Methods
     # ============================================================================
 
-    def move_head(self, *, yaw: float | None = None, pitch: float | None = None, duration: float | None = None) -> SuccessResponse:
+    def move_head(
+        self, *, yaw: float | None = None, pitch: float | None = None, duration: float | None = None
+    ) -> SuccessResponse:
         """Move robot head."""
         data = HeadPositionRequest(yaw=yaw, pitch=pitch, duration=duration)
         response = self._request("POST", "head/position", data)
@@ -521,7 +546,10 @@ class NAOBridgeClient:
         return SuccessResponse.model_validate(response)
 
     def control_hands(
-        self, left_hand: str | None = None, right_hand: str | None = None, duration: float | None = None
+        self,
+        left_hand: str | None = None,
+        right_hand: str | None = None,
+        duration: float | None = None,
     ) -> SuccessResponse:
         """Control hand opening and closing."""
         data = HandsRequest(left_hand=left_hand, right_hand=right_hand, duration=duration)
@@ -532,7 +560,9 @@ class NAOBridgeClient:
     # LED Control Methods
     # ============================================================================
 
-    def set_leds(self, leds: dict[str, str] | None = None, duration: float | None = None) -> SuccessResponse:
+    def set_leds(
+        self, leds: dict[str, str] | None = None, duration: float | None = None
+    ) -> SuccessResponse:
         """Control LED colors."""
         data = LEDsRequest(leds=leds, duration=duration)
         response = self._request("POST", "leds/set", data)
@@ -547,7 +577,9 @@ class NAOBridgeClient:
     # Speech Methods
     # ============================================================================
 
-    def say(self, text: str, *, blocking: bool | None = None, animated: bool | None = None) -> SuccessResponse:
+    def say(
+        self, text: str, *, blocking: bool | None = None, animated: bool | None = None
+    ) -> SuccessResponse:
         """Make the robot speak."""
         data = SpeechRequest(text=text, blocking=blocking, animated=animated)
         response = self._request("POST", "speech/say", data)
@@ -602,7 +634,9 @@ class NAOBridgeClient:
     # Animation and Behavior Methods
     # ============================================================================
 
-    def execute_animation(self, animation: str, parameters: dict[str, Any] | None = None) -> AnimationResponse:
+    def execute_animation(
+        self, animation: str, parameters: dict[str, Any] | None = None
+    ) -> AnimationResponse:
         """Execute predefined complex animations."""
         data = AnimationExecuteRequest(animation=animation, parameters=parameters)
         response = self._request("POST", "animations/execute", data)
@@ -613,7 +647,9 @@ class NAOBridgeClient:
         response = self._request("GET", "animations/list")
         return AnimationsListResponse.model_validate(response)
 
-    def execute_sequence(self, sequence: list[dict[str, Any]], blocking: bool | None = None) -> SequenceResponse:
+    def execute_sequence(
+        self, sequence: list[dict[str, Any]], blocking: bool | None = None
+    ) -> SequenceResponse:
         """Execute a sequence of movements."""
         data = SequenceRequest(sequence=sequence, blocking=blocking)
         response = self._request("POST", "animations/sequence", data)
@@ -655,14 +691,21 @@ class NAOBridgeClient:
         response = await self._async_request("GET", "status")
         return StatusResponse.model_validate(response)
 
-    async def async_say(self, text: str, *, blocking: bool | None = None, animated: bool | None = None) -> SuccessResponse:
+    async def async_say(
+        self, text: str, *, blocking: bool | None = None, animated: bool | None = None
+    ) -> SuccessResponse:
         """Make the robot speak (async)."""
         data = SpeechRequest(text=text, blocking=blocking, animated=animated)
         response = await self._async_request("POST", "speech/say", data)
         return SuccessResponse.model_validate(response)
 
     async def async_start_walking(
-        self, *, x: float | None = None, y: float | None = None, theta: float | None = None, speed: float | None = None
+        self,
+        *,
+        x: float | None = None,
+        y: float | None = None,
+        theta: float | None = None,
+        speed: float | None = None,
     ) -> SuccessResponse:
         """Start walking (async)."""
         data = WalkRequest(x=x, y=y, theta=theta, speed=speed)
