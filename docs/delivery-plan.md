@@ -31,6 +31,9 @@ Progress: [the container experiment](runtime-experiment.md) proves the pinned mo
 4. Test real native callbacks and commands on Linux Docker and Docker Desktop on Apple Silicon using the amd64 image. Determine session/signal versus ALBroker compatibility in the bundled SDK and document callback address/port requirements. Native callback connectivity is distinct from client SSE connectivity.
 5. Test the candidate ASGI server at eight SSE streams plus command/stop/renewal traffic, using bounded queues/workers and one state-owning API process. Measure rather than assuming a thread per stream or unlimited async capacity. Start the shared-sampler proof and monotonic-clock domain mapping.
 6. If modern Python packaging fails, document the cause and test the runtime-bundle or Rust-binary fallback described in the runtime design. Close this gate with a working reproducible choice before 1B; do not quietly move the entire API back into Python 2 or require another container.
+7. Compare a maintained base image carrying an isolated Python 2/SDK bundle with the proven legacy-base recipe. Run the same native/ASGI/IPC tests, check Python extension ABI and transitive dependencies, and record the production choice. The current results do not test the maintained-base alternative.
+8. Evaluate whole-container restart against retaining API diagnostics after agent loss. Include a frozen API with open descriptors, pending native work, shutdown deadlines, and startup reconciliation. EOF does not replace liveness detection, TTL, or generation fencing. Choose one production recovery policy before 1B; do not implement both without a need.
+9. Establish the video and audio acquisition strategy separately: bridge-side SDK image/buffer acquisition is preferred, with robot-side recorders/file retrieval as measured alternatives. Identify callback networking, credentials, robot-disk cleanup, and bulk-path implications early; complete rate/format/recording acceptance in 4B.
 
 Deliverable: a checked-in runtime/network decision record with exact versions, image digest, commands, process responsibilities, IPC failure results, and measured stream capacity. Modern Python is preferred, Rust is a measured fallback; no second SDK is implied by either choice. If a supported deployment needs an explicit callback port, document it and provide the container invocation. Do not promise one-port deployment until measured. If either host topology fails, resolve it or explicitly narrow the initial supported matrix before building on the assumption.
 
@@ -74,11 +77,13 @@ Deliverable: a checked-in runtime/network decision record with exact versions, i
 5. Add owned joint-setpoint controls for sliders/jogging, using shared control ID/sequence/TTL machinery, fixed joint sets, a latest-target pending slot, and nonblocking native target setting. Prove controlled-hold behavior on expiry/cancel without changing stiffness before advertising support.
 6. Add targeted same-session finite-motion replacement via `replace_operation_id`. Validate before cancelling old work and never dispatch the replacement without confirmed stop. Cover conflict races, already-completed targets, uncertain cancellation, and cancellation of a pending replacement; sequence children cannot be replaced independently.
 
+For reactive joint hold, test replacing the target with freshly measured sensor angles via `setAngles`, preserving stiffness. Treat this as a candidate mechanism, not a verified native hold primitive. Measure acquisition-to-dispatch delay, overshoot/reversal, coupled joints, and the speed fraction; do not assume `1.0` is the appropriate default. Stale sensor data or an unconfirmed result must retain uncertainty. The loopback runtime test does not establish this physical behavior.
+
 ### 2B. Add capture, sampling, and input activities
 
 1. Extend the shared sampler with joint state and touch/battery observations, plus posture/fall events where supported. Start at 10 Hz, measure source age/skew, and advertise any supported 20 Hz mode. Cached reads and SSE samples use the same acquisition; freshness waits do not initiate per-request polling.
 2. Add vocabulary listeners, safe pause/configuration transitions, recognition events, and suppression during bridge speech/playback. Make incompatible recognition configurations fail visibly.
-3. Add bounded sample recordings, asset metadata/download/deletion, volume storage, quotas, and explicit gap records. Snapshot capture and continuous recording must use the same measured-state semantics.
+3. Add bounded sample recordings written by the modern process from the shared acquisition feed, independently of SSE viewers. Add SQLite asset metadata on the data volume, quotas, incremental checksums, explicit gap records, immutable finalization, and authenticated range downloads. Test interrupted file/metadata finalization and quota reconciliation; snapshot capture and continuous recording use the same measured-state semantics.
 4. Provide trajectory JSON import/export and schema validation. Keep recording-to-trajectory resampling explicit in the example application.
 
 ### 2C. Deliver a Recorder reference application
@@ -150,7 +155,7 @@ The bridge does not own the map, planner, route history, or a Choregraphe-style 
 
 1. Add discovered lights/groups with read-back quality, per-utterance speech settings, installed behavior/animation execution, and a small parameterized gesture library.
 2. Finish autonomy discovery, strict/partial named profiles, per-setting results, guarded restoration, and the relevant state events. Verify observed behavior separately from command acknowledgement.
-3. Implement the finite sequence schema and pure Python builder, dry validation, resource reservation, sequential/parallel execution, child operations, cancellation, and partial-failure reporting.
+3. Implement the finite sequence schema and pure Python builder, dry validation with resource timelines/duration estimates, resource reservation, sequential/parallel execution, child operations, cancellation, and partial-failure reporting. Use structured asyncio tasks but retain explicit native-cancel/unknown-outcome handling; expose paginated child operations through `parent_id`. Keep unknown timing explicit and do not use estimates to release resources early. A new `repeat` wire node and per-step continuation policy remain deferred.
 4. Validate overlap rules for animated speech, gestures, tracking, postures, and behaviors with unknown resource use. Reject conflicting parallel actions before starting.
 
 ### 4B. Finish common perception and media
@@ -159,6 +164,8 @@ The bridge does not own the map, planner, route history, or a Choregraphe-style 
 2. Add bounded camera preview/video recording, microphone recording, audio upload/playback, codec/format discovery, and media asset finalization.
 3. Isolate preview/download work from command, lease, and watchdog capacity. Implement quota admission, partial-file handling, expiry, and no overwrite of active assets.
 4. Confirm that unsupported robot features remain discoverable as unavailable/unsupported and cannot return false success.
+
+Complete the 1A acquisition decision on real hardware. Evaluate MJPEG in a specified container and supported WAV as initial recording formats, including the actual encoder/muxer dependencies, timestamps, decoding/seeking, simultaneous capture, and rates. Keep encoding/muxing in bounded modern-process workers. If robot-side recording is selected for either source, prove authenticated retrieval, bounded robot disk use, cleanup, and interrupted-transfer recovery; do not silently introduce SSH credentials into ordinary clients. Sample acquisition remains shared with `/state` and SSE.
 
 Live bidirectional audio streaming, WebSocket control/media, historical SSE replay, public advance reservations, optional MQTT, advanced navigation/manipulation, generic NAOqi access, and automatic Docker startup are outside this release. Video/microphone/sample recordings, asset quotas/retention/checksums, and server-side parallel sequences with child operations and fail-fast sibling cancellation remain required.
 
@@ -177,7 +184,7 @@ Live bidirectional audio streaming, WebSocket control/media, historical SSE repl
 - Verify head targets, light transitions, and posture during a presentation on a known image/robot. Record settings and measured/observed outcomes; distinguish software target errors from autonomous behavior.
 - Restore-on-close only restores still-owned, unchanged settings on the same connection generation. External changes and reconnect are tested. Stiffness is never silently removed on cleanup.
 - Run a 30-minute mixed workload with events, a slow observer, recordings/previews, and finite commands. Record bounded memory/worker counts, native subscription cleanup, asset quotas, and continued command/stop responsiveness.
-- Validate recording stop/finalization, partial assets, download integrity, session expiry, storage exhaustion, and incompatible camera/audio configurations.
+- Validate recording stop/finalization, partial assets, download integrity, authenticated ranges/ETags/resume, session expiry, storage exhaustion, restart reconciliation of SQLite metadata/files/quota, and incompatible camera/audio configurations.
 - All three examples are runnable from published artifacts. Complete client parity and schema-conformance checks. Document any hardware capability exclusions and do not mark untested hardware behavior as verified.
 - Audit that another developer could implement Recorder from the published HTTP/SSE contract, guide, and fixtures without reading or running the Python SDK. Execute the direct HTTP workflow suite and verify that server defaults/resource rules are identical to SDK-driven behavior.
 
@@ -202,6 +209,9 @@ At the end of each increment, update capabilities and runnable docs to what actu
 | --- | --- | --- |
 | Native callback mechanism and reachable address under Linux/Docker Desktop | 1A | Physical touch reaches two consumers alongside commands on each supported topology. |
 | Modern Python packaging beside the SDK; Rust fallback only if justified | 1A | Reproducible combined image, dependencies/extensions/TLS verified, environment isolation, supervised startup/shutdown. |
+| Maintained base with vendored Python 2/SDK versus proven legacy base | 1A | Same native/ASGI/IPC checks and host matrix, pinned extension ABI/transitive libraries, documented production selection. |
+| Recovery unit: independent processes versus whole-container restart | 1A | Frozen-process detection, bounded stop-before-exit, diagnostic/evidence retention, startup reconciliation; no automatic replay or assumption of physical stop. |
+| Bridge-side versus robot-side video/audio acquisition | 1A decision; 4B acceptance | Supported callback/file retrieval path, credentials and disk lifecycle, actual encoding/muxing dependencies, bounded media/control separation. |
 | API/agent concurrency, generations, and operator fencing | 1A–1C | Eight-stream target, measured command latency, independent agent watchdog/stop during blocked calls/IPC/media, both process-crash paths. |
 | Native completion/cancellation reliability | 1B onward | Per-service tests; capability flags and unknown outcomes where necessary. |
 | Supported joint sample rate and snapshot skew | 2B | Measured rate/loss/skew under representative recording load. |

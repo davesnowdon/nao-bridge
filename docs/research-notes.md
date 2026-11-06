@@ -9,14 +9,14 @@ Research date: 6 November 2026. These notes preserve findings that informed the 
 - Favor a coherent, learnable surface for common tasks. Do not mirror obscure NAOqi features or add an expert passthrough merely for nominal completeness.
 - Use SSE for events and HTTP for commands. No mandatory MQTT broker or second container; optional MQTT integration can be considered later.
 - Ubuntu's packaged Flask was chosen because the old Python 2 dependencies could no longer be fetched from PyPI. Preserve the working SDK environment during the process split; Flask need not remain once the modern process owns HTTP. Do not infer the deployed version from unused requirements.
-- Modern Recorder, Wanderer, and a scripted presentation are the design guides. This task produces documentation, not a feature implementation or an existing-application migration.
+- Modern Recorder, Wanderer, and a scripted presentation are the design guides. The plan and isolated runtime experiment do not implement the replacement public API or migrate an existing application.
 - Future clients, including a possible Rust client for a Tauri Recorder, must be implementable from the language-neutral HTTP/SSE contract and fixtures. Python is the first implementation, not the definition of the protocol. No additional client is part of the four delivery increments.
 - Split a thin Python 2 native agent from the modern API within one container. Prefer modern Python/ASGI, with packaging proof and a Rust fallback in increment 1A; see the [runtime design](runtime-design.md) for evidence and tradeoffs.
 - Keep SSE after reconsidering modern WebSocket support. Historical event replay and public advance session reservations are deferred. Retain recordings/assets and server-side sequence composition; add interactive joint controls, targeted replacement, and explicit operator recovery.
 
 ## Current bridge: observations and implications
 
-Baseline inspected: repository commit `81d82d6` (12 April 2026). The server starts with the bundled `pynaoqi-python2.7-2.1.4.13-linux64`; its Dockerfile installs `python-flask` from Ubuntu 14.04 and leaves pip requirements installation commented out. The exact installed Flask/runtime versions have not been measured in a running bridge container during this review. See [Dockerfile](../server/Dockerfile) and [startup](../server/start_api.sh).
+Baseline inspected: repository commit `81d82d6` (12 April 2026). The server starts with the bundled `pynaoqi-python2.7-2.1.4.13-linux64`; its Dockerfile installs `python-flask` from Ubuntu 14.04 and leaves pip requirements installation commented out. The subsequent [container experiment](runtime-experiment.md) measured Ubuntu 14.04.6, glibc 2.19, Python 2.7.6, Flask 0.10.1, and Werkzeug 0.9.4, then tested the separate modern runtime alongside the SDK. See [Dockerfile](../server/Dockerfile) and [startup](../server/start_api.sh).
 
 | Observation | Design consequence |
 | --- | --- |
@@ -89,7 +89,12 @@ The bundled SDK identifies a 2.1-era runtime; later documentation shows useful c
 | [Autonomous life, NAOqi 2.8](https://doc.aldebaran.com/2-8/naoqi/interaction/autonomouslife-api.html) | Life state and ability controls differ; some transitions stop activities. Profiles must expose settings and side effects and check actual support. |
 | [Speech recognition, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/audio/alspeechrecognition-api.html) | Vocabulary/configuration, activation, and recognized-word events form a managed listener, not general transcription. |
 | [Video device, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/vision/alvideodevice-api.html) | Camera subscriptions have lifecycle/settings and image metadata. They require resource cleanup and capability-aware sharing. |
+| [Audio recorder, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/audio/alaudiorecorder-api.html) | Native recording writes a named file with supported WAV/OGG channel/rate combinations; exposing a bridge Asset additionally requires a verified retrieval and cleanup path. |
+| [Audio device, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/audio/alaudiodevice-api.html) | Subscription/client-preference APIs are inputs to the bridge-side audio acquisition experiment. Verify callback/module support and networking in the bundled SDK. |
+| [Reactive joint control, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/motion/control-joint.html) | Reactive targets can be updated without blocking. Replacing a target with measured angles is a candidate hold mechanism, not documented proof of physical stop; timing, speed, and stiffness behavior need the 2A hardware test. |
 | [LEDs, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/sensors/alleds-api.html) | Groups, channels, read-back, and fade operations support a coherent lights domain. |
 | [WHATWG server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html) | SSE supplies framing and reconnection fields, not automatic history retention. This plan deliberately sends gaps/current state instead of replay; clients need explicit reconnect logic. |
 
 These are design inputs, not a promise to wrap every method on those pages. Hardware tests remain necessary for callback networking, cancellation, autonomy effects, sample rates, and media compatibility.
+
+The [runtime experiment](runtime-experiment.md) records measured Linux-container evidence. The [review follow-up](review-follow-up.md) distinguishes adopted design guidance, deferred extensions, and additional experiments from those completed tests.

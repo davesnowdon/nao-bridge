@@ -29,6 +29,8 @@ flowchart LR
 
 The agent is an adapter, not a second public API or arbitrary NAOqi/Python execution service. Its protocol enumerates the supported primitive actions and observations. The modern process remains authoritative for public semantics; the agent repeats constraints needed at dispatch time, such as generation, expired deadlines, setpoint order, joint bounds, and validity of native handles.
 
+Keep those checks narrow: validate the command envelope, finite values, cached discovered limits, authority/order/deadline, and service/handle ownership at the native boundary. Do not reproduce public defaults, profile expansion, sequence validation, or resource policy in Python 2. Use portable fixtures and a versioned capability snapshot to keep boundary checks consistent with the modern process. Generation, sequence, and TTL alone do not establish that a numeric target or native handle is valid.
+
 One agent owns the robot, and one API process owns its public state. Do not start multiple independent API workers with duplicated sessions or resource tables. Use asynchronous HTTP/event handling and bounded workers for blocking file/codec work. A lightweight supervisor manages both processes and shutdown/restart; the deployment remains one container per robot, with no broker requirement.
 
 ## Why modern Python first
@@ -48,6 +50,8 @@ First evaluate a pinned relocatable Python distribution in a separate prefix in 
 [python-build-standalone's runtime documentation](https://gregoryszorc.com/docs/python-build-standalone/main/running.html) lists a glibc 2.17 minimum for most GNU/Linux targets and Ubuntu 14.04 among compatible systems. That is a promising packaging route, not proof that the complete API dependency set works. Verify the exact distribution, TLS libraries, compiled extensions, CPU target, and wheels inside the actual image on both supported host topologies. A fully static Python build is not a universal shortcut: those distributions cannot load dynamic extension modules.
 
 If that approach fails, record the failure and test an isolated compatible runtime/library bundle or a Rust API binary built for the legacy container's actual requirements. Rust supports selectable C-runtime linkage, but dependency/system-library assumptions still need checking. See the [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes). Do not silently revert to putting the full stateful API in Python 2 or add a required second container. Close 1A with a measured runtime decision and immutable build inputs before proceeding to 1B.
+
+Also compare the reverse packaging direction before choosing the production base: a maintained Linux image with an isolated Python 2/SDK bundle copied or built in a pinned stage. The legacy-base route is now demonstrated, not mandated forever. A maintained base would simplify maintenance of the modern process, but does not update vendored legacy libraries. Do not infer complete SDK compatibility from glibc compatibility alone: check the Python 2 extension ABI/build configuration, transitive libraries, native calls/callbacks, TLS isolation, and both host topologies with the same harness. Keep the demonstrated image as the comparison baseline and record the selected production recipe; a modern-base build has not been tested by the current report.
 
 ## Internal protocol
 
@@ -71,6 +75,18 @@ For processes in the same Linux container/time namespace, the experiment confirm
 - Operator revocation fences old work at the agent before resource release. If a native call has already been dispatched, fencing cannot retract it. A force-release result must retain that uncertainty and identify unresolved native work; original operations do not become successful. Reject override if the dispatch boundary cannot acknowledge the generation change.
 
 The modern process owns the recovery workflow; the agent owns evidence about native dispatch/stop. Log correlated IDs across both processes and define process/agent readiness separately from robot connectivity. Test both graceful shutdown and forced process termination in the actual combined container.
+
+Evaluate whole-container restart as a simpler operational recovery option in 1A, but do not treat it as a replacement for these failure semantics. Pipe/socket EOF detects closure, not a frozen or deadlocked process that retains its descriptors; the experiment's frozen-API case requires an independent liveness deadline. Setpoint TTL alone does not cover other in-flight native work. A fresh container also cannot prove earlier robot-side tasks stopped, and generation fencing remains necessary for session revocation and queued work while processes are alive. The current contract retains API diagnostics after agent loss. Compare lost diagnostics/operation evidence, shutdown ordering, bounded stop attempts, and startup reconciliation before changing that choice; do not implement two recovery modes speculatively.
+
+## Recording acquisition and asset storage
+
+Resolve acquisition separately for video and audio in 1A, with full recording acceptance in 4B. Prefer acquisition through NAOqi into bounded bridge-side buffers: camera images from the video-device subscription and microphone buffers through the SDK's supported callback/module mechanism. This avoids making robot filesystem access or SSH credentials a deployment prerequisite. Native robot-side recorders are alternatives to measure, not an automatic shortcut: a bridge Asset then requires reliable file retrieval, quota/cleanup on both machines, credential handling, and recovery after interrupted recording or transfer. Keep robot filenames private and never infer that arbitrary robot files can be downloaded through the public API.
+
+Start the video-format experiment with MJPEG in one explicitly selected container, with WAV as the initial audio candidate where supported. JPEG frames still need a tested encoder and a valid container muxer; this is not a promise of zero codec dependencies. Encode/mux in bounded modern-process workers, outside the event loop and priority IPC path. Test decoding and seeking in the intended applications, rate/size tradeoffs, and stream timestamps before advertising formats. H.264 is a later requirement-driven option.
+
+Write sample recordings in the modern process from the same acquisition feed as `/state` and `state.sample`, before per-viewer coalescing or drops. A recording has its own bounded writer queue and explicit loss markers; it must not depend on an SSE subscriber keeping up.
+
+Use SQLite on the mounted data volume for asset metadata, reservations, retention, and pagination; it adds no database service. Keep media in bounded files and serialize metadata mutations outside the event loop. Compute checksums incrementally during writes. Finalize/flush the file before publishing immutable metadata and a checksum-derived ETag. SQLite transactions and filesystem renames are not a joint transaction: reconcile interrupted finalization, orphan files, and quota reservations after restart before admitting new recordings. Active recording files are not downloadable assets; finalized partial recordings remain explicitly partial and immutable.
 
 ## Retain HTTP commands and SSE events
 

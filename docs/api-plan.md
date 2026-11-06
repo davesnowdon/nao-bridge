@@ -123,7 +123,7 @@ An Operation contains `id`, `kind`, `session_id`, `status`, `resources`, creatio
 
 States: `accepted → running → succeeded | failed`; cancellation goes through `cancelling → cancelled`. Use `unknown` when communication loss prevents establishing the outcome. `unknown` is unresolved: it may be reconciled using backend evidence, otherwise remains unknown until history expires. Never convert disappearance of a task into success without checking the service's completion semantics.
 
-- `GET /operations?status=running` and `GET /operations/{id}` inspect status.
+- `GET /operations?status=running` and `GET /operations/{id}` inspect status. Optional `parent_id` filters the paginated collection to direct children of a sequence operation, retaining the same authorization and history rules; clients need not fetch each child separately.
 - `POST /operations/{id}/cancel` requests cancellation and returns the current Operation with 202. Repeated cancellation is idempotent; terminal operations return their unchanged result. Noncancellable work returns `unsupported`.
 - The adapter retains the originating service and native task handle. Native IDs never become public IDs. Waiting, completion, and cancellation are service-specific.
 - HTTP commands always return promptly after acceptance. In Python, finite command methods default to `wait=True`, wait locally, and return the completed Operation; `wait=False` returns the accepted handle. Async methods have exactly the same semantics when awaited. Ongoing activity creation and velocity updates return immediately with their handle/status rather than waiting for expiry.
@@ -267,16 +267,20 @@ Recording `source` is `samples`, `camera`, or `microphone`. Samples select state
 
 For sample recordings, store NDJSON with a metadata header, schema version, observed joint/sensor units, connection generation, timestamps, and gaps. Audio/video formats and rate/channel limits are capability-gated by the actual backend. The plan requires audio recording and playback, camera capture, preview, and bounded video recording; live bidirectional microphone/speaker streaming is deferred.
 
+The modern process writes sample recordings from the same shared acquisition feed as `/state` and `state.sample`, independently of any viewer's queue/coalescing. Video/audio acquisition location and initial formats are explicit experiments in the [runtime design](runtime-design.md#recording-acquisition-and-asset-storage); public clients do not acquire robot filesystem credentials.
+
 Media bytes never travel inside SSE or base64 JSON. Stream and download routes have separate capacity from command/stop handling. Preview clients may skip frames; durable recording reports loss rather than hiding it.
 
 Assets use opaque IDs, declared content type, byte count, checksum, creation/expiry times, and partial/completed status. Persist them in a mounted data volume. Default retention target: seven days with a configurable quota; do not silently evict unexpired assets to make space. Admission reserves capacity for a bounded recording and fails clearly when insufficient. Active/referenced assets cannot be deleted. Local bridge paths and native robot filenames are implementation details.
+
+Finalized asset content is immutable, including retained partial recordings; in-progress files are not served. `GET /assets/{id}/content` advertises `Accept-Ranges: bytes`, supports single byte-range requests with 206/`Content-Range`, and returns 416 for unsatisfiable ranges. Expose a strong ETag derived from the finalized content checksum and honor `If-Range`; a mismatched validator returns the full representation. Authentication/authorization applies equally to partial downloads. Internal metadata uses SQLite and checksums are computed while writing, with crash-safe finalization/reconciliation described in the runtime design.
 
 ### Autonomy and installed behaviors
 
 | HTTP surface | Python surface | Contract | Increment |
 | --- | --- | --- | --- |
 | `GET /state?include=autonomy`; `POST /autonomy/transitions` | `autonomy.state()`, `.configure(...)` | Observed life state; available ability controls are in capabilities; explicit transition Operation. | 2 minimal manual control; 4 complete |
-| `GET /autonomy/profiles`; `POST /autonomy/profile_applications` | `autonomy.profiles()`, `.apply(profile, ...)` | Named, inspectable setting bundles with per-setting application results. | 4 |
+| `GET /autonomy/profiles`; `POST /autonomy/profile_runs` | `autonomy.profiles()`, `.apply(profile, ...)` | Named, inspectable setting bundles with per-setting application results. | 4 |
 | `GET /behaviors`; `POST /behaviors/runs` | `behaviors.list()`, `.run(name)` | Run already-installed behavior/animation by discovered name; normal Operation/cancellation. | 4 |
 | `GET /motion/gestures`; `POST /motion/gesture_runs` | `motion.gestures()`, `.gesture(name, ...)` | Small built-in library, hardware requirements and affected resources declared. | 4 |
 
@@ -389,9 +393,15 @@ operation = nao.sequences.run(script, wait=False)
 
 `POST /sequences/validate` returns normalized actions, required capabilities/resources, and diagnostics without robot side effects. `POST /sequences/runs` creates an Operation. `GET /sequences/schema` exposes the portable JSON schema. SDK equivalents are `sequences.validate`, `.run`, and `.schema`.
 
+Validation also returns per-step resource usage and a relative resource timeline, plus estimated duration where computable. Unknown durations/offsets are explicitly unknown, not zero; native speech/behavior completion cannot be predicted exactly. Estimates support UI previews, not dispatch guarantees or early resource release. The run still reserves its full required resource set.
+
 The grammar contains supported finite commands, `delay`, `sequence`, and `parallel`; no code, branching, event loops, indefinite velocity, open-ended activities, arbitrary HTTP, or unbounded repetition. Joint timelines are the trajectory format, not an alternative sequence clock. Serialize builder output to ordinary JSON with its own `schema_version`.
 
+Bounded repetition can be expanded into ordinary steps under the existing total-step, depth, and duration limits. A dedicated wire `repeat` node and per-step `on_failure: continue` are deferred. Skipping an optional action during capability-aware script construction is different from continuing after an uncertain native failure; the latter needs explicit parent-result and resource-release semantics before it is added.
+
 Validate the entire sequence and resource conflicts before starting. Reserve its required resources for the run; execute child commands under that reservation. Parallel children must not overlap incompatible resources. Default policy is fail-fast: stop pending children, request cancellation of running siblings, and report partial effects. No rollback promise. Parent cancellation propagates, but the parent cannot become cancelled until stop outcomes are known. Retain child IDs/results and the failing action path.
+
+Implement execution with structured asyncio tasks/task groups, retaining operation records as the observable execution history. Cancelling an asyncio task does not cancel an already-dispatched NAOqi call: child cleanup must request native cancellation and preserve confirmed/unknown outcomes before releasing reservations or completing the parent. A vanished task tree is not evidence that the robot stopped.
 
 Joint trajectories use native timing. Parallel speech/light/motion actions start as close together as backend dispatch permits, with observed start times in results; they are not sample-accurate audiovisual synchronization. Applications needing word/phoneme alignment require a separate, evidence-backed feature.
 

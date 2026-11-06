@@ -6,6 +6,8 @@ Date: 6 November 2026. Scope: Linux amd64, the published NAO Bridge container an
 
 The [reproducible experiment](../experiments/runtime-ipc/README.md) contains the image recipe, dependency lock, agent/API harness, and fault/load checks. It does not change the production server or implement the proposed public API. All native tests use real SDK bindings with loopback test services; no physical robot was contacted.
 
+The [review follow-up](review-follow-up.md) records which suggestions remain useful after these results, including the untested maintained-base alternative and media acquisition choice. Asset storage/range downloads and sequence enhancements described there are planned work, not additional capabilities verified by this harness.
+
 ## Exact runtime
 
 | Component | Tested value |

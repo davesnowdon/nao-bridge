@@ -83,6 +83,8 @@ Use discovered names/units and fresh measured state to build Recorder poses. Sav
 
 Binary images/audio/video/downloads use the documented content routes and content types. Assets carry metadata, sizes/checksums, and partial/completed status; SSE announces metadata/lifecycle only. Stream downloads incrementally rather than requiring base64 JSON or loading large assets into memory. Authentication applies to stream/media URLs as well as commands. Never place persistent credentials in URLs. Browser-side and native clients follow the same protocol even if their networking libraries differ.
 
+Resume finalized asset downloads with a byte `Range` and the saved strong ETag in `If-Range`. Verify 206 and `Content-Range` before appending; a 200 response replaces the local partial download, and 416 requires checking the saved size/metadata. Verify the final checksum. Sequence UIs can list direct children with `GET /operations?parent_id=...`; validation's resource/duration estimates may contain unknown timings and never imply successful execution.
+
 ## Conformance artifacts and completion
 
 Deliver a versioned bundle with OpenAPI and referenced schemas, valid/invalid JSON fixtures, raw SSE transcripts, and scenario manifests describing inputs, expected responses/events, timing bounds, and permitted nondeterminism. Use symbolic IDs and deterministic fake clocks in scenarios; bind runtime IDs when executing against a server. Include failure cases rather than only successful examples.
