@@ -1,0 +1,3509 @@
+{
+  "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n",
+  "installed_packages": [
+    "apt=2.8.3",
+    "base-files=13ubuntu10.5",
+    "base-passwd=3.6.3build1",
+    "bash=5.2.21-2ubuntu4",
+    "bsdutils=1:2.39.3-9ubuntu6.6",
+    "ca-certificates=20260816ubuntu0.24.04.2",
+    "coreutils=9.4-3ubuntu6.3",
+    "dash=0.5.12-6ubuntu5",
+    "debconf=1.5.86ubuntu1",
+    "debianutils=5.17build1",
+    "diffutils=1:3.10-1ubuntu0.1",
+    "dpkg=1.22.6ubuntu6.6",
+    "e2fsprogs=1.47.0-2.4~exp1ubuntu4.1",
+    "ffmpeg=7:6.1.1-3ubuntu5",
+    "findutils=4.9.0-5build1",
+    "fontconfig=2.15.0-1.1ubuntu2",
+    "fontconfig-config=2.15.0-1.1ubuntu2",
+    "fonts-dejavu-core=2.37-8",
+    "fonts-dejavu-mono=2.37-8",
+    "gcc-14-base:amd64=14.2.0-4ubuntu2~24.04.1",
+    "gpgv=2.4.4-2ubuntu17.6",
+    "grep=3.11-4build1",
+    "gzip=1.12-1ubuntu3.2",
+    "hostname=3.23+nmu2ubuntu2",
+    "init-system-helpers=1.66ubuntu1",
+    "libacl1:amd64=2.3.2-1build1.1",
+    "libaom3:amd64=3.8.2-2ubuntu0.2",
+    "libapparmor1:amd64=4.0.1really4.0.1-0ubuntu0.24.04.9",
+    "libapt-pkg6.0t64:amd64=2.8.3",
+    "libasound2-data=1.2.11-1ubuntu0.3",
+    "libasound2t64:amd64=1.2.11-1ubuntu0.3",
+    "libass9:amd64=1:0.17.1-2build1",
+    "libassuan0:amd64=2.5.6-1build1",
+    "libasyncns0:amd64=0.8-6build4",
+    "libattr1:amd64=1:2.5.2-1ubuntu0.1",
+    "libaudit-common=1:3.1.2-2.1ubuntu0.1",
+    "libaudit1:amd64=1:3.1.2-2.1ubuntu0.1",
+    "libavc1394-0:amd64=0.5.4-5build3",
+    "libavcodec60:amd64=7:6.1.1-3ubuntu5",
+    "libavdevice60:amd64=7:6.1.1-3ubuntu5",
+    "libavfilter9:amd64=7:6.1.1-3ubuntu5",
+    "libavformat60:amd64=7:6.1.1-3ubuntu5",
+    "libavutil58:amd64=7:6.1.1-3ubuntu5",
+    "libblas3:amd64=3.12.0-3build1.1",
+    "libblkid1:amd64=2.39.3-9ubuntu6.6",
+    "libbluray2:amd64=1:1.3.4-1build1",
+    "libbrotli1:amd64=1.1.0-2ubuntu0.1",
+    "libbs2b0:amd64=3.1.0+dfsg-7build1",
+    "libbsd0:amd64=0.12.1-1build1.1",
+    "libbz2-1.0:amd64=1.0.8-5.1ubuntu0.1",
+    "libc-bin=2.39-0ubuntu8.9",
+    "libc6:amd64=2.39-0ubuntu8.9",
+    "libcaca0:amd64=0.99.beta20-4ubuntu0.2",
+    "libcairo-gobject2:amd64=1.18.0-3build1",
+    "libcairo2:amd64=1.18.0-3build1",
+    "libcap-ng0:amd64=0.8.4-2build2",
+    "libcap2:amd64=1:2.66-5ubuntu2.4",
+    "libcdio-cdda2t64:amd64=10.2+2.0.1-1.1build2",
+    "libcdio-paranoia2t64:amd64=10.2+2.0.1-1.1build2",
+    "libcdio19t64:amd64=2.1.0-4.1ubuntu1.2",
+    "libchromaprint1:amd64=1.5.1-5",
+    "libcjson1:amd64=1.7.17-1",
+    "libcodec2-1.2:amd64=1.2.0-2build1",
+    "libcom-err2:amd64=1.47.0-2.4~exp1ubuntu4.1",
+    "libcrypt1:amd64=1:4.4.36-4build1",
+    "libdatrie1:amd64=0.2.13-3build1",
+    "libdav1d7:amd64=1.4.1-1build1",
+    "libdb5.3t64:amd64=5.3.28+dfsg2-7",
+    "libdbus-1-3:amd64=1.14.10-4ubuntu4.1",
+    "libdc1394-25:amd64=2.2.6-4build1",
+    "libdebconfclient0:amd64=0.271ubuntu3",
+    "libdecor-0-0:amd64=0.2.2-1build2",
+    "libdeflate0:amd64=1.19-1build1.1",
+    "libdrm-amdgpu1:amd64=2.4.125-1ubuntu0.1~24.04.2",
+    "libdrm-common=2.4.125-1ubuntu0.1~24.04.2",
+    "libdrm-intel1:amd64=2.4.125-1ubuntu0.1~24.04.2",
+    "libdrm2:amd64=2.4.125-1ubuntu0.1~24.04.2",
+    "libedit2:amd64=3.1-20230828-1build1",
+    "libelf1t64:amd64=0.190-1.1ubuntu0.1",
+    "libexpat1:amd64=2.6.1-2ubuntu0.6",
+    "libext2fs2t64:amd64=1.47.0-2.4~exp1ubuntu4.1",
+    "libffi8:amd64=3.4.6-1build1",
+    "libfftw3-double3:amd64=3.3.10-1ubuntu3",
+    "libflac12t64:amd64=1.4.3+ds-2.1ubuntu2",
+    "libflite1:amd64=2.2-6build3",
+    "libfontconfig1:amd64=2.15.0-1.1ubuntu2",
+    "libfreetype6:amd64=2.13.2+dfsg-1ubuntu0.2",
+    "libfribidi0:amd64=1.0.13-3build1",
+    "libgbm1:amd64=25.2.8-0ubuntu0.24.04.4",
+    "libgcc-s1:amd64=14.2.0-4ubuntu2~24.04.1",
+    "libgcrypt20:amd64=1.10.3-2ubuntu0.2",
+    "libgdk-pixbuf-2.0-0:amd64=2.42.10+dfsg-3ubuntu3.3",
+    "libgdk-pixbuf2.0-common=2.42.10+dfsg-3ubuntu3.3",
+    "libgfortran5:amd64=14.2.0-4ubuntu2~24.04.1",
+    "libgl1:amd64=1.7.0-1build1",
+    "libgl1-mesa-dri:amd64=25.2.8-0ubuntu0.24.04.4",
+    "libglib2.0-0t64:amd64=2.80.0-6ubuntu3.10",
+    "libglvnd0:amd64=1.7.0-1build1",
+    "libglx-mesa0:amd64=25.2.8-0ubuntu0.24.04.4",
+    "libglx0:amd64=1.7.0-1build1",
+    "libgme0:amd64=0.6.3-7build1",
+    "libgmp10:amd64=2:6.3.0+dfsg-2ubuntu6.1",
+    "libgnutls30t64:amd64=3.8.3-1.1ubuntu3.6",
+    "libgomp1:amd64=14.2.0-4ubuntu2~24.04.1",
+    "libgpg-error0:amd64=1.47-3build2.1",
+    "libgraphite2-3:amd64=1.3.14-2ubuntu0.24.04.1",
+    "libgsm1:amd64=1.0.22-1build1",
+    "libgssapi-krb5-2:amd64=1.20.1-6ubuntu2.10",
+    "libharfbuzz0b:amd64=8.3.0-2build2",
+    "libhogweed6t64:amd64=3.9.1-2.2build1.1",
+    "libhwy1t64:amd64=1.0.7-8.1build1",
+    "libicu74:amd64=74.2-1ubuntu3.1",
+    "libidn2-0:amd64=2.3.7-2build1.1",
+    "libiec61883-0:amd64=1.2.0-6build1",
+    "libjack-jackd2-0:amd64=1.9.21~dfsg-3ubuntu3",
+    "libjbig0:amd64=2.1-6.1ubuntu2",
+    "libjpeg-turbo8:amd64=2.1.5-2ubuntu2",
+    "libjpeg8:amd64=8c-2ubuntu11",
+    "libjxl0.7:amd64=0.7.0-10.2ubuntu6.1",
+    "libk5crypto3:amd64=1.20.1-6ubuntu2.10",
+    "libkeyutils1:amd64=1.6.3-3build1",
+    "libkrb5-3:amd64=1.20.1-6ubuntu2.10",
+    "libkrb5support0:amd64=1.20.1-6ubuntu2.10",
+    "liblapack3:amd64=3.12.0-3build1.1",
+    "liblcms2-2:amd64=2.14-2ubuntu0.1",
+    "liblerc4:amd64=4.0.0+ds-4ubuntu2",
+    "liblilv-0-0:amd64=0.24.22-1build1",
+    "libllvm20:amd64=1:20.1.2-0ubuntu1~24.04.3",
+    "liblz4-1:amd64=1.9.4-1build1.1",
+    "liblzma5:amd64=5.6.1+really5.4.5-1ubuntu0.4",
+    "libmbedcrypto7t64:amd64=2.28.8-1",
+    "libmd0:amd64=1.1.0-2build1.1",
+    "libmount1:amd64=2.39.3-9ubuntu6.6",
+    "libmp3lame0:amd64=3.100-6build1",
+    "libmpg123-0t64:amd64=1.32.5-1ubuntu1.1",
+    "libmysofa1:amd64=1.3.2+dfsg-2ubuntu2",
+    "libncursesw6:amd64=6.4+20240113-1ubuntu2.2",
+    "libnettle8t64:amd64=3.9.1-2.2build1.1",
+    "libnorm1t64:amd64=1.5.9+dfsg-3.1build1",
+    "libnpth0t64:amd64=1.6-3.1build1",
+    "libnuma1:amd64=2.0.18-1ubuntu0.24.04.1",
+    "libogg0:amd64=1.3.5-3build1",
+    "libopenal-data=1:1.23.1-4build1",
+    "libopenal1:amd64=1:1.23.1-4build1",
+    "libopenjp2-7:amd64=2.5.0-2ubuntu0.5",
+    "libopenmpt0t64:amd64=0.7.3-1.1build3",
+    "libopus0:amd64=1.4-1build1",
+    "libp11-kit0:amd64=0.25.3-4ubuntu2.2",
+    "libpam-modules:amd64=1.5.3-5ubuntu5.7",
+    "libpam-modules-bin=1.5.3-5ubuntu5.7",
+    "libpam-runtime=1.5.3-5ubuntu5.7",
+    "libpam0g:amd64=1.5.3-5ubuntu5.7",
+    "libpango-1.0-0:amd64=1.52.1+ds-1build1",
+    "libpangocairo-1.0-0:amd64=1.52.1+ds-1build1",
+    "libpangoft2-1.0-0:amd64=1.52.1+ds-1build1",
+    "libpciaccess0:amd64=0.17-3ubuntu0.24.04.3",
+    "libpcre2-8-0:amd64=10.42-4ubuntu2.1",
+    "libpgm-5.3-0t64:amd64=5.3.128~dfsg-2.1build1",
+    "libpixman-1-0:amd64=0.42.2-1build1",
+    "libplacebo338:amd64=6.338.2-2build1",
+    "libpng16-16t64:amd64=1.6.43-5ubuntu0.7",
+    "libpocketsphinx3:amd64=0.8.0+real5prealpha+1-15ubuntu5",
+    "libpostproc57:amd64=7:6.1.1-3ubuntu5",
+    "libproc2-0:amd64=2:4.0.4-4ubuntu3.3",
+    "libpulse0:amd64=1:16.1+dfsg1-2ubuntu10.1",
+    "librabbitmq4:amd64=0.11.0-1ubuntu0.2",
+    "librav1e0:amd64=0.7.1-2",
+    "libraw1394-11:amd64=2.1.2-2build3",
+    "librist4:amd64=0.2.10+dfsg-2",
+    "librsvg2-2:amd64=2.58.0+dfsg-1ubuntu0.1",
+    "librubberband2:amd64=3.3.0+dfsg-2build1",
+    "libsamplerate0:amd64=0.2.2-4build1",
+    "libsdl2-2.0-0:amd64=2.30.0+dfsg-1ubuntu3.1",
+    "libseccomp2:amd64=2.5.5-1ubuntu3.1",
+    "libselinux1:amd64=3.5-2ubuntu2.1",
+    "libsemanage-common=3.5-1build5",
+    "libsemanage2:amd64=3.5-1build5",
+    "libsensors-config=1:3.6.0-9build1",
+    "libsensors5:amd64=1:3.6.0-9build1",
+    "libsepol2:amd64=3.5-2build1",
+    "libserd-0-0:amd64=0.32.2-1",
+    "libsharpyuv0:amd64=1.3.2-0.4build3",
+    "libshine3:amd64=3.1.1-2build1",
+    "libslang2:amd64=2.3.3-3build2",
+    "libsmartcols1:amd64=2.39.3-9ubuntu6.6",
+    "libsnappy1v5:amd64=1.1.10-1build1",
+    "libsndfile1:amd64=1.2.2-1ubuntu5.24.04.1",
+    "libsndio7.0:amd64=1.9.0-0.3build3",
+    "libsodium23:amd64=1.0.18-1ubuntu0.24.04.1",
+    "libsord-0-0:amd64=0.16.16-2build1",
+    "libsoxr0:amd64=0.1.3-4build3",
+    "libspeex1:amd64=1.2.1-2ubuntu2.24.04.1",
+    "libsphinxbase3t64:amd64=0.8+5prealpha+1-17build2",
+    "libsratom-0-0:amd64=0.6.16-1build1",
+    "libsrt1.5-gnutls:amd64=1.5.3-1build2",
+    "libss2:amd64=1.47.0-2.4~exp1ubuntu4.1",
+    "libssh-gcrypt-4:amd64=0.10.6-2ubuntu0.5",
+    "libssl3t64:amd64=3.0.13-0ubuntu3.16",
+    "libstdc++6:amd64=14.2.0-4ubuntu2~24.04.1",
+    "libsvtav1enc1d1:amd64=1.7.0+dfsg-2build1",
+    "libswresample4:amd64=7:6.1.1-3ubuntu5",
+    "libswscale7:amd64=7:6.1.1-3ubuntu5",
+    "libsystemd0:amd64=255.4-1ubuntu8.18",
+    "libtasn1-6:amd64=4.19.0-3ubuntu0.24.04.2",
+    "libthai-data=0.1.29-2build1",
+    "libthai0:amd64=0.1.29-2build1",
+    "libtheora0:amd64=1.1.1+dfsg.1-16.1build3",
+    "libtiff6:amd64=4.5.1+git230720-4ubuntu2.5",
+    "libtinfo6:amd64=6.4+20240113-1ubuntu2.2",
+    "libtwolame0:amd64=0.4.0-2build3",
+    "libudev1:amd64=255.4-1ubuntu8.18",
+    "libudfread0:amd64=1.1.2-1build1",
+    "libunibreak5:amd64=5.1-2build1",
+    "libunistring5:amd64=1.1-2build1.1",
+    "libusb-1.0-0:amd64=2:1.0.27-1",
+    "libuuid1:amd64=2.39.3-9ubuntu6.6",
+    "libva-drm2:amd64=2.20.0-2ubuntu0.2",
+    "libva-x11-2:amd64=2.20.0-2ubuntu0.2",
+    "libva2:amd64=2.20.0-2ubuntu0.2",
+    "libvdpau1:amd64=1.5-2build1",
+    "libvidstab1.1:amd64=1.1.0-2build1",
+    "libvorbis0a:amd64=1.3.7-1build3",
+    "libvorbisenc2:amd64=1.3.7-1build3",
+    "libvorbisfile3:amd64=1.3.7-1build3",
+    "libvpl2=2023.3.0-1build1",
+    "libvpx9:amd64=1.14.0-1ubuntu2.3",
+    "libvulkan1:amd64=1.3.275.0-1build1",
+    "libwayland-client0:amd64=1.22.0-2.1build1",
+    "libwayland-cursor0:amd64=1.22.0-2.1build1",
+    "libwayland-egl1:amd64=1.22.0-2.1build1",
+    "libwebp7:amd64=1.3.2-0.4build3",
+    "libwebpmux3:amd64=1.3.2-0.4build3",
+    "libx11-6:amd64=2:1.8.7-1ubuntu0.1",
+    "libx11-data=2:1.8.7-1ubuntu0.1",
+    "libx11-xcb1:amd64=2:1.8.7-1ubuntu0.1",
+    "libx264-164:amd64=2:0.164.3108+git31e19f9-1",
+    "libx265-199:amd64=3.5-2build1",
+    "libxau6:amd64=1:1.0.9-1build6",
+    "libxcb-dri3-0:amd64=1.15-1ubuntu2",
+    "libxcb-glx0:amd64=1.15-1ubuntu2",
+    "libxcb-present0:amd64=1.15-1ubuntu2",
+    "libxcb-randr0:amd64=1.15-1ubuntu2",
+    "libxcb-render0:amd64=1.15-1ubuntu2",
+    "libxcb-shape0:amd64=1.15-1ubuntu2",
+    "libxcb-shm0:amd64=1.15-1ubuntu2",
+    "libxcb-sync1:amd64=1.15-1ubuntu2",
+    "libxcb-xfixes0:amd64=1.15-1ubuntu2",
+    "libxcb1:amd64=1.15-1ubuntu2",
+    "libxcursor1:amd64=1:1.2.1-1build1",
+    "libxdmcp6:amd64=1:1.1.3-0ubuntu6",
+    "libxext6:amd64=2:1.3.4-1build2",
+    "libxfixes3:amd64=1:6.0.0-2build1",
+    "libxi6:amd64=2:1.8.1-1build1",
+    "libxkbcommon0:amd64=1.6.0-1build1",
+    "libxml2:amd64=2.9.14+dfsg-1.3ubuntu3.10",
+    "libxrandr2:amd64=2:1.5.2-2build1",
+    "libxrender1:amd64=1:0.9.10-1.1build1",
+    "libxshmfence1:amd64=1.3-1build5",
+    "libxss1:amd64=1:1.2.3-1build3",
+    "libxv1:amd64=2:1.0.11-1.1build1",
+    "libxvidcore4:amd64=2:1.3.7-1build1",
+    "libxxf86vm1:amd64=1:1.1.4-1build4",
+    "libxxhash0:amd64=0.8.2-2build1",
+    "libzimg2:amd64=3.0.5+ds1-1build1",
+    "libzix-0-0:amd64=0.4.2-2build1",
+    "libzmq5:amd64=4.3.5-1build2",
+    "libzstd1:amd64=1.5.5+dfsg2-2build1.1",
+    "libzvbi-common=0.2.42-2",
+    "libzvbi0t64:amd64=0.2.42-2",
+    "login=1:4.13+dfsg1-4ubuntu3.2",
+    "logsave=1.47.0-2.4~exp1ubuntu4.1",
+    "mawk=1.3.4.20240123-1build1",
+    "mesa-libgallium:amd64=25.2.8-0ubuntu0.24.04.4",
+    "mount=2.39.3-9ubuntu6.6",
+    "ncurses-base=6.4+20240113-1ubuntu2.2",
+    "ncurses-bin=6.4+20240113-1ubuntu2.2",
+    "ocl-icd-libopencl1:amd64=2.3.2-1build1",
+    "openssl=3.0.13-0ubuntu3.16",
+    "passwd=1:4.13+dfsg1-4ubuntu3.2",
+    "perl-base=5.38.2-3.2ubuntu0.6",
+    "procps=2:4.0.4-4ubuntu3.3",
+    "sed=4.9-2ubuntu0.24.04.1",
+    "sensible-utils=0.0.22",
+    "shared-mime-info=2.4-4",
+    "sysvinit-utils=3.08-6ubuntu3",
+    "tar=1.35+dfsg-3ubuntu0.4",
+    "ubuntu-keyring=2023.11.28.1",
+    "unminimize=0.2.1",
+    "util-linux=2.39.3-9ubuntu6.6",
+    "x11-common=1:7.7+23ubuntu3",
+    "xkb-data=2.41-2ubuntu1.1",
+    "zlib1g:amd64=1:1.3.dfsg-3.1ubuntu2.3"
+  ],
+  "legacy_manifest": {
+    "source_elf_count": 108,
+    "source_packages": {
+      "zlib1g:amd64": "1:1.2.8.dfsg-1ubuntu1.1",
+      "libexpat1:amd64": "2.1.0-4ubuntu1.4",
+      "libsqlite3-0:amd64": "3.8.2-1ubuntu2.2",
+      "libtinfo5:amd64": "5.9+20140118-1ubuntu1",
+      "libffi6:amd64": "3.1~rc1+r3.0.13-12ubuntu0.2",
+      "libdb5.3:amd64": "5.3.28-3ubuntu3.1",
+      "libpython2.7:amd64": "2.7.6-8ubuntu0.5",
+      "libc6:amd64": "2.19-0ubuntu6.15",
+      "libncursesw5:amd64": "5.9+20140118-1ubuntu1",
+      "python2.7-minimal": "2.7.6-8ubuntu0.5",
+      "libstdc++6:amd64": "4.8.4-2ubuntu1~14.04.4",
+      "libpython2.7-minimal:amd64": "2.7.6-8ubuntu0.5",
+      "libbz2-1.0:amd64": "1.0.6-5",
+      "libgcc1:amd64": "1:4.9.3-0ubuntu4",
+      "libicu52:amd64": "52.1-3ubuntu0.8",
+      "libreadline6:amd64": "6.3-4ubuntu2"
+    },
+    "legacy_dependencies": [
+      {
+        "source": "/lib/x86_64-linux-gnu/libbz2.so.1.0",
+        "sha256": "f1cd8f55922d63a7e3689a3956f9a5702351bf8c391bc8335d164a223b018ded",
+        "name": "libbz2.so.1.0"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libcrypt.so.1",
+        "sha256": "cd9e7068396d4ba2e26bc6bad192980be4350c372acf4aaccb8d6fc14e7dcbae",
+        "name": "libcrypt.so.1"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libdb-5.3.so",
+        "sha256": "c14a90e9d5af7665826f6146b1bd1c04e6da977d214dc4874ad7e4811aaffd54",
+        "name": "libdb-5.3.so"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libexpat.so.1",
+        "sha256": "87b54115d529a91ef7ac18cc33c9b196623b94657518c3e0e2bc2d56fc01c53e",
+        "name": "libexpat.so.1"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libffi.so.6",
+        "sha256": "c59842761485998c145293e39bc969832f5441dbc373e419cba4532e63eff254",
+        "name": "libffi.so.6"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "sha256": "8f573bdd4ba13b347a78e4dcf2a6c57542cac37ec605f8187a227802e44ea158",
+        "name": "libgcc_s.so.1"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libicudata.so.52",
+        "sha256": "e61b691f83d6cfbbd163c0cefc933b6799e9a0479e2f2248ccaf87cc53974480",
+        "name": "libicudata.so.52"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libicui18n.so.52",
+        "sha256": "89cf7830e354351768196dc1ccb33b74233b6ee098d97b14fe59d25e3eb1e8f9",
+        "name": "libicui18n.so.52"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libicuuc.so.52",
+        "sha256": "b2aa167685cf9be8419f607b703bc6306e40aabadc8130a2e0acc8bb74e67490",
+        "name": "libicuuc.so.52"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libncursesw.so.5",
+        "sha256": "fac15ca3e3961af98149e8b092093e7f95d5e9c2d707816d1d382a6ef2ffdc95",
+        "name": "libncursesw.so.5"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libnsl.so.1",
+        "sha256": "2964e12527ab74a7d1a68373261ba4680bf7df8c12e6b9e32791c0a109e285f6",
+        "name": "libnsl.so.1"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libpanelw.so.5",
+        "sha256": "724a9a21f589236b189fc22dfadf5f1df6a4d7c57a2d80fc83606550a2f73dad",
+        "name": "libpanelw.so.5"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libpython2.7.so.1.0",
+        "sha256": "3409657f8f90de2868d92b81fa79361d80ed9b7dbcd78fec9dc4c525db7ae178",
+        "name": "libpython2.7.so.1.0"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libreadline.so.6",
+        "sha256": "c1088a0748bb096b1ddb9879d8c712f8ac901b9a99699088310fe9b2e4e6e8f1",
+        "name": "libreadline.so.6"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libsqlite3.so.0",
+        "sha256": "7789d7ca29061f68681097326eeb180900b1d9b6a4d19887a1d24a36ae6ecefa",
+        "name": "libsqlite3.so.0"
+      },
+      {
+        "source": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+        "sha256": "c3cee315b64e61b78746f11cf2eda439c7f77e0ed832bb00b2604830b93cafe3",
+        "name": "libstdc++.so.6"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libtinfo.so.5",
+        "sha256": "d554851f0dba84714c1caeb6c30a53577b39d4e9db84c9d03a0b9e9aeb5536e3",
+        "name": "libtinfo.so.5"
+      },
+      {
+        "source": "/lib/x86_64-linux-gnu/libz.so.1",
+        "sha256": "44d238d9ac57e89ffb69ead3835bbea4aac1793505001c2f84661580253cf32d",
+        "name": "libz.so.1"
+      }
+    ],
+    "sdk_soname_aliases": {
+      "libboost_timer.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_timer.so",
+      "libboost_math_tr1f.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1f.so",
+      "libboost_serialization.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_serialization.so",
+      "libboost_atomic.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_atomic.so",
+      "libtinyxml.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libtinyxml.so",
+      "libalmath.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalmath.so",
+      "libboost_unit_test_framework.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_unit_test_framework.so",
+      "libboost_graph.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_graph.so",
+      "libalcommon.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalcommon.so",
+      "libboost_wave.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_wave.so",
+      "libatalla.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libatalla.so",
+      "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+      "libboost_math_c99f.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99f.so",
+      "libboost_prg_exec_monitor.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_prg_exec_monitor.so",
+      "libboost_random.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_random.so",
+      "libgost.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libgost.so",
+      "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+      "libboost_log.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_log.so",
+      "libboost_math_tr1.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1.so",
+      "libboost_python.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_python.so",
+      "libgmp.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libgmp.so",
+      "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+      "libboost_wserialization.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_wserialization.so",
+      "librttools.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/librttools.so",
+      "libaep.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libaep.so",
+      "libboost_log_setup.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_log_setup.so",
+      "_qi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_qi.so",
+      "libcswift.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libcswift.so",
+      "libpadlock.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libpadlock.so",
+      "libboost_math_c99l.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99l.so",
+      "libchil.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libchil.so",
+      "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+      "libboost_date_time.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_date_time.so",
+      "libqic.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqic.so",
+      "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+      "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+      "libsureware.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libsureware.so",
+      "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+      "libqipython.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqipython.so",
+      "libalthread.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalthread.so",
+      "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+      "libalpythontools.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalpythontools.so",
+      "libubsec.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libubsec.so",
+      "libboost_signals.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_signals.so",
+      "libgtest.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libgtest.so",
+      "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+      "libalproxies.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalproxies.so",
+      "lib4758cca.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/lib4758cca.so",
+      "libnuron.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libnuron.so",
+      "libboost_math_c99.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99.so",
+      "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+      "libcapi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libcapi.so",
+      "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so",
+      "libgtest_main.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libgtest_main.so",
+      "libalbehavior.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalbehavior.so",
+      "libssl.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libssl.so",
+      "libalvalue.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+      "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+      "libboost_math_tr1l.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1l.so",
+      "libboost_context.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_context.so",
+      "libalsoap.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalsoap.so",
+      "libboost_coroutine.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_coroutine.so"
+    }
+  },
+  "sdk": [
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_allog.so",
+      "sha256": "344692b2434ef689c531d22e77fb23b2d49b6a2574d7f63de7797f7a0ec1d8b7",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpython2.7.so.1.0": "/opt/legacy/lib/libpython2.7.so.1.0",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_almathswig.so",
+      "sha256": "7898a280d164cbd735701d34371387793c7df7a9c4623416551e5ba74cc1711f",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpython2.7.so.1.0": "/opt/legacy/lib/libpython2.7.so.1.0",
+        "libalmath.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalmath.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_inaoqi.so",
+      "sha256": "26315c27c1353ea9b574703cecf2e096d6f7fb7f2ac17f6bb93c015e91a9296b",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalpythontools.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalpythontools.so",
+        "libalbehavior.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalbehavior.so",
+        "libalproxies.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalproxies.so",
+        "libalcommon.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalcommon.so",
+        "libalvalue.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libqipython.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqipython.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libpython2.7.so.1.0": "/opt/legacy/lib/libpython2.7.so.1.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libalthread.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalthread.so",
+        "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_signals.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_signals.so",
+        "libboost_python.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_python.so",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_qi.so",
+      "sha256": "36427816a2efde45dc95a4350d0ab81862e03a4abbad14190098001bb0b2c00d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpython2.7.so.1.0": "/opt/legacy/lib/libpython2.7.so.1.0",
+        "libqipython.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqipython.so",
+        "libboost_python.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_python.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/lib4758cca.so",
+      "sha256": "d21093d8a8475dbf0d23873892445cc7db794066abae91304b0cfb423acb5966",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libaep.so",
+      "sha256": "fa1ae3f919b54a8aff5234b4d16182e16d2a029e9ad8f8763ed047ffd01f3231",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libatalla.so",
+      "sha256": "853df4ddc194b1e48c4d275a158eb26aba26dee08f204e319f887498bafc9b76",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libcapi.so",
+      "sha256": "4ee216367a4f0f37e0e9dd770864dc2ed4a6ce62941c33276250fd4718f4ee8d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libchil.so",
+      "sha256": "46509b106652514cf6885e155f59e41f5b2aa4c63cbdb0233aa91b798afddf25",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libcswift.so",
+      "sha256": "6084e6cbae9439710d4f4ce7a9488851a33d21f6159bfa28d179f63d9e75fb35",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libgmp.so",
+      "sha256": "cdefa8788990efb504c2deaeb0facb516da9529001c4ab06bfae94a1449e4774",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libgost.so",
+      "sha256": "a020c054706e5f6af5e50b9685e383671c8a7c0c6d1e5d417445dd45b28fb801",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libnuron.so",
+      "sha256": "0a4e69be19d5e06bea024d9e16a26d4fbd7c6f6ed52db559d30ad4e4f54cfc26",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libpadlock.so",
+      "sha256": "2c66e562395b23253de578d5ed1cbd44b990b0544ce98082006072440547177c",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libsureware.so",
+      "sha256": "8c84c49201f8c871a4ef8c666b73608a25a33aa71fcfded054e3e60242d866f6",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libubsec.so",
+      "sha256": "f77a726b70e6f53535255f4969eb5cd14a81953affe18e9837faffb284909fa1",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalbehavior.so",
+      "sha256": "0faddee158acdef0e837b0c6a1d343ee4f6c71e5cb3327cfc7e815578fb735be",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalproxies.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalproxies.so",
+        "libalcommon.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalcommon.so",
+        "libalvalue.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libalthread.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalthread.so",
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_signals.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_signals.so",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalcommon.so",
+      "sha256": "e4561d1164c172850b8a7186b76ab61d774ac4174f513d7632afe80358a16d2d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalvalue.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libboost_signals.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_signals.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+      "sha256": "cdc7d73ce41c0316852bf3bcbec111475233d8932a4a931a24aaeaab169a526e",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalmath.so",
+      "sha256": "9dbc5d19ff71fb1797700db71b8f160832ebdacf53ace7afcc370ad291968405",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalproxies.so",
+      "sha256": "6b42d049f854a83fa10c09ab10afacdf2157fbbd0044fe4a1e4aca8fa40b3456",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalcommon.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalcommon.so",
+        "libalvalue.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_signals.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_signals.so",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalpythontools.so",
+      "sha256": "d2d6e978577e0b59aa5bf84cf1bef653d8d56e2ab9cfb84ffcd7ba21f249fa54",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalvalue.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libpython2.7.so.1.0": "/opt/legacy/lib/libpython2.7.so.1.0",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalsoap.so",
+      "sha256": "3a55fac8069e5121f57ead22fb17fd634ffc2c9a735b84fde6fd173926ef1a1a",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalvalue.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libtinyxml.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libtinyxml.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalthread.so",
+      "sha256": "f20fc28748b22fa96e2ec4c7a33d584e08ec2b9823f38fe786fd267282f1cda5",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+      "sha256": "d17a32b2aa96ae110e3b1d0d36d5a38fbaf34400d827e7bf16abddade07ac671",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libalerror.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_atomic.so",
+      "sha256": "7e552d35c250b02c0a87d5ffc57f85b21040ba8b085c1fbc5b5b9aa3461b9bba",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+      "sha256": "3e889ef027e53a49bc2c6e0ea5b3e90c3bce2ac3a6c6e52bde33988eeeb5e1a7",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_context.so",
+      "sha256": "6c9a2d3d00f1f761ddb3c9776dac2b9cc931b3395aae2d712ba02f83da946b13",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_coroutine.so",
+      "sha256": "59e9f531e84c655983b1d40bb70b95b110ff3655f058529e8d559e9f2c63c32e",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_context.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_context.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_date_time.so",
+      "sha256": "a77059a3d8b82bab601abec25e02bd734d46e2638a1f1f4da1b2dd8be2b68c46",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+      "sha256": "4498f394bef4cf8e50349d75a2238732a45b4c39668e4dc0df0698aae0daa552",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_graph.so",
+      "sha256": "e6a6e84869657b2be7c95c09bdbd8955f551df32c2e28657dd6bdd6aec717c26",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+      "sha256": "24dd0997ad09fd57c1f11f7f234f3cad6b4d3199ff9c43969b5cb1e51555fb0d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_log.so",
+      "sha256": "653a31fdc3278e598974f2d1df1b9615aab1868430602e3d2c9aa893ea1267c8",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_log_setup.so",
+      "sha256": "1f13ae62f83de871529343a747c164814d3b5e36f919ca18a15d68bfb89f9de9",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_log.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_log.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99.so",
+      "sha256": "23316ef94df05d371339922ee8908bbe23ec4992daea0047b7f0bfceebcf2b57",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99f.so",
+      "sha256": "0fdae682f611270b1c9a8c28d55c16995d25559411405bf26af8d8e4f6a46956",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99l.so",
+      "sha256": "0e3daf3c941487779d909f83fb91cce1f3358e3f88d8881accb6e73cd24764ac",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1.so",
+      "sha256": "fd95fac243215fd20b2b66bd0ee993d6d4b285eefa9ea538293453b1d15cf833",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1f.so",
+      "sha256": "eb65c5f65e224d7ac4ab569ab8c12eee4088d79e9b21125b52836a48cd80dcbb",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1l.so",
+      "sha256": "38c558fe84610fa023f562a9b6713faa26055a548d71dd817d3e04b9191c24ae",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_prg_exec_monitor.so",
+      "sha256": "3731c447832c62e672cc0fd242a1bf14de899cbd5d2571c859dff326991b5131",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+      "sha256": "9457a6b4fe75a75631fb51e134130c61dd3b894a5330085e8c2ceb9052d9f75d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_python.so",
+      "sha256": "5e68bff118d7a5855b9050c08b20390bb6c50e60fa298a5552f43aa121485294",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_random.so",
+      "sha256": "86477a1b5489698fe9451abfe357abe0368a85600534c7f54f82b9fcd793beaf",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+      "sha256": "8cf8cd0b1f3ba64e4e9d13a3a5436d67522b258452b38c049e853907e8fd2e9e",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_serialization.so",
+      "sha256": "9ec448f04d879c80a3227e0338e1a0c0b22369b6bee7f95258592853d4e2dffc",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_signals.so",
+      "sha256": "638d259f8e1bf539a6f3ae5196039e738ad88ad10b77ebda8b59e67aa8fd6d35",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+      "sha256": "d741980792e2338e3fd4084afba9f406663ab53b7139724ee8bde2aa9ce72a12",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+      "sha256": "1a144f276efccfcdd9ab25a80e0398d98daaebe00a89a0cd14060f36dfb55842",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_timer.so",
+      "sha256": "f6064846787928ea60ab15ea29fc5491266b03742d5cd5040809028e2f5f7654",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_unit_test_framework.so",
+      "sha256": "b9ded3041c060cb37db3aa0473ac227069e0c57767e1ba5f9cac798b298f15d7",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_wave.so",
+      "sha256": "09cd5ae96412bbbc970faf27609cdd4c2e91e1621754eaec9da3cc952f364b32",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_wserialization.so",
+      "sha256": "1feaad14f8f49b008a847d82795b919e746aa3152f2982f6084f41549d800d26",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_serialization.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_serialization.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so",
+      "sha256": "aa0ea6ef363b94a968272d90a651e7a0a30ec8cd3d45633d0614651ec40386de",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+      "sha256": "aa0ea6ef363b94a968272d90a651e7a0a30ec8cd3d45633d0614651ec40386de",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libgtest.so",
+      "sha256": "c34531acf0e6390361b02d6ec473aeed7427a60713fec85da03025e89c670e9b",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libgtest_main.so",
+      "sha256": "d565abdbd3da5171a638defcc11d25856fed17394fd57ea2559b6c4034da0e88",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libgtest.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libgtest.so",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+      "sha256": "ccbfb4b991db5092111aaa26c1d9a42476b71e9b65710f77716696f5b2c09a12",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqic.so",
+      "sha256": "f3d4084d708ad09d7ada1869f7949ea77d46c68e503d9151d06fee79a425e0ba",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+      "sha256": "03a03f4355b61a814847fbdf0ad51efb63630c911ff230bcedf090cb9da3488c",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqipython.so",
+      "sha256": "6167b723a86f32332f6d47c1b6a0341aaef882edbc0dfc65b7df3a226bc28527",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libboost_python.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_python.so",
+        "libpython2.7.so.1.0": "/opt/legacy/lib/libpython2.7.so.1.0",
+        "libqimessaging.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+        "libqitype.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+      "sha256": "3190d0f2fdbce8451618dbde180f6ae996958c08a4b76ffb7dd71605f2884bbf",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libqi.so": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+        "libboost_system.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+        "libboost_thread.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libboost_chrono.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+        "libboost_filesystem.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+        "libboost_program_options.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+        "libboost_regex.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+        "libboost_locale.so.1.55.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libicui18n.so.52": "/opt/legacy/lib/libicui18n.so.52",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/librttools.so",
+      "sha256": "a729d05ccffe558389425b63490a5b2f44e8ea9ff13ca2eaf95b6409785fa444",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libssl.so",
+      "sha256": "e1002dc45418d80a3c3248b9177236dc099150dc1ade2f1c790c3e26b4043e51",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libssl.so.1.0.0",
+      "sha256": "e1002dc45418d80a3c3248b9177236dc099150dc1ade2f1c790c3e26b4043e51",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libtinyxml.so",
+      "sha256": "e319006d9b7213bdd39b1c65a4cf64faff46691812210e83ba655d6412bbc6cc",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    }
+  ],
+  "legacy_runtime": [
+    {
+      "path": "/opt/legacy/bin/python2.7",
+      "sha256": "ff1e7dd246a7d24296597dadebc31d4ac795694b65eebdb5ead3c2c4e88ef25e",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libbz2.so.1.0",
+      "sha256": "f1cd8f55922d63a7e3689a3956f9a5702351bf8c391bc8335d164a223b018ded",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libcrypt.so.1",
+      "sha256": "cd9e7068396d4ba2e26bc6bad192980be4350c372acf4aaccb8d6fc14e7dcbae",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libdb-5.3.so",
+      "sha256": "c14a90e9d5af7665826f6146b1bd1c04e6da977d214dc4874ad7e4811aaffd54",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libexpat.so.1",
+      "sha256": "87b54115d529a91ef7ac18cc33c9b196623b94657518c3e0e2bc2d56fc01c53e",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libffi.so.6",
+      "sha256": "c59842761485998c145293e39bc969832f5441dbc373e419cba4532e63eff254",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libgcc_s.so.1",
+      "sha256": "8f573bdd4ba13b347a78e4dcf2a6c57542cac37ec605f8187a227802e44ea158",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libicudata.so.52",
+      "sha256": "e61b691f83d6cfbbd163c0cefc933b6799e9a0479e2f2248ccaf87cc53974480",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libicui18n.so.52",
+      "sha256": "89cf7830e354351768196dc1ccb33b74233b6ee098d97b14fe59d25e3eb1e8f9",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libicuuc.so.52": "/opt/legacy/lib/libicuuc.so.52",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libicuuc.so.52",
+      "sha256": "b2aa167685cf9be8419f607b703bc6306e40aabadc8130a2e0acc8bb74e67490",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libicudata.so.52": "/opt/legacy/lib/libicudata.so.52",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libstdc++.so.6": "/opt/legacy/lib/libstdc++.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libncursesw.so.5",
+      "sha256": "fac15ca3e3961af98149e8b092093e7f95d5e9c2d707816d1d382a6ef2ffdc95",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libtinfo.so.5": "/opt/legacy/lib/libtinfo.so.5",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libnsl.so.1",
+      "sha256": "2964e12527ab74a7d1a68373261ba4680bf7df8c12e6b9e32791c0a109e285f6",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libpanelw.so.5",
+      "sha256": "724a9a21f589236b189fc22dfadf5f1df6a4d7c57a2d80fc83606550a2f73dad",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libncursesw.so.5": "/opt/legacy/lib/libncursesw.so.5",
+        "libtinfo.so.5": "/opt/legacy/lib/libtinfo.so.5",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libpython2.7.so.1.0",
+      "sha256": "3409657f8f90de2868d92b81fa79361d80ed9b7dbcd78fec9dc4c525db7ae178",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libreadline.so.6",
+      "sha256": "c1088a0748bb096b1ddb9879d8c712f8ac901b9a99699088310fe9b2e4e6e8f1",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libtinfo.so.5": "/opt/legacy/lib/libtinfo.so.5",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libsqlite3.so.0",
+      "sha256": "7789d7ca29061f68681097326eeb180900b1d9b6a4d19887a1d24a36ae6ecefa",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libstdc++.so.6",
+      "sha256": "c3cee315b64e61b78746f11cf2eda439c7f77e0ed832bb00b2604830b93cafe3",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libgcc_s.so.1": "/opt/legacy/lib/libgcc_s.so.1"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libtinfo.so.5",
+      "sha256": "d554851f0dba84714c1caeb6c30a53577b39d4e9db84c9d03a0b9e9aeb5536e3",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/libz.so.1",
+      "sha256": "44d238d9ac57e89ffb69ead3835bbea4aac1793505001c2f84661580253cf32d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/config-x86_64-linux-gnu/libpython2.7.so",
+      "sha256": "3409657f8f90de2868d92b81fa79361d80ed9b7dbcd78fec9dc4c525db7ae178",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libz.so.1": "/opt/legacy/lib/libz.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_bsddb.x86_64-linux-gnu.so",
+      "sha256": "5842e90a2754fd21fd645d18644bf250f2171a45af84694a8bd20cebc036d978",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdb-5.3.so": "/opt/legacy/lib/libdb-5.3.so",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_codecs_cn.x86_64-linux-gnu.so",
+      "sha256": "6f56fae06b0d0c1e11ad747fd6f2949389a9515cd4a5cdfddd6902113ab076d2",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_codecs_hk.x86_64-linux-gnu.so",
+      "sha256": "1e513c48145c9c2f5954213333dce65d951b12eda800c7dffbea83ced6502c68",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_codecs_iso2022.x86_64-linux-gnu.so",
+      "sha256": "908c407316a53ffdd81fddc4ee70d5cde9520044f8dbbdb90694436d60a0bc65",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_codecs_jp.x86_64-linux-gnu.so",
+      "sha256": "a821aa039d7f0fed332742eedc1e4a713f172fcf643504f9ced77d6c9b5f67c4",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_codecs_kr.x86_64-linux-gnu.so",
+      "sha256": "59114b90f9249dfe2dc75eb32f3e75653adb8f1a8fef1f010362e6a1d299dd05",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_codecs_tw.x86_64-linux-gnu.so",
+      "sha256": "79337b2551177597fd8585bc8e8fd116f9b44e1b995b1b845db8313ecda55bdb",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_csv.x86_64-linux-gnu.so",
+      "sha256": "7ae84b8cf4aa4b70fb236b01e917006d52962b154bc671bdff1fd8fbe2231978",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_ctypes.x86_64-linux-gnu.so",
+      "sha256": "1aef380d2f2b9266429766667346ce75f99169120ec3e4c0935d2fed2ed24f40",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libffi.so.6": "/opt/legacy/lib/libffi.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_ctypes_test.x86_64-linux-gnu.so",
+      "sha256": "607a1b7fcaef2916af69282bcfc04103c49e4bf27663d268eae3b79ec8d07787",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_curses.x86_64-linux-gnu.so",
+      "sha256": "8b5f4f65d291b0cec63e185347e7bc60cb92f3fb2b1e4cfb5a61bcb55fb2d329",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libncursesw.so.5": "/opt/legacy/lib/libncursesw.so.5",
+        "libtinfo.so.5": "/opt/legacy/lib/libtinfo.so.5",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_curses_panel.x86_64-linux-gnu.so",
+      "sha256": "15e20966a3131b1244a0bf654eb46504f8e6ed10be6de63fa1742c7b77693179",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libpanelw.so.5": "/opt/legacy/lib/libpanelw.so.5",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libncursesw.so.5": "/opt/legacy/lib/libncursesw.so.5",
+        "libtinfo.so.5": "/opt/legacy/lib/libtinfo.so.5",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_elementtree.x86_64-linux-gnu.so",
+      "sha256": "06536d1f4079d89985dcad525796576a229483eb131c14b2c6130b22b73e2ba7",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_hashlib.x86_64-linux-gnu.so",
+      "sha256": "ce54ebd8a11de6c4b87951c4f69a37994baa3f3514b3ffd1ab697802cd29b574",
+      "resolution_scope": "process",
+      "dependencies": {
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_hotshot.x86_64-linux-gnu.so",
+      "sha256": "ee662d8e3470ebde21fd2b2fd8c71320d102f6aba93afc962e46ca43c02ad2be",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_json.x86_64-linux-gnu.so",
+      "sha256": "66a4a8e87dc404454caec43c51f26d6f4f08d132c9656ad541739bba2e4f5352",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_lsprof.x86_64-linux-gnu.so",
+      "sha256": "6562948cfea773e5b94bd2568b43a5d6af007aebaa564194e454f17b5f0ab9a8",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_multibytecodec.x86_64-linux-gnu.so",
+      "sha256": "59a2fc66acf6c680dd7d617fa117b11f99fc1c0c78577ac82367abf66d988040",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_multiprocessing.x86_64-linux-gnu.so",
+      "sha256": "0bb89667a7a41b27d97e8197210fdcbbcd120d6f69fe94b3c79f57d2e4598724",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_sqlite3.x86_64-linux-gnu.so",
+      "sha256": "d97df03ec9cc399a5fe564db3f49544b57243122d40ca48e01a3c9e7f09f4abc",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libsqlite3.so.0": "/opt/legacy/lib/libsqlite3.so.0",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_ssl.x86_64-linux-gnu.so",
+      "sha256": "c4cf885cdaf1899355c7457b6b6ff9d95fcfa6a28c2d3cdbd399b1d0d9d4f8c4",
+      "resolution_scope": "process",
+      "dependencies": {
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libssl.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libssl.so.1.0.0",
+        "libcrypto.so.1.0.0": "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/_testcapi.x86_64-linux-gnu.so",
+      "sha256": "039d388bf662a47251256f127182c91ab6a01834bbab01fb6edf4a52a5174281",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/audioop.x86_64-linux-gnu.so",
+      "sha256": "a1a016164117406ba10bb479aff536d979c8230ddb329426316438eb8a4f996f",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/bz2.x86_64-linux-gnu.so",
+      "sha256": "b75dfefd428c3b369d073882b4fbfc50f32cdceb382cbd08419defd0572b2bb4",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libbz2.so.1.0": "/opt/legacy/lib/libbz2.so.1.0",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/crypt.x86_64-linux-gnu.so",
+      "sha256": "cf7f550a458144375d77df658bbaf1a9e356dcd202f74fc96b305614ad79e6e8",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libcrypt.so.1": "/opt/legacy/lib/libcrypt.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/datetime.x86_64-linux-gnu.so",
+      "sha256": "b15de1d383ae566977ed8409c4244073b3a11f6763420c49d22622782a51586d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/dbm.x86_64-linux-gnu.so",
+      "sha256": "6c676613dbfb6892088f176dc997014f41928127d09dcb42907aea1a64b92613",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdb-5.3.so": "/opt/legacy/lib/libdb-5.3.so",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/fpectl.x86_64-linux-gnu.so",
+      "sha256": "e0630d1be4e6fb5beac9a5b5a5726061dbe1f5fb49358eafb198c08546da0db4",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/future_builtins.x86_64-linux-gnu.so",
+      "sha256": "9fa69bc2696e1e7e91681ea905db65b945d33e8b47a82e1963c762e45cce76be",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/linuxaudiodev.x86_64-linux-gnu.so",
+      "sha256": "08006630324742f25d7783432e63f5df6f35870c9b50af702e2f919d61b35648",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/mmap.x86_64-linux-gnu.so",
+      "sha256": "8acb3463b38e23b51dcc1fd69d3a561193395baa27c6f4c29590ccdc8b0941a7",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/nis.x86_64-linux-gnu.so",
+      "sha256": "4c6261532bf9cffdf28b99f7d3e3e47088822063cb76c75788b45757df1e7628",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libnsl.so.1": "/opt/legacy/lib/libnsl.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/ossaudiodev.x86_64-linux-gnu.so",
+      "sha256": "2efb404471da85c384f65d8f3334b49bda3a7782ef6b8460689ba68429622f25",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/parser.x86_64-linux-gnu.so",
+      "sha256": "876ec6d85b85eea267936555c2f33226bdd432388df4239f0f27e739c7ef2a61",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/pyexpat.x86_64-linux-gnu.so",
+      "sha256": "8378c14cf152caa53a6c2420baf33ef79b2a8d1dcec8e9e8163f5e13c4bad1cd",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libexpat.so.1": "/opt/legacy/lib/libexpat.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/readline.x86_64-linux-gnu.so",
+      "sha256": "00faf4ceffe350ffb8e304f7703a04f77da05b908e344a10e8ff30dcec8b3d8d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libreadline.so.6": "/opt/legacy/lib/libreadline.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libtinfo.so.5": "/opt/legacy/lib/libtinfo.so.5"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/resource.x86_64-linux-gnu.so",
+      "sha256": "ba8c5d8fff9912a026aa91f502827bf8320b55cfb359bac023e2cc49a8f99e82",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/legacy/lib/python2.7/lib-dynload/termios.x86_64-linux-gnu.so",
+      "sha256": "cdf4a943c003bbfe58f0e6b5722915d958af205f6325ea5335dd5837f994d6a9",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    }
+  ],
+  "modern_runtime": [
+    {
+      "path": "/opt/modern/bin/python3.13",
+      "sha256": "0195e34a601a782784774f9af31300de288cf767ea7a101e32158e5169f51209",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/itcl4.3.8/libtcl9itcl4.3.8.so",
+      "sha256": "d456714de89d526ceb5fbb640ce51160718b1fb9cd7d40aba22a3908184ffcc0",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/libpython3.13.so.1.0",
+      "sha256": "9bf778565c2a319efbd08e22adc49370cb47c663350fc40517d05e5bf71b8d0a",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/libpython3.so",
+      "sha256": "2b6197bd6517519693630191028ddcb01d96ed8abb834a0b82250a071ed0ac36",
+      "resolution_scope": "process",
+      "dependencies": {
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libutil.so.1": "/usr/lib/x86_64-linux-gnu/libutil.so.1"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/libtcl9.0.so",
+      "sha256": "760487a15682e6d5628b9085bfe2859101d9c57255c12d7d705f96fb30ab2fca",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/libtcl9tk9.0.so",
+      "sha256": "0d06d6320748fcf41531768ec9b94a2f3e1f4526250e3ab42cdf3df81a898593",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/lib-dynload/_dbm.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "1213fec98cd16a5d74724beae355b7f0efeb07dc3719de0c0d347630e82b82a0",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/lib-dynload/_tkinter.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "82de939f911ff2ff6571c1a132c06a3e4edf02c29dec2284fec3e200cd627ae4",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libtcl9tk9.0.so": "/opt/modern/lib/libtcl9tk9.0.so",
+        "libtcl9.0.so": "/opt/modern/lib/libtcl9.0.so",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_avif.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "ce52b66b4fca5c64e2f74f3c12b97978bc7a856d750e0469f1e7bc4545b10969",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libavif-0b1c2ae7.so.16.4.1": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libavif-0b1c2ae7.so.16.4.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libstdc++.so.6": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_imaging.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "c2ec988f56db5416fea12669370e8f5eac9278d862ec03797ab0d735b42b28cd",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libtiff-56c1bbc6.so.6.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libtiff-56c1bbc6.so.6.2.0",
+        "libjpeg-02b4d8cf.so.62.4.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libjpeg-02b4d8cf.so.62.4.0",
+        "libopenjp2-a0b2093f.so.2.5.4": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libopenjp2-a0b2093f.so.2.5.4",
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "libxcb-46a603a8.so.1.1.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libxcb-46a603a8.so.1.1.0",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libzstd-96175704.so.1.5.7": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libzstd-96175704.so.1.5.7",
+        "liblzma-d41bb66c.so.5.8.3": "/opt/modern/lib/python3.13/site-packages/pillow.libs/liblzma-d41bb66c.so.5.8.3",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libXau-00ec42fe.so.6.0.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libXau-00ec42fe.so.6.0.0"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_imagingcms.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "f991f23858e746ba876721b0f8dad3e6c3fd42b4704794af341b95c3dfca1be3",
+      "resolution_scope": "process",
+      "dependencies": {
+        "liblcms2-35454777.so.2.0.18": "/opt/modern/lib/python3.13/site-packages/pillow.libs/liblcms2-35454777.so.2.0.18",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_imagingft.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "506ebbd7bb35f2581d73f6352ccf2d52bdd7702e43a90a98b6966dde116f972c",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libfreetype-bbbc9ca1.so.6.20.6": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libfreetype-bbbc9ca1.so.6.20.6",
+        "libharfbuzz-0c77c97f.so.0.61321.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libharfbuzz-0c77c97f.so.0.61321.0",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libpng16-1ff02007.so.16.56.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libpng16-1ff02007.so.16.56.0",
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libbrotlidec-2b4e35de.so.1.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlidec-2b4e35de.so.1.2.0",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libbrotlicommon-c43ca8d5.so.1.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlicommon-c43ca8d5.so.1.2.0"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_imagingmath.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "bda2c9087b3889c81c1e26b73d0d3f4fc71fbcdc21a8b695d674d99bc38858e8",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_imagingmorph.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "65e0ba8e2da6b3cdb6a63f5e672e579fdb867440ce09df3d1756de70ce654dd0",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_imagingtk.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "1f89dd73c24f37c2790cd9423a2c3042a7fb6ad6c07f3d0206ed2608fc7bd95b",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/PIL/_webp.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "fb23fa6697933908e8eac03afc6f0c7cd0168c47d8ed546fc86eb55aae1d842a",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libwebp-15463320.so.7.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebp-15463320.so.7.2.0",
+        "libwebpmux-83c74882.so.3.1.2": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebpmux-83c74882.so.3.1.2",
+        "libwebpdemux-65067297.so.2.0.17": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebpdemux-65067297.so.2.0.17",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libsharpyuv-f85d91c0.so.0.1.2": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libsharpyuv-f85d91c0.so.0.1.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/httptools/parser/parser.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "c29819f1ac25529c49993e9d463d8b52c26930ddc10e6fb1c1c436e91a386875",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/httptools/parser/url_parser.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "c593bfaf4b27c627fdc1a076ad71fa7b591be7838e93daaa14084db9c81c6b3f",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libXau-00ec42fe.so.6.0.0",
+      "sha256": "263cac12d8d8b5ead7dc2391c355fe9fc939940e1ea22ed98ee56a8cb61ce684",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libavif-0b1c2ae7.so.16.4.1",
+      "sha256": "2312dbfa6495dc214cb30991485e45517fa4ac6791f7c223d5f4b398d5bc18e2",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libstdc++.so.6": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libgcc_s.so.1": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlicommon-c43ca8d5.so.1.2.0",
+      "sha256": "ce1215e008aea1b1fc15e6a196ab0a51717231f809d1d2e59697efd4ed8c888a",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlidec-2b4e35de.so.1.2.0",
+      "sha256": "76be050e68738ca80eaa8f3c401f3817172057d46418a4ca4a808353f1491b0a",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libbrotlicommon-c43ca8d5.so.1.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlicommon-c43ca8d5.so.1.2.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libfreetype-bbbc9ca1.so.6.20.6",
+      "sha256": "22cdfb729c2f5624c377d858376805b1a5219f9c5289e5c7a5418d51a01bb558",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libpng16-1ff02007.so.16.56.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libpng16-1ff02007.so.16.56.0",
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libbrotlidec-2b4e35de.so.1.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlidec-2b4e35de.so.1.2.0",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libbrotlicommon-c43ca8d5.so.1.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlicommon-c43ca8d5.so.1.2.0"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libharfbuzz-0c77c97f.so.0.61321.0",
+      "sha256": "d1dba7f7d25e0bff9655ca9e787e9de6ba56282ef089869a4487aaa681111828",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libfreetype-bbbc9ca1.so.6.20.6": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libfreetype-bbbc9ca1.so.6.20.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libpng16-1ff02007.so.16.56.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libpng16-1ff02007.so.16.56.0",
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libbrotlidec-2b4e35de.so.1.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlidec-2b4e35de.so.1.2.0",
+        "libbrotlicommon-c43ca8d5.so.1.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libbrotlicommon-c43ca8d5.so.1.2.0"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libjpeg-02b4d8cf.so.62.4.0",
+      "sha256": "5b6411838d509fa1c6ba54c250a122ba5e3d9b9fb21b6bba05e6a8bb1e17b45b",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/liblcms2-35454777.so.2.0.18",
+      "sha256": "c700afc8d9cd21a79819376c086d5884882a8e1194646bf49914d7dd4fde0b30",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/liblzma-d41bb66c.so.5.8.3",
+      "sha256": "a5002cc7996c49a82af9b27ccadd4bd6fc6978679dd6712a82b59a3d005b309b",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libopenjp2-a0b2093f.so.2.5.4",
+      "sha256": "c0495026237a6fff0a4a1a2d9e389042242fae28158e87683d23d690d6efb5a3",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libpng16-1ff02007.so.16.56.0",
+      "sha256": "8ea17294757e08bc02dd5aa60f3060b7fd43116eef98ff3dda20b48a3072cd69",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libsharpyuv-f85d91c0.so.0.1.2",
+      "sha256": "c92a4a1d416a4e9d01c113965552d25f7b59bbf0fe0da369b21e9c1a53145a40",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libtiff-56c1bbc6.so.6.2.0",
+      "sha256": "43e3b96545f92b7f67aa36cdae7de0fc17e1a9819a2f23e80ed8b7e7dc2c0181",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libzstd-96175704.so.1.5.7": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libzstd-96175704.so.1.5.7",
+        "liblzma-d41bb66c.so.5.8.3": "/opt/modern/lib/python3.13/site-packages/pillow.libs/liblzma-d41bb66c.so.5.8.3",
+        "libjpeg-02b4d8cf.so.62.4.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libjpeg-02b4d8cf.so.62.4.0",
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebp-15463320.so.7.2.0",
+      "sha256": "a16418c8557be743cd74f50ddefb16be059eee0f464fac482e36fabfdb263fe2",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libsharpyuv-f85d91c0.so.0.1.2": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libsharpyuv-f85d91c0.so.0.1.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebpdemux-65067297.so.2.0.17",
+      "sha256": "5e60b5446f7013d1319cd12fa925503b94948bd68cff78f70f6508453ae11226",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libwebp-15463320.so.7.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebp-15463320.so.7.2.0",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libsharpyuv-f85d91c0.so.0.1.2": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libsharpyuv-f85d91c0.so.0.1.2",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebpmux-83c74882.so.3.1.2",
+      "sha256": "660308209e9225150c152bbf2883c16e782e5ca5d032041f551c3ef456d90d05",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libwebp-15463320.so.7.2.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libwebp-15463320.so.7.2.0",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libsharpyuv-f85d91c0.so.0.1.2": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libsharpyuv-f85d91c0.so.0.1.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libxcb-46a603a8.so.1.1.0",
+      "sha256": "e50d018a7e22d4c2c3ff08a5321e80c54731e90dcd49ffb9d018927a4385dfea",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libXau-00ec42fe.so.6.0.0": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libXau-00ec42fe.so.6.0.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pillow.libs/libzstd-96175704.so.1.5.7",
+      "sha256": "0e800fe2c9a1543365ce54df229f1dc97a7fa8a2032f88e7115acd8942d3f7d9",
+      "resolution_scope": "wheel_private_directory",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/pydantic_core/_pydantic_core.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "409c007b2b6931519f4147e39d5d1e0c56246f982fb940d8cf7363565c55eb21",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libgcc_s.so.1": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/rpds/rpds.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "2181c80505a16e022586446a546f8e0f865173c1c93a011ce1f1bacd622f3c9d",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libgcc_s.so.1": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/uvloop/loop.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "aa4cf898c2b8daf5b9d5d4ebef86b611e4f5c83432641251cc2ec80050c9ba65",
+      "resolution_scope": "process",
+      "dependencies": {
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/watchfiles/_rust_notify.abi3.so",
+      "sha256": "98d9797eda0327e4c4ef8a77b89905547ded7bfc58f0e13f56eb25e0774e8065",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libgcc_s.so.1": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "librt.so.1": "/usr/lib/x86_64-linux-gnu/librt.so.1",
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libdl.so.2": "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/websockets/speedups.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "3de86d84b4b6f7b4f852722c4ea65a380acef051b425232acc7f6fff22433deb",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/python3.13/site-packages/yaml/_yaml.cpython-313-x86_64-linux-gnu.so",
+      "sha256": "3f91601d7da50f3d1521e807f04820be198ccaedc2a89094d69031cf8928d8af",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libpthread.so.0": "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    },
+    {
+      "path": "/opt/modern/lib/thread3.0.6/libtcl9thread3.0.6.so",
+      "sha256": "23b4c495283b5044eafeec7a9dd9c5fc47fff859343f9defbd8b5f01bc555e7b",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    }
+  ],
+  "modern_tools": [
+    {
+      "path": "/usr/bin/ffmpeg",
+      "sha256": "ed16af623947494a72e284b6eb8ff225f2da22b38b5d5069c2fd4b4ba3384e41",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libavdevice.so.60": "/usr/lib/x86_64-linux-gnu/libavdevice.so.60.3.100",
+        "libavfilter.so.9": "/usr/lib/x86_64-linux-gnu/libavfilter.so.9.12.100",
+        "libavformat.so.60": "/usr/lib/x86_64-linux-gnu/libavformat.so.60.16.100",
+        "libavcodec.so.60": "/usr/lib/x86_64-linux-gnu/libavcodec.so.60.31.102",
+        "libpostproc.so.57": "/usr/lib/x86_64-linux-gnu/libpostproc.so.57.3.100",
+        "libswresample.so.4": "/usr/lib/x86_64-linux-gnu/libswresample.so.4.12.100",
+        "libswscale.so.7": "/usr/lib/x86_64-linux-gnu/libswscale.so.7.5.100",
+        "libavutil.so.58": "/usr/lib/x86_64-linux-gnu/libavutil.so.58.29.100",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libraw1394.so.11": "/usr/lib/x86_64-linux-gnu/libraw1394.so.11.1.0",
+        "libavc1394.so.0": "/usr/lib/x86_64-linux-gnu/libavc1394.so.0.3.0",
+        "librom1394.so.0": "/usr/lib/x86_64-linux-gnu/librom1394.so.0.3.0",
+        "libiec61883.so.0": "/usr/lib/x86_64-linux-gnu/libiec61883.so.0.1.1",
+        "libjack.so.0": "/usr/lib/x86_64-linux-gnu/libjack.so.0.1.0",
+        "libdrm.so.2": "/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0",
+        "libopenal.so.1": "/usr/lib/x86_64-linux-gnu/libopenal.so.1.23.1",
+        "libxcb.so.1": "/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0",
+        "libxcb-shm.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0",
+        "libxcb-shape.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-shape.so.0.0.0",
+        "libxcb-xfixes.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0",
+        "libcdio_paranoia.so.2": "/usr/lib/x86_64-linux-gnu/libcdio_paranoia.so.2.0.0",
+        "libcdio_cdda.so.2": "/usr/lib/x86_64-linux-gnu/libcdio_cdda.so.2.0.0",
+        "libdc1394.so.25": "/usr/lib/x86_64-linux-gnu/libdc1394.so.25.0.0",
+        "libasound.so.2": "/usr/lib/x86_64-linux-gnu/libasound.so.2.0.0",
+        "libcaca.so.0": "/usr/lib/x86_64-linux-gnu/libcaca.so.0.99.20",
+        "libGL.so.1": "/usr/lib/x86_64-linux-gnu/libGL.so.1.7.0",
+        "libpulse.so.0": "/usr/lib/x86_64-linux-gnu/libpulse.so.0.24.2",
+        "libSDL2-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.0.3000.0",
+        "libXv.so.1": "/usr/lib/x86_64-linux-gnu/libXv.so.1.0.0",
+        "libX11.so.6": "/usr/lib/x86_64-linux-gnu/libX11.so.6.4.0",
+        "libXext.so.6": "/usr/lib/x86_64-linux-gnu/libXext.so.6.4.0",
+        "libpocketsphinx.so.3": "/usr/lib/x86_64-linux-gnu/libpocketsphinx.so.3.0.0",
+        "libsphinxbase.so.3": "/usr/lib/x86_64-linux-gnu/libsphinxbase.so.3.0.0",
+        "libbs2b.so.0": "/usr/lib/x86_64-linux-gnu/libbs2b.so.0.0.0",
+        "liblilv-0.so.0": "/usr/lib/x86_64-linux-gnu/liblilv-0.so.0.24.22",
+        "librubberband.so.2": "/usr/lib/x86_64-linux-gnu/librubberband.so.2.3.0",
+        "libmysofa.so.1": "/usr/lib/x86_64-linux-gnu/libmysofa.so.1.3.2",
+        "libflite_cmu_us_awb.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_awb.so.2.2",
+        "libflite_cmu_us_kal.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_kal.so.2.2",
+        "libflite_cmu_us_kal16.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_kal16.so.2.2",
+        "libflite_cmu_us_rms.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_rms.so.2.2",
+        "libflite_cmu_us_slt.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_slt.so.2.2",
+        "libflite.so.1": "/usr/lib/x86_64-linux-gnu/libflite.so.2.2",
+        "libharfbuzz.so.0": "/usr/lib/x86_64-linux-gnu/libharfbuzz.so.0.60830.0",
+        "libfribidi.so.0": "/usr/lib/x86_64-linux-gnu/libfribidi.so.0.4.0",
+        "libplacebo.so.338": "/usr/lib/x86_64-linux-gnu/libplacebo.so.338",
+        "libass.so.9": "/usr/lib/x86_64-linux-gnu/libass.so.9.2.1",
+        "libva.so.2": "/usr/lib/x86_64-linux-gnu/libva.so.2.2000.0",
+        "libvidstab.so.1.1": "/usr/lib/x86_64-linux-gnu/libvidstab.so.1.1",
+        "libzmq.so.5": "/usr/lib/x86_64-linux-gnu/libzmq.so.5.2.5",
+        "libzimg.so.2": "/usr/lib/x86_64-linux-gnu/libzimg.so.2.0.0",
+        "libstdc++.so.6": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33",
+        "libOpenCL.so.1": "/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0",
+        "libfontconfig.so.1": "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1.12.1",
+        "libfreetype.so.6": "/usr/lib/x86_64-linux-gnu/libfreetype.so.6.20.1",
+        "libvpl.so.2": "/usr/lib/x86_64-linux-gnu/libvpl.so.2.9",
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libxml2.so.2": "/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14",
+        "libbz2.so.1.0": "/usr/lib/x86_64-linux-gnu/libbz2.so.1.0.4",
+        "libgme.so.0": "/usr/lib/x86_64-linux-gnu/libgme.so.0.6.3",
+        "libopenmpt.so.0": "/usr/lib/x86_64-linux-gnu/libopenmpt.so.0.4.4",
+        "libchromaprint.so.1": "/usr/lib/x86_64-linux-gnu/libchromaprint.so.1.5.1",
+        "libbluray.so.2": "/usr/lib/x86_64-linux-gnu/libbluray.so.2.4.3",
+        "libgnutls.so.30": "/usr/lib/x86_64-linux-gnu/libgnutls.so.30.37.1",
+        "librabbitmq.so.4": "/usr/lib/x86_64-linux-gnu/librabbitmq.so.4.5.0",
+        "librist.so.4": "/usr/lib/x86_64-linux-gnu/librist.so.4.3.1",
+        "libsrt-gnutls.so.1.5": "/usr/lib/x86_64-linux-gnu/libsrt-gnutls.so.1.5.3",
+        "libssh-gcrypt.so.4": "/usr/lib/x86_64-linux-gnu/libssh-gcrypt.so.4.9.6",
+        "libvpx.so.9": "/usr/lib/x86_64-linux-gnu/libvpx.so.9.0.0",
+        "libwebpmux.so.3": "/usr/lib/x86_64-linux-gnu/libwebpmux.so.3.0.13",
+        "liblzma.so.5": "/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5",
+        "libdav1d.so.7": "/usr/lib/x86_64-linux-gnu/libdav1d.so.7.0.0",
+        "librsvg-2.so.2": "/usr/lib/x86_64-linux-gnu/librsvg-2.so.2.50.0",
+        "libgobject-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgobject-2.0.so.0.8000.0",
+        "libglib-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0.8000.0",
+        "libcairo.so.2": "/usr/lib/x86_64-linux-gnu/libcairo.so.2.11800.0",
+        "libzvbi.so.0": "/usr/lib/x86_64-linux-gnu/libzvbi.so.0.13.2",
+        "libsnappy.so.1": "/usr/lib/x86_64-linux-gnu/libsnappy.so.1.1.10",
+        "libaom.so.3": "/usr/lib/x86_64-linux-gnu/libaom.so.3.8.2",
+        "libcodec2.so.1.2": "/usr/lib/x86_64-linux-gnu/libcodec2.so.1.2",
+        "libgsm.so.1": "/usr/lib/x86_64-linux-gnu/libgsm.so.1.0.19",
+        "libjxl.so.0.7": "/usr/lib/x86_64-linux-gnu/libjxl.so.0.7.0",
+        "libjxl_threads.so.0.7": "/usr/lib/x86_64-linux-gnu/libjxl_threads.so.0.7.0",
+        "libmp3lame.so.0": "/usr/lib/x86_64-linux-gnu/libmp3lame.so.0.0.0",
+        "libopenjp2.so.7": "/usr/lib/x86_64-linux-gnu/libopenjp2.so.2.5.0",
+        "libopus.so.0": "/usr/lib/x86_64-linux-gnu/libopus.so.0.9.0",
+        "librav1e.so.0": "/usr/lib/x86_64-linux-gnu/librav1e.so.0.7.1",
+        "libshine.so.3": "/usr/lib/x86_64-linux-gnu/libshine.so.3.0.1",
+        "libspeex.so.1": "/usr/lib/x86_64-linux-gnu/libspeex.so.1.5.2",
+        "libSvtAv1Enc.so.1": "/usr/lib/x86_64-linux-gnu/libSvtAv1Enc.so.1.7.0",
+        "libtheoraenc.so.1": "/usr/lib/x86_64-linux-gnu/libtheoraenc.so.1.1.2",
+        "libtheoradec.so.1": "/usr/lib/x86_64-linux-gnu/libtheoradec.so.1.1.4",
+        "libtwolame.so.0": "/usr/lib/x86_64-linux-gnu/libtwolame.so.0.0.0",
+        "libvorbis.so.0": "/usr/lib/x86_64-linux-gnu/libvorbis.so.0.4.9",
+        "libvorbisenc.so.2": "/usr/lib/x86_64-linux-gnu/libvorbisenc.so.2.0.12",
+        "libwebp.so.7": "/usr/lib/x86_64-linux-gnu/libwebp.so.7.1.8",
+        "libx264.so.164": "/usr/lib/x86_64-linux-gnu/libx264.so.164",
+        "libx265.so.199": "/usr/lib/x86_64-linux-gnu/libx265.so.199",
+        "libxvidcore.so.4": "/usr/lib/x86_64-linux-gnu/libxvidcore.so.4.3",
+        "libsoxr.so.0": "/usr/lib/x86_64-linux-gnu/libsoxr.so.0.1.2",
+        "libva-drm.so.2": "/usr/lib/x86_64-linux-gnu/libva-drm.so.2.2000.0",
+        "libva-x11.so.2": "/usr/lib/x86_64-linux-gnu/libva-x11.so.2.2000.0",
+        "libvdpau.so.1": "/usr/lib/x86_64-linux-gnu/libvdpau.so.1.0.0",
+        "libdb-5.3.so": "/usr/lib/x86_64-linux-gnu/libdb-5.3.so",
+        "libgcc_s.so.1": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "libsndio.so.7": "/usr/lib/x86_64-linux-gnu/libsndio.so.7.2",
+        "libXau.so.6": "/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0",
+        "libXdmcp.so.6": "/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0",
+        "libcdio.so.19": "/usr/lib/x86_64-linux-gnu/libcdio.so.19.0.0",
+        "libusb-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libusb-1.0.so.0.4.0",
+        "libslang.so.2": "/usr/lib/x86_64-linux-gnu/libslang.so.2.3.3",
+        "libncursesw.so.6": "/usr/lib/x86_64-linux-gnu/libncursesw.so.6.4",
+        "libtinfo.so.6": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4",
+        "libGLdispatch.so.0": "/usr/lib/x86_64-linux-gnu/libGLdispatch.so.0.0.0",
+        "libGLX.so.0": "/usr/lib/x86_64-linux-gnu/libGLX.so.0.0.0",
+        "libpulsecommon-16.1.so": "/usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon-16.1.so",
+        "libdbus-1.so.3": "/usr/lib/x86_64-linux-gnu/libdbus-1.so.3.32.4",
+        "libsamplerate.so.0": "/usr/lib/x86_64-linux-gnu/libsamplerate.so.0.2.2",
+        "libXcursor.so.1": "/usr/lib/x86_64-linux-gnu/libXcursor.so.1.0.2",
+        "libXi.so.6": "/usr/lib/x86_64-linux-gnu/libXi.so.6.1.0",
+        "libXfixes.so.3": "/usr/lib/x86_64-linux-gnu/libXfixes.so.3.1.0",
+        "libXrandr.so.2": "/usr/lib/x86_64-linux-gnu/libXrandr.so.2.2.0",
+        "libXss.so.1": "/usr/lib/x86_64-linux-gnu/libXss.so.1.0.0",
+        "libgbm.so.1": "/usr/lib/x86_64-linux-gnu/libgbm.so.1.0.0",
+        "libwayland-egl.so.1": "/usr/lib/x86_64-linux-gnu/libwayland-egl.so.1.22.0",
+        "libwayland-client.so.0": "/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0",
+        "libwayland-cursor.so.0": "/usr/lib/x86_64-linux-gnu/libwayland-cursor.so.0.22.0",
+        "libxkbcommon.so.0": "/usr/lib/x86_64-linux-gnu/libxkbcommon.so.0.0.0",
+        "libdecor-0.so.0": "/usr/lib/x86_64-linux-gnu/libdecor-0.so.0.200.2",
+        "libblas.so.3": "/usr/lib/x86_64-linux-gnu/blas/libblas.so.3.12.0",
+        "liblapack.so.3": "/usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.12.0",
+        "libserd-0.so.0": "/usr/lib/x86_64-linux-gnu/libserd-0.so.0.32.2",
+        "libsord-0.so.0": "/usr/lib/x86_64-linux-gnu/libsord-0.so.0.16.16",
+        "libsratom-0.so.0": "/usr/lib/x86_64-linux-gnu/libsratom-0.so.0.6.16",
+        "libzix-0.so.0": "/usr/lib/x86_64-linux-gnu/libzix-0.so.0.4.2",
+        "libfftw3.so.3": "/usr/lib/x86_64-linux-gnu/libfftw3.so.3.6.10",
+        "libflite_usenglish.so.1": "/usr/lib/x86_64-linux-gnu/libflite_usenglish.so.2.2",
+        "libflite_cmulex.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmulex.so.2.2",
+        "libgraphite2.so.3": "/usr/lib/x86_64-linux-gnu/libgraphite2.so.3.2.1",
+        "libvulkan.so.1": "/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275",
+        "liblcms2.so.2": "/usr/lib/x86_64-linux-gnu/liblcms2.so.2.0.14",
+        "libunibreak.so.5": "/usr/lib/x86_64-linux-gnu/libunibreak.so.5.0.1",
+        "libgomp.so.1": "/usr/lib/x86_64-linux-gnu/libgomp.so.1.0.0",
+        "libbsd.so.0": "/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1",
+        "libsodium.so.23": "/usr/lib/x86_64-linux-gnu/libsodium.so.23.3.0",
+        "libpgm-5.3.so.0": "/usr/lib/x86_64-linux-gnu/libpgm-5.3.so.0.0.128",
+        "libnorm.so.1": "/usr/lib/x86_64-linux-gnu/libnorm.so.1",
+        "libgssapi_krb5.so.2": "/usr/lib/x86_64-linux-gnu/libgssapi_krb5.so.2.2",
+        "libexpat.so.1": "/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1",
+        "libpng16.so.16": "/usr/lib/x86_64-linux-gnu/libpng16.so.16.43.0",
+        "libbrotlidec.so.1": "/usr/lib/x86_64-linux-gnu/libbrotlidec.so.1.1.0",
+        "libicuuc.so.74": "/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2",
+        "libmpg123.so.0": "/usr/lib/x86_64-linux-gnu/libmpg123.so.0.48.2",
+        "libvorbisfile.so.3": "/usr/lib/x86_64-linux-gnu/libvorbisfile.so.3.3.8",
+        "libudfread.so.0": "/usr/lib/x86_64-linux-gnu/libudfread.so.0.1.0",
+        "libp11-kit.so.0": "/usr/lib/x86_64-linux-gnu/libp11-kit.so.0.3.1",
+        "libidn2.so.0": "/usr/lib/x86_64-linux-gnu/libidn2.so.0.4.0",
+        "libunistring.so.5": "/usr/lib/x86_64-linux-gnu/libunistring.so.5.0.0",
+        "libtasn1.so.6": "/usr/lib/x86_64-linux-gnu/libtasn1.so.6.6.3",
+        "libnettle.so.8": "/usr/lib/x86_64-linux-gnu/libnettle.so.8.8",
+        "libhogweed.so.6": "/usr/lib/x86_64-linux-gnu/libhogweed.so.6.8",
+        "libgmp.so.10": "/usr/lib/x86_64-linux-gnu/libgmp.so.10.5.0",
+        "libssl.so.3": "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+        "libcrypto.so.3": "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+        "libmbedcrypto.so.7": "/usr/lib/x86_64-linux-gnu/libmbedcrypto.so.2.28.8",
+        "libcjson.so.1": "/usr/lib/x86_64-linux-gnu/libcjson.so.1.7.17",
+        "libgcrypt.so.20": "/usr/lib/x86_64-linux-gnu/libgcrypt.so.20.4.3",
+        "libgpg-error.so.0": "/usr/lib/x86_64-linux-gnu/libgpg-error.so.0.34.0",
+        "libcairo-gobject.so.2": "/usr/lib/x86_64-linux-gnu/libcairo-gobject.so.2.11800.0",
+        "libgdk_pixbuf-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgdk_pixbuf-2.0.so.0.4200.10",
+        "libgio-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgio-2.0.so.0.8000.0",
+        "libpangocairo-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libpangocairo-1.0.so.0.5200.1",
+        "libpango-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libpango-1.0.so.0.5200.1",
+        "libffi.so.8": "/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4",
+        "libpcre2-8.so.0": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.11.2",
+        "libXrender.so.1": "/usr/lib/x86_64-linux-gnu/libXrender.so.1.3.0",
+        "libxcb-render.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-render.so.0.0.0",
+        "libpixman-1.so.0": "/usr/lib/x86_64-linux-gnu/libpixman-1.so.0.42.2",
+        "libhwy.so.1": "/usr/lib/x86_64-linux-gnu/libhwy.so.1.0.7",
+        "libbrotlienc.so.1": "/usr/lib/x86_64-linux-gnu/libbrotlienc.so.1.1.0",
+        "libogg.so.0": "/usr/lib/x86_64-linux-gnu/libogg.so.0.8.5",
+        "libsharpyuv.so.0": "/usr/lib/x86_64-linux-gnu/libsharpyuv.so.0.0.1",
+        "libnuma.so.1": "/usr/lib/x86_64-linux-gnu/libnuma.so.1.0.0",
+        "libX11-xcb.so.1": "/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0",
+        "libxcb-dri3.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0",
+        "libudev.so.1": "/usr/lib/x86_64-linux-gnu/libudev.so.1.7.8",
+        "libsndfile.so.1": "/usr/lib/x86_64-linux-gnu/libsndfile.so.1.0.37",
+        "libsystemd.so.0": "/usr/lib/x86_64-linux-gnu/libsystemd.so.0.38.0",
+        "libasyncns.so.0": "/usr/lib/x86_64-linux-gnu/libasyncns.so.0.3.1",
+        "libapparmor.so.1": "/usr/lib/x86_64-linux-gnu/libapparmor.so.1.17.2",
+        "libgfortran.so.5": "/usr/lib/x86_64-linux-gnu/libgfortran.so.5.0.0",
+        "libmd.so.0": "/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0",
+        "libkrb5.so.3": "/usr/lib/x86_64-linux-gnu/libkrb5.so.3.3",
+        "libk5crypto.so.3": "/usr/lib/x86_64-linux-gnu/libk5crypto.so.3.1",
+        "libcom_err.so.2": "/usr/lib/x86_64-linux-gnu/libcom_err.so.2.1",
+        "libkrb5support.so.0": "/usr/lib/x86_64-linux-gnu/libkrb5support.so.0.1",
+        "libbrotlicommon.so.1": "/usr/lib/x86_64-linux-gnu/libbrotlicommon.so.1.1.0",
+        "libicudata.so.74": "/usr/lib/x86_64-linux-gnu/libicudata.so.74.2",
+        "libgmodule-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgmodule-2.0.so.0.8000.0",
+        "libjpeg.so.8": "/usr/lib/x86_64-linux-gnu/libjpeg.so.8.2.2",
+        "libmount.so.1": "/usr/lib/x86_64-linux-gnu/libmount.so.1.1.0",
+        "libselinux.so.1": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+        "libpangoft2-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libpangoft2-1.0.so.0.5200.1",
+        "libthai.so.0": "/usr/lib/x86_64-linux-gnu/libthai.so.0.3.1",
+        "libcap.so.2": "/usr/lib/x86_64-linux-gnu/libcap.so.2.66",
+        "libFLAC.so.12": "/usr/lib/x86_64-linux-gnu/libFLAC.so.12.1.0",
+        "liblz4.so.1": "/usr/lib/x86_64-linux-gnu/liblz4.so.1.9.4",
+        "libzstd.so.1": "/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5",
+        "libkeyutils.so.1": "/usr/lib/x86_64-linux-gnu/libkeyutils.so.1.10",
+        "libresolv.so.2": "/usr/lib/x86_64-linux-gnu/libresolv.so.2",
+        "libblkid.so.1": "/usr/lib/x86_64-linux-gnu/libblkid.so.1.1.0",
+        "libdatrie.so.1": "/usr/lib/x86_64-linux-gnu/libdatrie.so.1.4.0"
+      }
+    },
+    {
+      "path": "/usr/bin/ffprobe",
+      "sha256": "272f6ebc634a63d9c8b4ca68e964119d980f25154e5aa2c35e5487da48e9a58f",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libavdevice.so.60": "/usr/lib/x86_64-linux-gnu/libavdevice.so.60.3.100",
+        "libavfilter.so.9": "/usr/lib/x86_64-linux-gnu/libavfilter.so.9.12.100",
+        "libavformat.so.60": "/usr/lib/x86_64-linux-gnu/libavformat.so.60.16.100",
+        "libavcodec.so.60": "/usr/lib/x86_64-linux-gnu/libavcodec.so.60.31.102",
+        "libpostproc.so.57": "/usr/lib/x86_64-linux-gnu/libpostproc.so.57.3.100",
+        "libswresample.so.4": "/usr/lib/x86_64-linux-gnu/libswresample.so.4.12.100",
+        "libswscale.so.7": "/usr/lib/x86_64-linux-gnu/libswscale.so.7.5.100",
+        "libavutil.so.58": "/usr/lib/x86_64-linux-gnu/libavutil.so.58.29.100",
+        "libm.so.6": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "libraw1394.so.11": "/usr/lib/x86_64-linux-gnu/libraw1394.so.11.1.0",
+        "libavc1394.so.0": "/usr/lib/x86_64-linux-gnu/libavc1394.so.0.3.0",
+        "librom1394.so.0": "/usr/lib/x86_64-linux-gnu/librom1394.so.0.3.0",
+        "libiec61883.so.0": "/usr/lib/x86_64-linux-gnu/libiec61883.so.0.1.1",
+        "libjack.so.0": "/usr/lib/x86_64-linux-gnu/libjack.so.0.1.0",
+        "libdrm.so.2": "/usr/lib/x86_64-linux-gnu/libdrm.so.2.125.0",
+        "libopenal.so.1": "/usr/lib/x86_64-linux-gnu/libopenal.so.1.23.1",
+        "libxcb.so.1": "/usr/lib/x86_64-linux-gnu/libxcb.so.1.1.0",
+        "libxcb-shm.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-shm.so.0.0.0",
+        "libxcb-shape.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-shape.so.0.0.0",
+        "libxcb-xfixes.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-xfixes.so.0.0.0",
+        "libcdio_paranoia.so.2": "/usr/lib/x86_64-linux-gnu/libcdio_paranoia.so.2.0.0",
+        "libcdio_cdda.so.2": "/usr/lib/x86_64-linux-gnu/libcdio_cdda.so.2.0.0",
+        "libdc1394.so.25": "/usr/lib/x86_64-linux-gnu/libdc1394.so.25.0.0",
+        "libasound.so.2": "/usr/lib/x86_64-linux-gnu/libasound.so.2.0.0",
+        "libcaca.so.0": "/usr/lib/x86_64-linux-gnu/libcaca.so.0.99.20",
+        "libGL.so.1": "/usr/lib/x86_64-linux-gnu/libGL.so.1.7.0",
+        "libpulse.so.0": "/usr/lib/x86_64-linux-gnu/libpulse.so.0.24.2",
+        "libSDL2-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.0.3000.0",
+        "libXv.so.1": "/usr/lib/x86_64-linux-gnu/libXv.so.1.0.0",
+        "libX11.so.6": "/usr/lib/x86_64-linux-gnu/libX11.so.6.4.0",
+        "libXext.so.6": "/usr/lib/x86_64-linux-gnu/libXext.so.6.4.0",
+        "libpocketsphinx.so.3": "/usr/lib/x86_64-linux-gnu/libpocketsphinx.so.3.0.0",
+        "libsphinxbase.so.3": "/usr/lib/x86_64-linux-gnu/libsphinxbase.so.3.0.0",
+        "libbs2b.so.0": "/usr/lib/x86_64-linux-gnu/libbs2b.so.0.0.0",
+        "liblilv-0.so.0": "/usr/lib/x86_64-linux-gnu/liblilv-0.so.0.24.22",
+        "librubberband.so.2": "/usr/lib/x86_64-linux-gnu/librubberband.so.2.3.0",
+        "libmysofa.so.1": "/usr/lib/x86_64-linux-gnu/libmysofa.so.1.3.2",
+        "libflite_cmu_us_awb.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_awb.so.2.2",
+        "libflite_cmu_us_kal.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_kal.so.2.2",
+        "libflite_cmu_us_kal16.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_kal16.so.2.2",
+        "libflite_cmu_us_rms.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_rms.so.2.2",
+        "libflite_cmu_us_slt.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmu_us_slt.so.2.2",
+        "libflite.so.1": "/usr/lib/x86_64-linux-gnu/libflite.so.2.2",
+        "libharfbuzz.so.0": "/usr/lib/x86_64-linux-gnu/libharfbuzz.so.0.60830.0",
+        "libfribidi.so.0": "/usr/lib/x86_64-linux-gnu/libfribidi.so.0.4.0",
+        "libplacebo.so.338": "/usr/lib/x86_64-linux-gnu/libplacebo.so.338",
+        "libass.so.9": "/usr/lib/x86_64-linux-gnu/libass.so.9.2.1",
+        "libva.so.2": "/usr/lib/x86_64-linux-gnu/libva.so.2.2000.0",
+        "libvidstab.so.1.1": "/usr/lib/x86_64-linux-gnu/libvidstab.so.1.1",
+        "libzmq.so.5": "/usr/lib/x86_64-linux-gnu/libzmq.so.5.2.5",
+        "libzimg.so.2": "/usr/lib/x86_64-linux-gnu/libzimg.so.2.0.0",
+        "libstdc++.so.6": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33",
+        "libOpenCL.so.1": "/usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0",
+        "libfontconfig.so.1": "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1.12.1",
+        "libfreetype.so.6": "/usr/lib/x86_64-linux-gnu/libfreetype.so.6.20.1",
+        "libvpl.so.2": "/usr/lib/x86_64-linux-gnu/libvpl.so.2.9",
+        "libz.so.1": "/usr/lib/x86_64-linux-gnu/libz.so.1.3",
+        "loader": "/lib64/ld-linux-x86-64.so.2",
+        "libxml2.so.2": "/usr/lib/x86_64-linux-gnu/libxml2.so.2.9.14",
+        "libbz2.so.1.0": "/usr/lib/x86_64-linux-gnu/libbz2.so.1.0.4",
+        "libgme.so.0": "/usr/lib/x86_64-linux-gnu/libgme.so.0.6.3",
+        "libopenmpt.so.0": "/usr/lib/x86_64-linux-gnu/libopenmpt.so.0.4.4",
+        "libchromaprint.so.1": "/usr/lib/x86_64-linux-gnu/libchromaprint.so.1.5.1",
+        "libbluray.so.2": "/usr/lib/x86_64-linux-gnu/libbluray.so.2.4.3",
+        "libgnutls.so.30": "/usr/lib/x86_64-linux-gnu/libgnutls.so.30.37.1",
+        "librabbitmq.so.4": "/usr/lib/x86_64-linux-gnu/librabbitmq.so.4.5.0",
+        "librist.so.4": "/usr/lib/x86_64-linux-gnu/librist.so.4.3.1",
+        "libsrt-gnutls.so.1.5": "/usr/lib/x86_64-linux-gnu/libsrt-gnutls.so.1.5.3",
+        "libssh-gcrypt.so.4": "/usr/lib/x86_64-linux-gnu/libssh-gcrypt.so.4.9.6",
+        "libvpx.so.9": "/usr/lib/x86_64-linux-gnu/libvpx.so.9.0.0",
+        "libwebpmux.so.3": "/usr/lib/x86_64-linux-gnu/libwebpmux.so.3.0.13",
+        "liblzma.so.5": "/usr/lib/x86_64-linux-gnu/liblzma.so.5.4.5",
+        "libdav1d.so.7": "/usr/lib/x86_64-linux-gnu/libdav1d.so.7.0.0",
+        "librsvg-2.so.2": "/usr/lib/x86_64-linux-gnu/librsvg-2.so.2.50.0",
+        "libgobject-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgobject-2.0.so.0.8000.0",
+        "libglib-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0.8000.0",
+        "libcairo.so.2": "/usr/lib/x86_64-linux-gnu/libcairo.so.2.11800.0",
+        "libzvbi.so.0": "/usr/lib/x86_64-linux-gnu/libzvbi.so.0.13.2",
+        "libsnappy.so.1": "/usr/lib/x86_64-linux-gnu/libsnappy.so.1.1.10",
+        "libaom.so.3": "/usr/lib/x86_64-linux-gnu/libaom.so.3.8.2",
+        "libcodec2.so.1.2": "/usr/lib/x86_64-linux-gnu/libcodec2.so.1.2",
+        "libgsm.so.1": "/usr/lib/x86_64-linux-gnu/libgsm.so.1.0.19",
+        "libjxl.so.0.7": "/usr/lib/x86_64-linux-gnu/libjxl.so.0.7.0",
+        "libjxl_threads.so.0.7": "/usr/lib/x86_64-linux-gnu/libjxl_threads.so.0.7.0",
+        "libmp3lame.so.0": "/usr/lib/x86_64-linux-gnu/libmp3lame.so.0.0.0",
+        "libopenjp2.so.7": "/usr/lib/x86_64-linux-gnu/libopenjp2.so.2.5.0",
+        "libopus.so.0": "/usr/lib/x86_64-linux-gnu/libopus.so.0.9.0",
+        "librav1e.so.0": "/usr/lib/x86_64-linux-gnu/librav1e.so.0.7.1",
+        "libshine.so.3": "/usr/lib/x86_64-linux-gnu/libshine.so.3.0.1",
+        "libspeex.so.1": "/usr/lib/x86_64-linux-gnu/libspeex.so.1.5.2",
+        "libSvtAv1Enc.so.1": "/usr/lib/x86_64-linux-gnu/libSvtAv1Enc.so.1.7.0",
+        "libtheoraenc.so.1": "/usr/lib/x86_64-linux-gnu/libtheoraenc.so.1.1.2",
+        "libtheoradec.so.1": "/usr/lib/x86_64-linux-gnu/libtheoradec.so.1.1.4",
+        "libtwolame.so.0": "/usr/lib/x86_64-linux-gnu/libtwolame.so.0.0.0",
+        "libvorbis.so.0": "/usr/lib/x86_64-linux-gnu/libvorbis.so.0.4.9",
+        "libvorbisenc.so.2": "/usr/lib/x86_64-linux-gnu/libvorbisenc.so.2.0.12",
+        "libwebp.so.7": "/usr/lib/x86_64-linux-gnu/libwebp.so.7.1.8",
+        "libx264.so.164": "/usr/lib/x86_64-linux-gnu/libx264.so.164",
+        "libx265.so.199": "/usr/lib/x86_64-linux-gnu/libx265.so.199",
+        "libxvidcore.so.4": "/usr/lib/x86_64-linux-gnu/libxvidcore.so.4.3",
+        "libsoxr.so.0": "/usr/lib/x86_64-linux-gnu/libsoxr.so.0.1.2",
+        "libva-drm.so.2": "/usr/lib/x86_64-linux-gnu/libva-drm.so.2.2000.0",
+        "libva-x11.so.2": "/usr/lib/x86_64-linux-gnu/libva-x11.so.2.2000.0",
+        "libvdpau.so.1": "/usr/lib/x86_64-linux-gnu/libvdpau.so.1.0.0",
+        "libdb-5.3.so": "/usr/lib/x86_64-linux-gnu/libdb-5.3.so",
+        "libgcc_s.so.1": "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        "libsndio.so.7": "/usr/lib/x86_64-linux-gnu/libsndio.so.7.2",
+        "libXau.so.6": "/usr/lib/x86_64-linux-gnu/libXau.so.6.0.0",
+        "libXdmcp.so.6": "/usr/lib/x86_64-linux-gnu/libXdmcp.so.6.0.0",
+        "libcdio.so.19": "/usr/lib/x86_64-linux-gnu/libcdio.so.19.0.0",
+        "libusb-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libusb-1.0.so.0.4.0",
+        "libslang.so.2": "/usr/lib/x86_64-linux-gnu/libslang.so.2.3.3",
+        "libncursesw.so.6": "/usr/lib/x86_64-linux-gnu/libncursesw.so.6.4",
+        "libtinfo.so.6": "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.4",
+        "libGLdispatch.so.0": "/usr/lib/x86_64-linux-gnu/libGLdispatch.so.0.0.0",
+        "libGLX.so.0": "/usr/lib/x86_64-linux-gnu/libGLX.so.0.0.0",
+        "libpulsecommon-16.1.so": "/usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon-16.1.so",
+        "libdbus-1.so.3": "/usr/lib/x86_64-linux-gnu/libdbus-1.so.3.32.4",
+        "libsamplerate.so.0": "/usr/lib/x86_64-linux-gnu/libsamplerate.so.0.2.2",
+        "libXcursor.so.1": "/usr/lib/x86_64-linux-gnu/libXcursor.so.1.0.2",
+        "libXi.so.6": "/usr/lib/x86_64-linux-gnu/libXi.so.6.1.0",
+        "libXfixes.so.3": "/usr/lib/x86_64-linux-gnu/libXfixes.so.3.1.0",
+        "libXrandr.so.2": "/usr/lib/x86_64-linux-gnu/libXrandr.so.2.2.0",
+        "libXss.so.1": "/usr/lib/x86_64-linux-gnu/libXss.so.1.0.0",
+        "libgbm.so.1": "/usr/lib/x86_64-linux-gnu/libgbm.so.1.0.0",
+        "libwayland-egl.so.1": "/usr/lib/x86_64-linux-gnu/libwayland-egl.so.1.22.0",
+        "libwayland-client.so.0": "/usr/lib/x86_64-linux-gnu/libwayland-client.so.0.22.0",
+        "libwayland-cursor.so.0": "/usr/lib/x86_64-linux-gnu/libwayland-cursor.so.0.22.0",
+        "libxkbcommon.so.0": "/usr/lib/x86_64-linux-gnu/libxkbcommon.so.0.0.0",
+        "libdecor-0.so.0": "/usr/lib/x86_64-linux-gnu/libdecor-0.so.0.200.2",
+        "libblas.so.3": "/usr/lib/x86_64-linux-gnu/blas/libblas.so.3.12.0",
+        "liblapack.so.3": "/usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.12.0",
+        "libserd-0.so.0": "/usr/lib/x86_64-linux-gnu/libserd-0.so.0.32.2",
+        "libsord-0.so.0": "/usr/lib/x86_64-linux-gnu/libsord-0.so.0.16.16",
+        "libsratom-0.so.0": "/usr/lib/x86_64-linux-gnu/libsratom-0.so.0.6.16",
+        "libzix-0.so.0": "/usr/lib/x86_64-linux-gnu/libzix-0.so.0.4.2",
+        "libfftw3.so.3": "/usr/lib/x86_64-linux-gnu/libfftw3.so.3.6.10",
+        "libflite_usenglish.so.1": "/usr/lib/x86_64-linux-gnu/libflite_usenglish.so.2.2",
+        "libflite_cmulex.so.1": "/usr/lib/x86_64-linux-gnu/libflite_cmulex.so.2.2",
+        "libgraphite2.so.3": "/usr/lib/x86_64-linux-gnu/libgraphite2.so.3.2.1",
+        "libvulkan.so.1": "/usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.275",
+        "liblcms2.so.2": "/usr/lib/x86_64-linux-gnu/liblcms2.so.2.0.14",
+        "libunibreak.so.5": "/usr/lib/x86_64-linux-gnu/libunibreak.so.5.0.1",
+        "libgomp.so.1": "/usr/lib/x86_64-linux-gnu/libgomp.so.1.0.0",
+        "libbsd.so.0": "/usr/lib/x86_64-linux-gnu/libbsd.so.0.12.1",
+        "libsodium.so.23": "/usr/lib/x86_64-linux-gnu/libsodium.so.23.3.0",
+        "libpgm-5.3.so.0": "/usr/lib/x86_64-linux-gnu/libpgm-5.3.so.0.0.128",
+        "libnorm.so.1": "/usr/lib/x86_64-linux-gnu/libnorm.so.1",
+        "libgssapi_krb5.so.2": "/usr/lib/x86_64-linux-gnu/libgssapi_krb5.so.2.2",
+        "libexpat.so.1": "/usr/lib/x86_64-linux-gnu/libexpat.so.1.9.1",
+        "libpng16.so.16": "/usr/lib/x86_64-linux-gnu/libpng16.so.16.43.0",
+        "libbrotlidec.so.1": "/usr/lib/x86_64-linux-gnu/libbrotlidec.so.1.1.0",
+        "libicuuc.so.74": "/usr/lib/x86_64-linux-gnu/libicuuc.so.74.2",
+        "libmpg123.so.0": "/usr/lib/x86_64-linux-gnu/libmpg123.so.0.48.2",
+        "libvorbisfile.so.3": "/usr/lib/x86_64-linux-gnu/libvorbisfile.so.3.3.8",
+        "libudfread.so.0": "/usr/lib/x86_64-linux-gnu/libudfread.so.0.1.0",
+        "libp11-kit.so.0": "/usr/lib/x86_64-linux-gnu/libp11-kit.so.0.3.1",
+        "libidn2.so.0": "/usr/lib/x86_64-linux-gnu/libidn2.so.0.4.0",
+        "libunistring.so.5": "/usr/lib/x86_64-linux-gnu/libunistring.so.5.0.0",
+        "libtasn1.so.6": "/usr/lib/x86_64-linux-gnu/libtasn1.so.6.6.3",
+        "libnettle.so.8": "/usr/lib/x86_64-linux-gnu/libnettle.so.8.8",
+        "libhogweed.so.6": "/usr/lib/x86_64-linux-gnu/libhogweed.so.6.8",
+        "libgmp.so.10": "/usr/lib/x86_64-linux-gnu/libgmp.so.10.5.0",
+        "libssl.so.3": "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+        "libcrypto.so.3": "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+        "libmbedcrypto.so.7": "/usr/lib/x86_64-linux-gnu/libmbedcrypto.so.2.28.8",
+        "libcjson.so.1": "/usr/lib/x86_64-linux-gnu/libcjson.so.1.7.17",
+        "libgcrypt.so.20": "/usr/lib/x86_64-linux-gnu/libgcrypt.so.20.4.3",
+        "libgpg-error.so.0": "/usr/lib/x86_64-linux-gnu/libgpg-error.so.0.34.0",
+        "libcairo-gobject.so.2": "/usr/lib/x86_64-linux-gnu/libcairo-gobject.so.2.11800.0",
+        "libgdk_pixbuf-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgdk_pixbuf-2.0.so.0.4200.10",
+        "libgio-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgio-2.0.so.0.8000.0",
+        "libpangocairo-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libpangocairo-1.0.so.0.5200.1",
+        "libpango-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libpango-1.0.so.0.5200.1",
+        "libffi.so.8": "/usr/lib/x86_64-linux-gnu/libffi.so.8.1.4",
+        "libpcre2-8.so.0": "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.11.2",
+        "libXrender.so.1": "/usr/lib/x86_64-linux-gnu/libXrender.so.1.3.0",
+        "libxcb-render.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-render.so.0.0.0",
+        "libpixman-1.so.0": "/usr/lib/x86_64-linux-gnu/libpixman-1.so.0.42.2",
+        "libhwy.so.1": "/usr/lib/x86_64-linux-gnu/libhwy.so.1.0.7",
+        "libbrotlienc.so.1": "/usr/lib/x86_64-linux-gnu/libbrotlienc.so.1.1.0",
+        "libogg.so.0": "/usr/lib/x86_64-linux-gnu/libogg.so.0.8.5",
+        "libsharpyuv.so.0": "/usr/lib/x86_64-linux-gnu/libsharpyuv.so.0.0.1",
+        "libnuma.so.1": "/usr/lib/x86_64-linux-gnu/libnuma.so.1.0.0",
+        "libX11-xcb.so.1": "/usr/lib/x86_64-linux-gnu/libX11-xcb.so.1.0.0",
+        "libxcb-dri3.so.0": "/usr/lib/x86_64-linux-gnu/libxcb-dri3.so.0.1.0",
+        "libudev.so.1": "/usr/lib/x86_64-linux-gnu/libudev.so.1.7.8",
+        "libsndfile.so.1": "/usr/lib/x86_64-linux-gnu/libsndfile.so.1.0.37",
+        "libsystemd.so.0": "/usr/lib/x86_64-linux-gnu/libsystemd.so.0.38.0",
+        "libasyncns.so.0": "/usr/lib/x86_64-linux-gnu/libasyncns.so.0.3.1",
+        "libapparmor.so.1": "/usr/lib/x86_64-linux-gnu/libapparmor.so.1.17.2",
+        "libgfortran.so.5": "/usr/lib/x86_64-linux-gnu/libgfortran.so.5.0.0",
+        "libmd.so.0": "/usr/lib/x86_64-linux-gnu/libmd.so.0.1.0",
+        "libkrb5.so.3": "/usr/lib/x86_64-linux-gnu/libkrb5.so.3.3",
+        "libk5crypto.so.3": "/usr/lib/x86_64-linux-gnu/libk5crypto.so.3.1",
+        "libcom_err.so.2": "/usr/lib/x86_64-linux-gnu/libcom_err.so.2.1",
+        "libkrb5support.so.0": "/usr/lib/x86_64-linux-gnu/libkrb5support.so.0.1",
+        "libbrotlicommon.so.1": "/usr/lib/x86_64-linux-gnu/libbrotlicommon.so.1.1.0",
+        "libicudata.so.74": "/usr/lib/x86_64-linux-gnu/libicudata.so.74.2",
+        "libgmodule-2.0.so.0": "/usr/lib/x86_64-linux-gnu/libgmodule-2.0.so.0.8000.0",
+        "libjpeg.so.8": "/usr/lib/x86_64-linux-gnu/libjpeg.so.8.2.2",
+        "libmount.so.1": "/usr/lib/x86_64-linux-gnu/libmount.so.1.1.0",
+        "libselinux.so.1": "/usr/lib/x86_64-linux-gnu/libselinux.so.1",
+        "libpangoft2-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libpangoft2-1.0.so.0.5200.1",
+        "libthai.so.0": "/usr/lib/x86_64-linux-gnu/libthai.so.0.3.1",
+        "libcap.so.2": "/usr/lib/x86_64-linux-gnu/libcap.so.2.66",
+        "libFLAC.so.12": "/usr/lib/x86_64-linux-gnu/libFLAC.so.12.1.0",
+        "liblz4.so.1": "/usr/lib/x86_64-linux-gnu/liblz4.so.1.9.4",
+        "libzstd.so.1": "/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.5",
+        "libkeyutils.so.1": "/usr/lib/x86_64-linux-gnu/libkeyutils.so.1.10",
+        "libresolv.so.2": "/usr/lib/x86_64-linux-gnu/libresolv.so.2",
+        "libblkid.so.1": "/usr/lib/x86_64-linux-gnu/libblkid.so.1.1.0",
+        "libdatrie.so.1": "/usr/lib/x86_64-linux-gnu/libdatrie.so.1.4.0"
+      }
+    },
+    {
+      "path": "/usr/bin/openssl",
+      "sha256": "b4f547c0f16272d1cc7f870330a6f2c243710c335e7a99c734ff7a0c6fdb2503",
+      "resolution_scope": "process",
+      "dependencies": {
+        "libssl.so.3": "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+        "libcrypto.so.3": "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+        "libc.so.6": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "loader": "/lib64/ld-linux-x86-64.so.2"
+      }
+    }
+  ],
+  "media_execution": {
+    "pillow_roundtrip_formats": [
+      "PNG",
+      "JPEG",
+      "TIFF",
+      "WEBP",
+      "AVIF",
+      "JPEG2000"
+    ],
+    "pillow_features": [
+      "pil",
+      "tkinter",
+      "freetype2",
+      "littlecms2",
+      "webp",
+      "avif",
+      "raqm",
+      "fribidi",
+      "harfbuzz",
+      "libjpeg_turbo",
+      "zlib_ng",
+      "xcb",
+      "jpg",
+      "jpg_2000",
+      "zlib",
+      "libtiff"
+    ],
+    "ffmpeg_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "mjpeg_avi": {
+      "programs": [],
+      "streams": [
+        {
+          "codec_name": "mjpeg",
+          "width": 64,
+          "height": 48,
+          "nb_read_frames": "10"
+        },
+        {
+          "codec_name": "pcm_s16le",
+          "nb_read_frames": "32"
+        }
+      ]
+    },
+    "pcm_audio_roundtrip": true,
+    "complete_decode": true
+  },
+  "legacy_execution": {
+    "sqlite": "3.8.2",
+    "python": "2.7.6",
+    "maxunicode": 1114111,
+    "compression_hashing_sqlite": true,
+    "legacy_ALProxy_call": true,
+    "qi_session_call": true,
+    "prefix": "/opt/legacy",
+    "native_stop": true,
+    "library_mappings": [
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_allog.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_almathswig.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_inaoqi.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/_qi.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/lib4758cca.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libaep.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libatalla.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libcapi.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libchil.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libcswift.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libgmp.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libgost.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libnuron.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libpadlock.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libsureware.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/engines/libubsec.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalbehavior.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalcommon.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalerror.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalmath.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalproxies.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalpythontools.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalsoap.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalthread.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libalvalue.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_atomic.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_chrono.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_context.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_coroutine.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_date_time.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_filesystem.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_graph.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_locale.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_log.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_log_setup.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99f.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_c99l.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1f.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_math_tr1l.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_prg_exec_monitor.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_program_options.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_python.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_random.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_regex.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_serialization.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_signals.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_system.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_thread.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_timer.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_unit_test_framework.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_wave.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libboost_wserialization.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libcrypto.so.1.0.0",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libgtest.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libgtest_main.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqi.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqic.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqimessaging.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqipython.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libqitype.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/librttools.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libssl.so",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libssl.so.1.0.0",
+      "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64/libtinyxml.so",
+      "/opt/legacy/bin/python2.7",
+      "/opt/legacy/lib/libbz2.so.1.0",
+      "/opt/legacy/lib/libcrypt.so.1",
+      "/opt/legacy/lib/libdb-5.3.so",
+      "/opt/legacy/lib/libexpat.so.1",
+      "/opt/legacy/lib/libffi.so.6",
+      "/opt/legacy/lib/libgcc_s.so.1",
+      "/opt/legacy/lib/libicudata.so.52",
+      "/opt/legacy/lib/libicui18n.so.52",
+      "/opt/legacy/lib/libicuuc.so.52",
+      "/opt/legacy/lib/libncursesw.so.5",
+      "/opt/legacy/lib/libnsl.so.1",
+      "/opt/legacy/lib/libpanelw.so.5",
+      "/opt/legacy/lib/libpython2.7.so.1.0",
+      "/opt/legacy/lib/libreadline.so.6",
+      "/opt/legacy/lib/libsqlite3.so.0",
+      "/opt/legacy/lib/libstdc++.so.6",
+      "/opt/legacy/lib/libtinfo.so.5",
+      "/opt/legacy/lib/libz.so.1",
+      "/opt/legacy/lib/python2.7/lib-dynload/_bsddb.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_codecs_cn.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_codecs_hk.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_codecs_iso2022.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_codecs_jp.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_codecs_kr.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_codecs_tw.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_csv.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_ctypes.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_ctypes_test.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_curses.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_curses_panel.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_elementtree.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_hashlib.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_hotshot.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_json.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_lsprof.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_multibytecodec.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_multiprocessing.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_sqlite3.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_ssl.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/_testcapi.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/audioop.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/bz2.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/crypt.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/datetime.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/dbm.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/fpectl.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/future_builtins.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/linuxaudiodev.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/mmap.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/nis.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/ossaudiodev.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/parser.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/pyexpat.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/readline.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/resource.x86_64-linux-gnu.so",
+      "/opt/legacy/lib/python2.7/lib-dynload/termios.x86_64-linux-gnu.so",
+      "/usr/lib/locale/C.utf8/LC_CTYPE",
+      "/usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache",
+      "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+      "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+      "/usr/lib/x86_64-linux-gnu/libm.so.6",
+      "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+      "/usr/lib/x86_64-linux-gnu/librt.so.1",
+      "/usr/lib/x86_64-linux-gnu/libutil.so.1",
+      "/usr/lib/x86_64-linux-gnu/libuuid.so.1.3.0"
+    ],
+    "native_signal": true,
+    "legacy_ALBroker_lifecycle": true,
+    "openssl": "OpenSSL 1.0.2 22 Jan 2015",
+    "extension_modules": [
+      "_bsddb",
+      "_codecs_cn",
+      "_codecs_hk",
+      "_codecs_iso2022",
+      "_codecs_jp",
+      "_codecs_kr",
+      "_codecs_tw",
+      "_csv",
+      "_ctypes",
+      "_ctypes_test",
+      "_curses",
+      "_curses_panel",
+      "_elementtree",
+      "_hashlib",
+      "_hotshot",
+      "_json",
+      "_lsprof",
+      "_multibytecodec",
+      "_multiprocessing",
+      "_sqlite3",
+      "_ssl",
+      "_testcapi",
+      "audioop",
+      "bz2",
+      "crypt",
+      "datetime",
+      "dbm",
+      "fpectl",
+      "future_builtins",
+      "linuxaudiodev",
+      "mmap",
+      "nis",
+      "ossaudiodev",
+      "parser",
+      "pyexpat",
+      "readline",
+      "resource",
+      "termios"
+    ],
+    "sdk_libraries_loaded": [
+      "_allog.so",
+      "_almathswig.so",
+      "_inaoqi.so",
+      "_qi.so",
+      "engines/lib4758cca.so",
+      "engines/libaep.so",
+      "engines/libatalla.so",
+      "engines/libcapi.so",
+      "engines/libchil.so",
+      "engines/libcswift.so",
+      "engines/libgmp.so",
+      "engines/libgost.so",
+      "engines/libnuron.so",
+      "engines/libpadlock.so",
+      "engines/libsureware.so",
+      "engines/libubsec.so",
+      "libalbehavior.so",
+      "libalcommon.so",
+      "libalerror.so",
+      "libalmath.so",
+      "libalproxies.so",
+      "libalpythontools.so",
+      "libalsoap.so",
+      "libalthread.so",
+      "libalvalue.so",
+      "libboost_atomic.so",
+      "libboost_chrono.so",
+      "libboost_context.so",
+      "libboost_coroutine.so",
+      "libboost_date_time.so",
+      "libboost_filesystem.so",
+      "libboost_graph.so",
+      "libboost_locale.so",
+      "libboost_log.so",
+      "libboost_log_setup.so",
+      "libboost_math_c99.so",
+      "libboost_math_c99f.so",
+      "libboost_math_c99l.so",
+      "libboost_math_tr1.so",
+      "libboost_math_tr1f.so",
+      "libboost_math_tr1l.so",
+      "libboost_prg_exec_monitor.so",
+      "libboost_program_options.so",
+      "libboost_python.so",
+      "libboost_random.so",
+      "libboost_regex.so",
+      "libboost_serialization.so",
+      "libboost_signals.so",
+      "libboost_system.so",
+      "libboost_thread.so",
+      "libboost_timer.so",
+      "libboost_unit_test_framework.so",
+      "libboost_wave.so",
+      "libboost_wserialization.so",
+      "libcrypto.so",
+      "libcrypto.so.1.0.0",
+      "libgtest.so",
+      "libgtest_main.so",
+      "libqi.so",
+      "libqic.so",
+      "libqimessaging.so",
+      "libqipython.so",
+      "libqitype.so",
+      "librttools.so",
+      "libssl.so",
+      "libssl.so.1.0.0",
+      "libtinyxml.so"
+    ]
+  },
+  "modern_sqlite": "3.53.1",
+  "source_sha256": {
+    "agent.py": "48cff1e648662bf23de426522dd407fd3e66ffb3da7d43b76b404cdfc93f2fa0",
+    "api.py": "38a1cce2595c441dce2b6ff1f6c57c9553aca22c7653406fb949802099a5e0e1",
+    "audit_binaries.py": "49b8f7214cdb1dee1942a1e305ae9dfee1be6f2bd92ad8c082a7bef92ef3150f",
+    "collect_legacy.py": "6091eca17c1a50944573e3daeec966a48dd24192961b4a8f9b92495dd682d489",
+    "legacy_binary_probe.py": "30d5589e2278c3dffb8cd9313334e9560ca37713610459b70ae61239ea04f922",
+    "native_probe.py": "7d8ddda3f6ac567eb05670e3f63e7523f5bf3ea6e271850ea1290a68995a579f",
+    "verify.py": "33ec51d6aca23bd2d8485b0560f1a38dc53185ad9d9e030d97b09d40e9284d59",
+    "wire.py": "044fb16b481014a6a00ccd931b54587429524b738ab3895c813f601cd99517e5"
+  }
+}

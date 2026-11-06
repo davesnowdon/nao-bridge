@@ -6,7 +6,7 @@ Date: 6 November 2026. Scope: Linux amd64, the published NAO Bridge container an
 
 The [reproducible experiment](../experiments/runtime-ipc/README.md) contains the image recipe, dependency lock, agent/API harness, and fault/load checks. It does not change the production server or implement the proposed public API. All native tests use real SDK bindings with loopback test services; no physical robot was contacted.
 
-The [review follow-up](review-follow-up.md) records which suggestions remain useful after these results, including the untested maintained-base alternative and media acquisition choice. Asset storage/range downloads and sequence enhancements described there are planned work, not additional capabilities verified by this harness.
+The subsequent [maintained-base experiment](inverted-packaging-experiment.md) adopts Ubuntu 24.04 with a private Python 2/SDK bundle after passing the same suite and a broader binary/media audit. This report preserves the earlier legacy-base evidence. The [review follow-up](review-follow-up.md) records the resulting decisions and the still-open media acquisition choice. Asset storage/range downloads and sequence enhancements described there are planned work, not additional capabilities verified by this harness.
 
 ## Exact runtime
 
@@ -57,7 +57,7 @@ The experiment's exact bounds and wire behavior are documented in its [protocol 
 
 ## Measurements
 
-The checked-in [published-image results](../experiments/runtime-ipc/results/released-linux-amd64.json) and [repository-image results](../experiments/runtime-ipc/results/current-linux-amd64.json) contain every check, exact runtime/package versions, source hashes, SDK tree hash, and measured values. Both final runs use two CPUs and a 512 MiB container limit, with external networking disabled. They run the scripts embedded in the image, mounting only an output directory.
+The checked-in [published-image results](../experiments/runtime-ipc/results/released-linux-amd64.json) and [repository-image results](../experiments/runtime-ipc/results/current-linux-amd64.json) contain every check, exact runtime/package versions, source hashes, SDK tree hash, and measured values. These result files describe the scripts at commit `7060bff`; the later maintained-base report includes a fresh comparison using the updated harness. Both original runs use two CPUs and a 512 MiB container limit, with external networking disabled. They run the scripts embedded in the image, mounting only an output directory.
 
 The workload combines eight SSE streams, one deliberately stalled sender, approximately twenty HTTP commands per second, twenty-Hz native callback sampling, state reads, heartbeats, and repeated checksum-verified 2 MiB media downloads. The ninth stream is rejected; the stalled stream is disconnected at its queue limit while the others continue. The benchmark measures complete HTTP-to-native round trips, not merely request admission. Final measurements are reported in the linked JSON files.
 
@@ -80,7 +80,7 @@ These measurements support Python/ASGI and SSE for the initial target. They do n
 
 ## Remaining gates and observed limitation
 
-An exploratory run as an arbitrary UID without a configured user environment failed local SDK discovery with `No endpoint available` and native file-creation errors. The image's existing default user passed. Do not claim non-root deployment support from this experiment; configure and test its SDK user environment separately.
+An exploratory run as an arbitrary UID without a configured user environment failed local SDK discovery with `No endpoint available` and native file-creation errors. The image's existing default user passed. The later maintained-base experiment passes with a configured non-root `ubuntu` user. That resolves this local user-environment issue for that recipe, not arbitrary UID or hardware deployments.
 
 The following remain explicit delivery work:
 

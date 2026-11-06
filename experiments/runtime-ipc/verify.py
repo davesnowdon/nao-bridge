@@ -28,6 +28,10 @@ from PIL import Image
 from wire import MAX_FRAME, encode, frames
 
 SDK = "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64"
+LEGACY_PYTHON = os.environ.get("LEGACY_PYTHON", "/usr/bin/python2.7")
+LEGACY_LIBRARY_PATH = ":".join(
+    filter(None, (SDK, os.environ.get("LEGACY_LIBRARY_PATH")))
+)
 HERE = Path(__file__).parent
 RESULT = {"checks": [], "measurements": {}}
 
@@ -71,6 +75,8 @@ def environment():
         packages[name] = version
     RESULT["environment"] = {
         "baseline": os.environ.get("PROBE_BASELINE"),
+        "os_release": Path("/etc/os-release").read_text(),
+        "legacy_interpreter": LEGACY_PYTHON,
         "python": platform.python_version(),
         "glibc": platform.libc_ver(),
         "architecture": platform.machine(),
@@ -180,12 +186,14 @@ class Processes:
         }
         env["PROBE_ROOT"] = str(self.root)
         if legacy:
-            env.update(LD_LIBRARY_PATH=SDK, PYTHONPATH=SDK + ":" + str(HERE))
+            env.update(
+                LD_LIBRARY_PATH=LEGACY_LIBRARY_PATH, PYTHONPATH=SDK + ":" + str(HERE)
+            )
         log = tempfile.TemporaryFile()
         self.logs.append(log)
         process = subprocess.Popen(
             [
-                "/usr/bin/python2.7" if legacy else sys.executable,
+                LEGACY_PYTHON if legacy else sys.executable,
                 str(HERE / ("agent.py" if legacy else "api.py")),
             ],
             env=env,
@@ -501,6 +509,7 @@ async def api_tests(duration):
             modern_maps = Path("/proc/%d/maps" % api.pid).read_text()
             legacy_maps = Path("/proc/%d/maps" % processes.agent.pid).read_text()
             assert SDK not in modern_maps and SDK in legacy_maps
+            assert "/opt/legacy/" not in modern_maps
             passed("native_library_mapping_isolated_per_process")
             assert (await client.post("/command", json={"value": 3})).status_code == 422
             assert (await client.post("/command", json={"value": 0.5})).json()[

@@ -11,7 +11,7 @@ Research date: 6 November 2026. These notes preserve findings that informed the 
 - Ubuntu's packaged Flask was chosen because the old Python 2 dependencies could no longer be fetched from PyPI. Preserve the working SDK environment during the process split; Flask need not remain once the modern process owns HTTP. Do not infer the deployed version from unused requirements.
 - Modern Recorder, Wanderer, and a scripted presentation are the design guides. The plan and isolated runtime experiment do not implement the replacement public API or migrate an existing application.
 - Future clients, including a possible Rust client for a Tauri Recorder, must be implementable from the language-neutral HTTP/SSE contract and fixtures. Python is the first implementation, not the definition of the protocol. No additional client is part of the four delivery increments.
-- Split a thin Python 2 native agent from the modern API within one container. Prefer modern Python/ASGI, with packaging proof and a Rust fallback in increment 1A; see the [runtime design](runtime-design.md) for evidence and tradeoffs.
+- Split a thin Python 2 native agent from the modern API within one container. Use modern Python/ASGI on maintained Ubuntu 24.04 with a private Python 2/SDK bundle, selected by the [Linux binary/native/media comparison](inverted-packaging-experiment.md); see the [runtime design](runtime-design.md) for evidence and tradeoffs.
 - Keep SSE after reconsidering modern WebSocket support. Historical event replay and public advance session reservations are deferred. Retain recordings/assets and server-side sequence composition; add interactive joint controls, targeted replacement, and explicit operator recovery.
 
 ## Current bridge: observations and implications
