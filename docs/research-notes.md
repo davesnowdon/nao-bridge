@@ -16,7 +16,7 @@ Research date: 6 November 2026. These notes preserve findings that informed the 
 
 ## Current bridge: observations and implications
 
-Baseline inspected: repository commit `81d82d6` (12 April 2026). The server starts with the bundled `pynaoqi-python2.7-2.1.4.13-linux64`; its Dockerfile installs `python-flask` from Ubuntu 14.04 and leaves pip requirements installation commented out. The subsequent [container experiment](runtime-experiment.md) measured Ubuntu 14.04.6, glibc 2.19, Python 2.7.6, Flask 0.10.1, and Werkzeug 0.9.4, then tested the separate modern runtime alongside the SDK. See [Dockerfile](../server/Dockerfile) and [startup](../server/start_api.sh).
+Baseline inspected: repository commit `81d82d6` (12 April 2026). The server starts with the bundled `pynaoqi-python2.7-2.1.4.13-linux64`; its Dockerfile installs `python-flask` from Ubuntu 14.04 and leaves pip requirements installation commented out. The subsequent [container experiment](runtime-experiment.md) measured Ubuntu 14.04.6, glibc 2.19, Python 2.7.6, Flask 0.10.1, and Werkzeug 0.9.4, then tested the separate modern runtime alongside the SDK. See [historical Dockerfile](https://github.com/davesnowdon/nao-bridge/blob/ddd3888/server/Dockerfile) and [historical startup](https://github.com/davesnowdon/nao-bridge/blob/ddd3888/server/start_api.sh).
 
 | Observation | Design consequence |
 | --- | --- |
@@ -31,7 +31,7 @@ The existing client tests passed in the earlier review (two tests). This provide
 
 ### Confirmed head-command defect
 
-The old [head handler](../server/nao_bridge/nao_bridge_api.py) passes requested yaw/pitch into FluentNao directional-preset offset arguments. A local mock exercise of the actual handler and Head class produced these target commands:
+The old [historical head handler](https://github.com/davesnowdon/nao-bridge/blob/ddd3888/server/nao_bridge/nao_bridge_api.py) passes requested yaw/pitch into FluentNao directional-preset offset arguments. A local mock exercise of the actual handler and Head class produced these target commands:
 
 | Old request | Resulting native target |
 | --- | --- |

@@ -1,33 +1,23 @@
-.DEFAULT_GOAL := help
-BLUE := $(shell tput setaf 4)
-RESET := $(shell tput sgr0)
+.PHONY: install fmt lint typecheck test check run
 
-help:
-	@printf "\n# Help\n\n"
-	@grep -E '^[^ .]+: .*?## .*$$' $(MAKEFILE_LIST) \
-		| awk '\
-			BEGIN { FS = ": .*##" };\
-			{ gsub(";", "\n\t\t      ") }; \
-			{ printf "%-20s$(RESET) %s\n", $$1, $$2 }'
-	@printf "\n"
+install:
+	uv sync --locked
 
-init: ## build the docker image;
-	docker compose build
+fmt:
+	uv run ruff format nao_bridge tests/core tests/container_smoke.py ../scripts
+	uv run ruff check --fix nao_bridge tests/core tests/container_smoke.py ../scripts
 
-bash: ## bash prompt
-	@if [ -z "$$NAO_IP" ]; then \
-		echo "ERROR: provide NAO_IP environment variable"; \
-		exit 1; \
-	else \
-        echo "NAO IP: $$NAO_IP"; \
-    fi
-	docker compose run -e NAO_IP=$$NAO_IP fluentnao bash
+lint:
+	uv run ruff check nao_bridge tests/core tests/container_smoke.py ../scripts
+	uv run ruff format --check nao_bridge tests/core tests/container_smoke.py ../scripts
 
-up: ## up
-	@if [ -z "$$NAO_IP" ]; then \
-		echo "ERROR: provide NAO_IP environment variable"; \
-		exit 1; \
-	else \
-        echo "NAO IP: $$NAO_IP"; \
-    fi
-	docker compose run -e NAO_IP=$$NAO_IP fluentnao sh -c "./bootstrap.sh"
+typecheck:
+	uv run pyright nao_bridge
+
+test:
+	uv run pytest
+
+check: lint typecheck test
+
+run:
+	uv run nao-bridge --backend fake

@@ -1,6 +1,6 @@
 # NAO Bridge API plan
 
-Status: implementation plan, 6 November 2026. Numerical defaults and hardware-dependent details below are design targets to validate during delivery. None of the new endpoints or examples in this document is implemented yet.
+Status: implementation plan, 6 November 2026. Numerical defaults and hardware-dependent details below are design targets to validate during delivery. The increment 1 surface is implemented; later domains remain planned. [Implementation status](implementation-status.md) and the [canonical contract](../contracts/README.md) identify the delivered subset.
 
 Read alongside the [delivery plan](delivery-plan.md), [runtime design](runtime-design.md), [client contract guide](client-contract.md), and [research evidence](research-notes.md).
 
@@ -104,9 +104,10 @@ Use `{ "error": { "code", "message", "details", "retryable" }, "request_id" }`. 
 | HTTP | Codes and meaning |
 | --- | --- |
 | 400 | `invalid_request`: schema, units, names, or range validation. |
-| 401 / 403 | `unauthenticated` / `forbidden`. |
+| 403 | `forbidden`: session mismatch. |
 | 404 / 410 | `not_found` / `expired`: unknown resource or known expired lease/history. |
 | 409 | `resource_busy`, `invalid_state`, `session_invalid`, `idempotency_conflict`. |
+| 413 | `payload_too_large`: request exceeds the advertised byte limit. |
 | 422 | `unsupported`: known feature or option absent on this robot. |
 | 429 | `limit_exceeded`: capacity or rate limit, with retry guidance. |
 | 503 | `robot_unavailable`, `dependency_unavailable`. |
@@ -123,13 +124,17 @@ An Operation contains `id`, `kind`, `session_id`, `status`, `resources`, creatio
 
 States: `accepted → running → succeeded | failed`; cancellation goes through `cancelling → cancelled`. Use `unknown` when communication loss prevents establishing the outcome. `unknown` is unresolved: it may be reconciled using backend evidence, otherwise remains unknown until history expires. Never convert disappearance of a task into success without checking the service's completion semantics.
 
-- `GET /operations?status=running` and `GET /operations/{id}` inspect status. Optional `parent_id` filters the paginated collection to direct children of a sequence operation, retaining the same authorization and history rules; clients need not fetch each child separately.
+- `GET /operations?status=running` and `GET /operations/{id}` inspect status. Optional `parent_id` filters the paginated collection to direct children of a sequence operation, retaining the same session and history rules; clients need not fetch each child separately.
 - `POST /operations/{id}/cancel` requests cancellation and returns the current Operation with 202. Repeated cancellation is idempotent; terminal operations return their unchanged result. Noncancellable work returns `unsupported`.
 - The adapter retains the originating service and native task handle. Native IDs never become public IDs. Waiting, completion, and cancellation are service-specific.
 - HTTP commands always return promptly after acceptance. In Python, finite command methods default to `wait=True`, wait locally, and return the completed Operation; `wait=False` returns the accepted handle. Async methods have exactly the same semantics when awaited. Ongoing activity creation and velocity updates return immediately with their handle/status rather than waiting for expiry.
 - `operation.wait(timeout=...)` uses SSE with polling fallback. A client timeout raises `OperationTimeout` carrying the operation ID; it does not cancel the robot command. Failed/cancelled/unknown outcomes have distinct typed exceptions and retain the Operation for inspection.
-- Operation-creating and resource-creating POSTs accept optional `Idempotency-Key`, including recordings, listeners, and sessions. Within the documented scope, the same key/method/route/canonical JSON body returns the original result; a changed request returns 409. Canonicalization ignores object-key order/insignificant whitespace but does not insert defaults or coerce types: an omitted field and an explicitly supplied default are different requests. The SDK generates a key for these POSTs and retains the original request for retries. Keep keys and terminal operations for a documented bounded period (initial target: 15 minutes after completion), reject new keyed admissions before evicting unexpired keys, and publish limits. Creation of a session is scoped to authenticated caller and bridge instance; other creation is session-scoped. Binary uploads compare declared metadata and content digest, not JSON. GET/renewal and ordered setpoint updates use their own semantics, not a generic mutation retry scheme. Deduplication does not survive bridge restart; the SDK must not automatically resubmit an uncertain command.
+- Operation-creating and resource-creating POSTs accept optional `Idempotency-Key`, including recordings, listeners, and sessions. Within the documented scope, the same key/method/route/canonical JSON body returns the original result; a changed request returns 409. Canonicalization ignores object-key order/insignificant whitespace but does not insert defaults or coerce types: an omitted field and an explicitly supplied default are different requests. The SDK generates a key for these POSTs and retains the original request for retries. Keep keys and terminal operations for a documented bounded period (initial target: 15 minutes after completion), reject new ordinary-command keyed admissions before evicting unexpired keys, and publish limits. Session-history, cleanup and priority-stop retention exceptions are described below. Creation of a session is scoped to the bridge instance; other creation is session-scoped. Binary uploads compare declared metadata and content digest, not JSON. GET/renewal and ordered setpoint updates use their own semantics, not a generic mutation retry scheme. Clients use unique session-creation keys (for example UUIDs), since they share the bridge-instance scope. Deduplication does not survive bridge restart; the SDK must not automatically resubmit an uncertain command.
 - Resource reservation and operation registration happen before native dispatch. Where dispatch acknowledgement is lost, retain an `unknown` operation rather than claiming the command was rejected without effects.
+
+Sessions, operations, subscriptions, idempotency keys and unresolved resource ownership live only in API process memory. Restart creates a new bridge instance with empty state: prior IDs are unknown, and no work is restored or replayed. Missing history never proves robot completion or cancellation. The API may restart its agent while remaining alive; in that case its in-memory uncertainty and resource ownership remain available for explicit cleanup. No persistent operation journal or startup reconciliation of old operations is required.
+
+Live-session and retained-history limits are separate. Cleanup history can evict completed records under pressure; priority stop uses its own per-session slot and remains available when other history is full. Stop retains only the latest operation/key per session, coalescing calls while it is running. These retention exceptions and limits are specified in the [contract bundle](../contracts/README.md#request-fingerprints).
 
 ### Targeted replacement
 
@@ -139,7 +144,7 @@ Replacement initially covers standalone motion/trajectory operations. Sequence c
 
 ### Sessions and resource conflicts
 
-The SDK opens a session lazily on first mutation or subscription, renews it while the client context is open, and closes it on exit. Read-only discovery does not need a session. HTTP users use `POST /sessions`, `GET /sessions/{id}`, `PATCH /sessions/{id}` to renew, and `POST /sessions/{id}/close`. Owned requests carry `X-Session-ID`; IDs are not authentication credentials.
+The SDK opens a session lazily on first mutation or subscription, renews it while the client context is open, and closes it on exit. Read-only discovery does not need a session. HTTP users use `POST /sessions`, `GET /sessions/{id}`, `PATCH /sessions/{id}` to renew, and `POST /sessions/{id}/close`. Owned requests carry `X-Session-ID`; IDs associate requests with their session.
 
 Target lease: 30 seconds, renewed every 10 seconds. Responses advertise actual expiry. Renewals use bridge monotonic deadlines. SSE heartbeats and traffic do not renew a control session. Closed/expired sessions cannot be revived; a new connection generation requires a new control session and deliberate application resumption. The SDK reconnects event transport while its session remains valid. After invalidation, the application reopens its client context and subscriptions; no interrupted command resumes automatically. Discovery/state reads remain usable without control ownership.
 
@@ -155,7 +160,7 @@ Session close is itself a cleanup operation. It stops/holds interactive controls
 
 Reconciliation normally requires fresh service evidence that the affected activity stopped, for example after a confirmed priority stop and idle-state query. Elapsed time, a new client session, or a missing old task handle alone cannot clear quarantine. Expose the reason and unresolved resource in diagnostics.
 
-`POST /sessions/{id}/revoke` is an operator-only recovery action with mandatory `confirm: true` and a reason. It creates a recovery Operation: invalidate the old session, reject its future requests, fence queued work/updates at the agent, attempt cancellation/stop, and reconcile resources. Configure separate operator authorization; ordinary client credentials cannot perform recovery or override. Default `force_release: false` releases only confirmed resources. An explicit operator override with `force_release: true` may release unresolved ownership only after the agent acknowledges the new control generation and rejects old queued/in-flight dispatch attempts. If that fencing cannot be established, reject the override. Native tasks already running may still need physical/operator intervention; the result lists unresolved physical outcomes, records the override, and leaves original operations `unknown`. Releasing ownership never establishes physical safety or native success. Audit the action without recording secrets; no automatic recovery client invokes this override.
+`POST /sessions/{id}/revoke` is an explicit recovery action with mandatory `confirm: true` and a reason. It creates a recovery Operation: invalidate the old session, reject its future requests, fence queued work/updates at the agent, attempt cancellation/stop, and reconcile resources. Default `force_release: false` releases only confirmed resources. An explicit override with `force_release: true` may release unresolved ownership only after the agent acknowledges the new control generation and rejects old queued/in-flight dispatch attempts. If that fencing cannot be established, reject the override. Native tasks already running may still need physical/operator intervention; the result lists unresolved physical outcomes, records the override, and leaves original operations `unknown`. Releasing ownership never establishes physical safety or native success. Record the explicit action; no automatic recovery client invokes this override.
 
 Do not automatically relax motors, stand, sit, or replay a pose on cleanup. Stiffness/pose/light settings remain as last applied; ownership ends. Autonomy restoration has its own explicit, guarded policy below. App shutdown is not evidence that it is safe to remove support from the robot.
 
@@ -267,13 +272,13 @@ Recording `source` is `samples`, `camera`, or `microphone`. Samples select state
 
 For sample recordings, store NDJSON with a metadata header, schema version, observed joint/sensor units, connection generation, timestamps, and gaps. Audio/video formats and rate/channel limits are capability-gated by the actual backend. The plan requires audio recording and playback, camera capture, preview, and bounded video recording; live bidirectional microphone/speaker streaming is deferred.
 
-The modern process writes sample recordings from the same shared acquisition feed as `/state` and `state.sample`, independently of any viewer's queue/coalescing. Video/audio acquisition location and initial formats are explicit experiments in the [runtime design](runtime-design.md#recording-acquisition-and-asset-storage); public clients do not acquire robot filesystem credentials.
+The modern process writes sample recordings from the same shared acquisition feed as `/state` and `state.sample`, independently of any viewer's queue/coalescing. Video/audio acquisition location and initial formats are explicit experiments in the [runtime design](runtime-design.md#recording-acquisition-and-asset-storage); public clients do not acquire robot filesystem access.
 
 Media bytes never travel inside SSE or base64 JSON. Stream and download routes have separate capacity from command/stop handling. Preview clients may skip frames; durable recording reports loss rather than hiding it.
 
 Assets use opaque IDs, declared content type, byte count, checksum, creation/expiry times, and partial/completed status. Persist them in a mounted data volume. Default retention target: seven days with a configurable quota; do not silently evict unexpired assets to make space. Admission reserves capacity for a bounded recording and fails clearly when insufficient. Active/referenced assets cannot be deleted. Local bridge paths and native robot filenames are implementation details.
 
-Finalized asset content is immutable, including retained partial recordings; in-progress files are not served. `GET /assets/{id}/content` advertises `Accept-Ranges: bytes`, supports single byte-range requests with 206/`Content-Range`, and returns 416 for unsatisfiable ranges. Expose a strong ETag derived from the finalized content checksum and honor `If-Range`; a mismatched validator returns the full representation. Authentication/authorization applies equally to partial downloads. Internal metadata uses SQLite and checksums are computed while writing, with crash-safe finalization/reconciliation described in the runtime design.
+Finalized asset content is immutable, including retained partial recordings; in-progress files are not served. `GET /assets/{id}/content` advertises `Accept-Ranges: bytes`, supports single byte-range requests with 206/`Content-Range`, and returns 416 for unsatisfiable ranges. Expose a strong ETag derived from the finalized content checksum and honor `If-Range`; a mismatched validator returns the full representation. Checksums are computed while writing; asset metadata storage is chosen when recordings are implemented. Finalization and interrupted-file handling are described in the runtime design.
 
 ### Autonomy and installed behaviors
 
@@ -361,7 +366,7 @@ Provide `Nao` and `AsyncNao` with identical namespaces, arguments, result models
 ```python
 from nao_bridge_client import Nao, degrees
 
-with Nao("http://localhost:3000", token=token) as nao:
+with Nao("http://localhost:3000") as nao:
     nao.motion.wake()
     nao.motion.posture("StandInit", speed=0.4)
     nao.motion.head(yaw=degrees(10), pitch=0.0, duration=0.8)
@@ -370,7 +375,7 @@ with Nao("http://localhost:3000", token=token) as nao:
     operation.wait(timeout=20)
 ```
 
-Capability checks and errors are typed; returned values are domain models rather than transport envelopes. Authentication, session IDs, idempotency keys, lease renewal, SSE parsing, and cancellation plumbing are handled by the SDK. Users still choose control state and react to unknown outcomes explicitly.
+Capability checks and errors are typed; returned values are domain models rather than transport envelopes. Session IDs, idempotency keys, lease renewal, SSE parsing, and cancellation plumbing are handled by the SDK. Users still choose control state and react to unknown outcomes explicitly.
 
 `nao.events.subscribe(...)` returns a context-managed iterable; the async equivalent is an async context manager and async iterator. Activities and preview/velocity helpers also offer context management. Callback registration is optional convenience over iteration; execute callbacks away from transport readers, with bounded queues and visible handler errors. Never let a slow user callback block renewal or stop.
 
@@ -413,11 +418,11 @@ The modern process owns public HTTP/SSE, schemas, sessions, resource arbitration
 
 On robot/agent loss, keep diagnostics available, mark uncertain operations unknown, invalidate old control generations/sessions, and reconcile native handles before permitting affected work. API restart must also fence its former control generation at the agent before enabling new commands. Rebuild capabilities/state after reconnect; never continue scripts or restore actuator setpoints automatically.
 
-Keep one container per robot with robot address, stable ID, API/operator auth, callback address if needed, data volume, and numeric resource limits. No required MQTT, WebSocket service, database service, or second container. Preserve the working legacy SDK dependencies during the split; Ubuntu Flask can be removed when it no longer serves HTTP. Do not replace legacy dependencies with unavailable PyPI packages to make the modern process fit.
+Keep one container per robot with robot address, stable ID, callback address if needed, a data volume when recordings are implemented, and numeric resource limits. No required MQTT, WebSocket service, database service, or second container. Preserve the working legacy SDK dependencies during the split; Ubuntu Flask can be removed when it no longer serves HTTP. Do not replace legacy dependencies with unavailable PyPI packages to make the modern process fit.
 
-Require a configured bearer token for non-loopback deployments; permit unauthenticated local development only when explicitly bound to loopback. Serve browser apps from the same origin by default; cross-origin access requires an allowlist. Browser SSE clients use fetch streaming with Authorization, or an authenticated same-origin gateway; do not put long-lived credentials in stream URLs. Native EventSource authentication is not a reason to weaken command authorization. These controls do not replace network isolation of the legacy robot SDK.
+Browser apps can connect from any origin without per-application bridge configuration. Serve permissive CORS responses for requests and errors, handle preflight, and expose response headers used by clients. Browser SSE clients use fetch streaming to send the session header. The bundled API explorer runs from the bridge origin without additional setup.
 
-Expose `/health/live` for the API process and `/health/ready` for agent/connection/callback readiness. Record structured logs with request, operation, session, robot, process-instance, and connection IDs; expose bounded diagnostic counters for active streams, native subscriptions, queue loss, IPC pressure, stop latency, and reconnects through authenticated `GET /diagnostics`. Avoid logging media, speech text, tokens, or full event payloads by default.
+Expose `/health/live` for the API process and `/health/ready` for agent/connection/callback readiness. Record structured logs with request, operation, session, robot, process-instance, and connection IDs; expose bounded diagnostic counters for active streams, native subscriptions, queue loss, IPC pressure, stop latency, and reconnects through `GET /robot/diagnostics`. Avoid logging media, speech text or full event payloads by default.
 
 ## 9. Completion standard
 

@@ -1,0 +1,2 @@
+# SSE frames require the terminal blank line.
+contracts/fixtures/*.sse text eol=lf whitespace=-blank-at-eof

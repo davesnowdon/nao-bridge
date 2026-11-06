@@ -1,0 +1,91 @@
+# HTTP/SSE contract 1.0.0
+
+The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
+and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
+serves these exact files at `/api/openapi.json` and `/api/schemas.json`. OpenAPI's
+server prefix is `/api`; its paths omit that prefix. `/health/live`, `/health/ready`
+and `/docs` are infrastructure routes outside that prefix. `/` redirects to the
+bundled Swagger UI at `/docs`. Session-owned routes require `X-Session-ID` to
+associate work with its lifecycle and resource ownership.
+
+CI publishes the schemas, this directory's fixtures and the client lifecycle guide
+as one artifact. The [wire guide](../docs/http-api.md) gives complete requests. The
+[client contract](../docs/client-contract.md) explains lifecycle rules independently
+of any Python client. Later delivery increments are design scope, not capabilities
+of this bundle.
+
+## Fixtures and execution
+
+- `fixtures/requests.json`: valid/invalid named request schemas, including omitted,
+  nullable and incorrectly typed fields.
+- `fixtures/canonicalization.json`: request identity, numeric and Unicode cases.
+- `fixtures/touch.sse`, `unknown-event.sse`, `mismatched-id.sse`: normal, additive
+  unknown-event and invalid framing cases. Split these byte streams at arbitrary
+  offsets, including inside UTF-8 characters, when testing another client.
+- `fixtures/scenarios.json`: language-neutral sequences, symbolic IDs, expected
+  outcomes, fixture deadlines and permitted nondeterminism.
+- `scripts/conformance.py`: direct HTTP/SSE checks using `http.client` and JSON
+  Schema; it imports neither the Python client nor server implementation. It refuses
+  to dispatch against a physical-robot backend. Run with the server uv environment:
+  `uv run --project server python scripts/conformance.py http://127.0.0.1:3000`.
+
+The fake-server integration tests add expiry, resource conflicts, ambiguity,
+backpressure, retained history and explicit recovery. The production-container
+runner adds real SDK loopback callbacks, agent kill/freeze and restart fencing.
+Neither is evidence of physical stop or callback behavior on a robot.
+
+## Request fingerprints
+
+A key is scoped to the session (bridge instance for session creation).
+Clients must generate unique session-creation keys, for example UUIDs. Its fingerprint includes method, route and the submitted JSON
+shape, before defaults. This is an equality rule, not a signature protocol.
+
+The portable test representation is recursive:
+
+- null and booleans are `null`, `true`, `false`.
+- Integers are `i:` followed by base-10 digits; JSON integer `-0` becomes `0`.
+- JSON numbers containing a fraction or exponent are parsed as IEEE 754 binary64,
+  then encoded as `f:` plus 16 lowercase hex digits in big-endian byte order.
+  Consequently `1.0` and `1e0` agree, `1` differs, and `-0.0` differs from `0.0`.
+- Strings are `s:` plus JSON string encoding with non-ASCII characters escaped as
+  lowercase `\uXXXX` sequences (surrogate pairs for non-BMP characters). No Unicode
+  normalization is performed. Equivalent literal/escaped scalar values agree.
+- Arrays are comma-separated representations inside brackets, preserving order.
+- Objects sort keys by Unicode scalar value, then join encoded key, colon and
+  encoded value inside braces.
+
+Reject duplicate keys, invalid UTF-8/unpaired surrogates, NaN and infinities,
+including finite-looking exponents that overflow binary64. Do not coerce strings,
+booleans or numbers, or insert default fields before comparison.
+
+Ordinary command keys and operation history are retained for 900 seconds by default;
+active/uncertain operations and active resources keep their identities longer.
+Capacity limits are advertised. All sessions, operations, subscriptions and keys
+are process-local and disappear on API restart. Prior IDs return 404; a missing
+operation does not prove that its robot-side work stopped. Never replay uncertain
+work after restart.
+
+Live sessions (including cleanup still in progress) are limited separately from
+retained inactive sessions: defaults are 64 and 4,096 respectively. Under history
+pressure, the oldest fully released inactive session and its creation retry key
+may be discarded early; unresolved work is never evicted to free capacity.
+Cleanup history holds at most 128 close/revoke operations; finished records and
+their retry keys may be evicted early to admit cleanup. If all cleanup slots are
+still running, admission can fail without preventing priority stop.
+
+Priority stop has a dedicated slot per session, independent of ordinary and
+cleanup budgets. Requests during an in-progress stop share its operation. Only the
+latest stop operation and latest stop retry key per session are retained; a new
+stop request can replace that history. A missing old result does not prove any
+physical outcome. Clients must not rely on the ordinary 15-minute retention
+window for session history under pressure, cleanup history, or stop requests.
+
+## Version and change guard
+
+`python scripts/check_contract.py origin/main` conservatively rejects changes to an
+existing route/schema shape without a contract major bump, and additions without
+a version bump. Documentation-only annotations are ignored. This intentionally
+errs on the side of review: even an otherwise compatible edit to an existing shape
+needs the guard to be refined with a focused compatibility test before it can ship
+as a minor change. It cannot prove semantic compatibility; lifecycle tests and
+review remain required. Package/image versions are independent of contract version.

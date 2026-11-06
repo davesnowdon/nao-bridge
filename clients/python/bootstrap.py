@@ -1,8 +1,5 @@
-# run as python -i bootstrap.py
+"""Imports for `python -i bootstrap.py`; opening a connection remains explicit."""
 
-from nao_bridge_client import NAOBridgeClient
+from nao_bridge_client import AsyncNao, Nao
 
-client = NAOBridgeClient("http://localhost:3000")
-
-status = client.get_status()
-print(f"Robot connected: {status.data.robot_connected}")
+__all__ = ["AsyncNao", "Nao"]

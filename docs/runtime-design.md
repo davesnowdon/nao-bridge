@@ -1,8 +1,8 @@
 # Runtime and event transport design
 
-Status: planned architecture, 6 November 2026. The process split is the target architecture. Modern Python is the preferred API implementation; the build and hardware experiments in delivery increment 1A must establish a reproducible deployment before broad implementation begins. No runtime changes are implemented by these documents.
+Status: architecture and implementation direction, 6 November 2026. The maintained-base Python/ASGI split is implemented for increment 1; see [implementation evidence](implementation-status.md). Physical robot behavior and Apple Silicon acceptance remain separate gates. Media, motion and sequences below describe later increments.
 
-The [original container experiment](runtime-experiment.md) and [maintained-base comparison](inverted-packaging-experiment.md) provide executable packaging and IPC evidence for Linux amd64. It exercises the complete pinned candidate dependency set beside the real SDK; production integration, physical robot behavior, and Apple Silicon acceptance remain separate gates.
+The [original container experiment](runtime-experiment.md) and [maintained-base comparison](inverted-packaging-experiment.md) provide executable packaging and IPC evidence for Linux amd64. It exercises the complete pinned candidate dependency set beside the real SDK; the production increment-1 suite adds API/agent supervision and HTTP/SSE conformance. Physical robot behavior and Apple Silicon acceptance remain separate gates.
 
 ## Two processes, one container
 
@@ -20,12 +20,12 @@ flowchart LR
 
 | Modern API process | Legacy robot agent |
 | --- | --- |
-| HTTP/SSE/auth and public contract validation | Bundled SDK loading and native service connections |
+| HTTP/SSE and public contract validation | Bundled SDK loading and native service connections |
 | Sessions, resource ownership, operation history/idempotency | Native callbacks and service-scoped task handles |
 | Server-side sequence/parallel scheduling and cancellation coordination | Narrow typed command dispatch, native completion/cancel adapters |
 | State cache, freshness classification, event fan-out | Shared physical state acquisition and receipt/source timestamps |
 | Asset quotas/retention/checksums, recording lifecycle, media serving | Native camera/audio acquisition and bounded data transfer |
-| Operator recovery authorization/audit | Generation checks, expiry enforcement, stop/hold and fencing acknowledgement |
+| Explicit recovery requests | Generation checks, expiry enforcement, stop/hold and fencing acknowledgement |
 
 The agent is an adapter, not a second public API or arbitrary NAOqi/Python execution service. Its protocol enumerates the supported primitive actions and observations. The modern process remains authoritative for public semantics; the agent repeats constraints needed at dispatch time, such as generation, expired deadlines, setpoint order, joint bounds, and validity of native handles.
 
@@ -72,21 +72,23 @@ For processes in the same Linux container/time namespace, the experiment confirm
 - On API/IPC loss, invalidate its control authority, reject queued setpoints, and attempt controlled stop/hold and cancellation of native work. If API restarts while the agent survives, require a generation handshake and reconciliation before accepting new commands.
 - On agent loss, the API remains available for diagnostics, reports unknown affected operations, and invalidates old control sessions. Restarting the agent does not establish that robot-side tasks have stopped. Reconnect, discover, and reconcile before releasing affected resources.
 - Robot-network loss, an agent crash, or entire-container failure can prevent a stop reaching the robot. Keep that boundary explicit; bounded finite movement remains the default Wanderer strategy.
-- Operator revocation fences old work at the agent before resource release. If a native call has already been dispatched, fencing cannot retract it. A force-release result must retain that uncertainty and identify unresolved native work; original operations do not become successful. Reject override if the dispatch boundary cannot acknowledge the generation change.
+- Explicit revocation fences old work at the agent before resource release. If a native call has already been dispatched, fencing cannot retract it. A force-release result must retain that uncertainty and identify unresolved native work; original operations do not become successful. Reject override if the dispatch boundary cannot acknowledge the generation change.
 
 The modern process owns the recovery workflow; the agent owns evidence about native dispatch/stop. Log correlated IDs across both processes and define process/agent readiness separately from robot connectivity. Test both graceful shutdown and forced process termination in the actual combined container.
 
-Evaluate whole-container restart as a simpler operational recovery option in 1A, but do not treat it as a replacement for these failure semantics. Pipe/socket EOF detects closure, not a frozen or deadlocked process that retains its descriptors; the experiment's frozen-API case requires an independent liveness deadline. Setpoint TTL alone does not cover other in-flight native work. A fresh container also cannot prove earlier robot-side tasks stopped, and generation fencing remains necessary for session revocation and queued work while processes are alive. The current contract retains API diagnostics after agent loss. Compare lost diagnostics/operation evidence, shutdown ordering, bounded stop attempts, and startup reconciliation before changing that choice; do not implement two recovery modes speculatively.
+Evaluate whole-container restart as a simpler operational recovery option in 1A, but do not treat it as a replacement for these failure semantics. Pipe/socket EOF detects closure, not a frozen or deadlocked process that retains its descriptors; the experiment's frozen-API case requires an independent liveness deadline. Setpoint TTL alone does not cover other in-flight native work. A fresh container also cannot prove earlier robot-side tasks stopped, and generation fencing remains necessary for session revocation and queued work while processes are alive. The current contract retains API diagnostics after agent loss. Compare lost diagnostics/operation evidence, shutdown ordering, bounded stop attempts, and fresh-start behavior before changing that choice; do not implement two recovery modes speculatively.
+
+API state is process-local. A fresh API instance does not reload operations, sessions, subscriptions, idempotency keys or resource ownership. There is no operation journal or data volume requirement in increment 1. Agent restarts retain only the state still held by the running API. Neither kind of restart proves that robot-side work stopped; do not automatically replay it.
 
 ## Recording acquisition and asset storage
 
-Resolve acquisition separately for video and audio in 1A, with full recording acceptance in 4B. Prefer acquisition through NAOqi into bounded bridge-side buffers: camera images from the video-device subscription and microphone buffers through the SDK's supported callback/module mechanism. This avoids making robot filesystem access or SSH credentials a deployment prerequisite. Native robot-side recorders are alternatives to measure, not an automatic shortcut: a bridge Asset then requires reliable file retrieval, quota/cleanup on both machines, credential handling, and recovery after interrupted recording or transfer. Keep robot filenames private and never infer that arbitrary robot files can be downloaded through the public API.
+Resolve acquisition separately for video and audio in 1A, with full recording acceptance in 4B. Prefer acquisition through NAOqi into bounded bridge-side buffers: camera images from the video-device subscription and microphone buffers through the SDK's supported callback/module mechanism. This avoids making robot filesystem access or SSH access a deployment prerequisite. Native robot-side recorders are alternatives to measure, not an automatic shortcut: a bridge Asset then requires reliable file retrieval, quota/cleanup on both machines, file-access setup, and recovery after interrupted recording or transfer. Keep robot filenames private and never infer that arbitrary robot files can be downloaded through the public API.
 
 Start the video-format experiment with MJPEG in one explicitly selected container, with WAV as the initial audio candidate where supported. JPEG frames still need a tested encoder and a valid container muxer; this is not a promise of zero codec dependencies. Encode/mux in bounded modern-process workers, outside the event loop and priority IPC path. Test decoding and seeking in the intended applications, rate/size tradeoffs, and stream timestamps before advertising formats. H.264 is a later requirement-driven option.
 
 Write sample recordings in the modern process from the same acquisition feed as `/state` and `state.sample`, before per-viewer coalescing or drops. A recording has its own bounded writer queue and explicit loss markers; it must not depend on an SSE subscriber keeping up.
 
-Use SQLite on the mounted data volume for asset metadata, reservations, retention, and pagination; it adds no database service. Keep media in bounded files and serialize metadata mutations outside the event loop. Compute checksums incrementally during writes. Finalize/flush the file before publishing immutable metadata and a checksum-derived ETag. SQLite transactions and filesystem renames are not a joint transaction: reconcile interrupted finalization, orphan files, and quota reservations after restart before admitting new recordings. Active recording files are not downloadable assets; finalized partial recordings remain explicitly partial and immutable.
+Recordings require bounded files and retained asset metadata; select the metadata storage implementation during recording delivery rather than requiring a database now. Compute checksums incrementally while writing. Finalize/flush the file before publishing immutable metadata and a checksum-derived ETag. Handle interrupted recording files and quota accounting before admitting new recordings. Active recording files are not downloadable assets; finalized partial recordings remain explicitly partial and immutable. This storage is for requested recordings, not operation recovery.
 
 ## Retain HTTP commands and SSE events
 

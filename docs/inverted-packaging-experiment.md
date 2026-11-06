@@ -2,7 +2,9 @@
 
 Date: 6 November 2026. **Adopt the inverted packaging direction for the replacement API:** start with pinned Ubuntu 24.04, copy an isolated Python 2/NAOqi runtime from the existing immutable image, and run the modern Python API alongside it. This replaces the legacy-base preference in the original plan. HTTP/SSE, modern Python, and the two-process/one-container architecture remain unchanged.
 
-The maintained-base experiment passes the same 21 integration/failure checks as the legacy-base comparison, plus a broader binary and media audit. This establishes the Linux amd64 packaging choice. It does not close the physical-robot, Apple Silicon, production-supervision, or recording-pipeline gates. The production `server/Dockerfile` is unchanged; [Dockerfile.inverted](../experiments/runtime-ipc/Dockerfile.inverted) is the executable recipe to carry into increment 1B after the remaining 1A gates.
+The maintained-base experiment passes the same 21 integration/failure checks as the legacy-base comparison, plus a broader binary and media audit. This establishes the Linux amd64 packaging choice. It does not close the physical-robot, Apple Silicon, production-supervision, or recording-pipeline gates. At the time of this experiment the production Dockerfile was unchanged; the replacement now adopts this recipe (see [implementation status](implementation-status.md)). [Dockerfile.inverted](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/Dockerfile.inverted) is the historical comparison recipe. Current builds use [server/Dockerfile](../server/Dockerfile) and [server/packaging](../server/packaging/README.md).
+
+The experiment harness and raw results are archived in Git at the immutable revision linked below; they are no longer maintained build inputs. Current verification uses `make test-container`. The binary/media findings remain relevant to future recording development, but do not prove a production recording pipeline.
 
 ## Why adopt it
 
@@ -19,12 +21,12 @@ Both packaging directions work on this host. The measured latency is similar, so
 | SDK | Unmodified NAOqi 2.1.4.13 Linux amd64 tree |
 | Legacy dependencies | 18 copied shared libraries, with source paths, hashes, package versions and package copyright files |
 | Modern interpreter | Same CPython 3.13.18 standalone archive as the original experiment, under `/opt/modern` |
-| Modern packages | Same 30 hash-locked distributions in [requirements.lock](../experiments/runtime-ipc/requirements.lock) |
+| Modern packages | Same 30 hash-locked distributions in [requirements.lock](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/requirements.lock) |
 | Media tools | Ubuntu FFmpeg/ffprobe 6.1.1-3ubuntu5; Pillow 12.2.0 |
 | TLS libraries | Modern Python OpenSSL 3.5.9; system OpenSSL 3.0.13; legacy SDK OpenSSL 1.0.2 |
 | SQLite | Modern Python 3.53.1; legacy Python 3.8.2; both executed successfully |
 | Runtime user | Configured `ubuntu` user, UID 1000, for both processes and all maintained-base checks |
-| OS package inventory | 292 exact versions in [os-packages.lock](../experiments/runtime-ipc/os-packages.lock), checked against the installed image |
+| OS package inventory | 292 exact versions in [os-packages.lock](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/os-packages.lock), checked against the installed image |
 
 Immutable inputs and local output identities:
 
@@ -41,13 +43,13 @@ The apt install is version-locked and fails if its complete installed inventory 
 
 ## Binary compatibility findings
 
-[collect_legacy.py](../experiments/runtime-ipc/collect_legacy.py) copies the interpreter, standard library, full SDK and their required legacy library closure. It excludes unrelated legacy application packages, including Flask and PIL. It preserves package copyright files and records provenance in `/opt/legacy/dependency-manifest.json` inside the image. The known Python 2.7.6 build is retained to keep the SDK ABI constant; rebuilding Python 2.7.18 was not needed or tested.
+[collect_legacy.py](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/collect_legacy.py) copies the interpreter, standard library, full SDK and their required legacy library closure. It excludes unrelated legacy application packages, including Flask and PIL. It preserves package copyright files and records provenance in `/opt/legacy/dependency-manifest.json` inside the image. The known Python 2.7.6 build is retained to keep the SDK ABI constant; rebuilding Python 2.7.18 was not needed or tested.
 
 The SDK contains unversioned filenames with versioned SONAMEs, including its Boost libraries. Its imports preload libraries in a particular order, which can hide missing SONAME filenames from simple import tests. The collector creates separate SONAME aliases under `/opt/legacy/sdk-sonames`; the SDK bytes remain unchanged. This lets ordinary dependency resolution work without relying on that preload order.
 
 Only the legacy child receives SDK/private-library search paths. Both processes use the maintained base's glibc and loader; no old glibc is copied. The modern process and its tools load no SDK/private legacy libraries. This is process/library isolation, not a security sandbox between the processes.
 
-The [raw audit](../experiments/runtime-ipc/results/inverted-binary-audit.json) records hashes and resolved dependencies for:
+The [raw audit](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/results/inverted-binary-audit.json) records hashes and resolved dependencies for:
 
 - All 67 SDK shared-library files, also eagerly loaded with `RTLD_NOW` in Python 2.
 - All 58 loadable ELF files in the private legacy runtime, including all 38 Python 2 extension modules, which are also imported.
@@ -75,7 +77,7 @@ Both final runs use the same embedded Python sources and modern dependency lock,
 | Final API + agent resident memory | 89.7 MiB | 86.3 MiB |
 | Slow consumers disconnected | 1 | 1 |
 
-See the [maintained-base results](../experiments/runtime-ipc/results/inverted-linux-amd64.json), [legacy comparison](../experiments/runtime-ipc/results/legacy-comparison-linux-amd64.json), and [reproduction commands](../experiments/runtime-ipc/README.md#maintained-base-recipe). Their recorded source hashes match the current experiment scripts. The original two result files remain historical evidence for commit `7060bff`; the new comparison avoids attributing those older measurements to modified scripts.
+See the [maintained-base results](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/results/inverted-linux-amd64.json), [legacy comparison](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/results/legacy-comparison-linux-amd64.json), and [reproduction commands](https://github.com/davesnowdon/nao-bridge/blob/48592c9b5c94b198d91661fc7a785a7cf0c824f9/experiments/runtime-ipc/README.md#maintained-base-recipe). Their recorded source hashes match the archived experiment scripts. The original two result files remain historical evidence for commit `7060bff`; the new comparison avoids attributing those older measurements to modified scripts.
 
 ## Remaining delivery gates
 
