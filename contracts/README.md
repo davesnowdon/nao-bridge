@@ -1,7 +1,7 @@
 # HTTP/SSE contract 1.0.0
 
-The authoritative artifacts are [OpenAPI](../server/modern/nao_bridge/contract/openapi.json)
-and [named JSON schemas](../server/modern/nao_bridge/contract/schemas.json). The server
+The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
+and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
 serves these exact files at `/api/openapi.json` and `/api/schemas.json`. OpenAPI's
 server prefix is `/api`; its paths omit that prefix. `/health/live`, `/health/ready`
 and `/docs` are infrastructure routes outside that prefix. Protected routes accept

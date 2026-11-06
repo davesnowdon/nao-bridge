@@ -20,14 +20,14 @@ RUN mkdir -p /opt/modern \
     && tar -xzf /tmp/python.tar.gz -C /opt/modern --strip-components=1 \
     && rm /tmp/python.tar.gz
 ENV PATH=/opt/modern/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    PYTHONPATH=/opt/nao-bridge/modern \
+    PYTHONPATH=/opt/nao-bridge \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     NAO_BRIDGE_DATA_DIR=/data
 COPY server/requirements.lock /opt/nao-bridge/requirements.lock
 RUN python3 -m pip install --no-cache-dir --only-binary=:all: --require-hashes \
     -r /opt/nao-bridge/requirements.lock && python3 -m pip check
-COPY server/modern /opt/nao-bridge/modern
+COPY server/nao_bridge /opt/nao-bridge/nao_bridge
 COPY server/agent /opt/nao-bridge/agent
 RUN mkdir /data && chown ubuntu:ubuntu /data
 USER ubuntu

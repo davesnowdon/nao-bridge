@@ -16,10 +16,10 @@ nao-bridge = "nao_bridge.main:main"
 dev = ["httpx>=0.28,<1", "pytest>=8", "pytest-asyncio>=0.25", "ruff>=0.12", "pyright>=1.1", "openapi-spec-validator>=0.7"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["modern/nao_bridge"]
+packages = ["nao_bridge"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/modern", "/agent", "/pyproject.toml", "/uv.lock", "/requirements.lock"]
+include = ["/nao_bridge", "/agent", "/pyproject.toml", "/uv.lock", "/requirements.lock"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/core"]
@@ -37,6 +37,6 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
-include = ["modern"]
+include = ["nao_bridge"]
 venvPath = "."
 venv = ".venv"

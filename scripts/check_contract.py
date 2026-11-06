@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = Path("server/modern/nao_bridge/contract")
+CONTRACT = Path("server/nao_bridge/contract")
 ANNOTATIONS = {"description", "summary", "title", "examples", "example", "externalDocs"}
 
 

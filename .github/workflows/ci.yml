@@ -26,7 +26,7 @@ jobs:
       - name: Export contract bundle
         run: |
           mkdir -p /tmp/contract-bundle
-          cp server/modern/nao_bridge/contract/*.json /tmp/contract-bundle/
+          cp server/nao_bridge/contract/*.json /tmp/contract-bundle/
           cp -r contracts/fixtures /tmp/contract-bundle/
           cp contracts/README.md docs/client-contract.md docs/http-api.md /tmp/contract-bundle/
       - uses: actions/upload-artifact@v4
