@@ -8,6 +8,8 @@ This project borrows heavily from the work of [Don Najd](https://github.com/dnaj
 
 The [API plan](docs/api-plan.md) defines a fresh, language-neutral API for common robot capabilities, with HTTP commands and SSE events. Python is its first client; the [client contract guide](docs/client-contract.md) defines the lifecycle rules needed by future implementations. The [four-increment delivery plan](docs/delivery-plan.md) uses Recorder, Wanderer, and a scripted presentation as acceptance applications. [Research notes](docs/research-notes.md) record the evidence and decisions behind the design.
 
+The [runtime design](docs/runtime-design.md) separates a thin Python 2 NAOqi agent from a modern API process in one container. Modern Python is preferred, subject to an early packaging/concurrency proof. SSE reconnects report gaps and current state; recordings/assets and server-side sequences remain in scope.
+
 This is planned work, with no v1 or FluentNao compatibility requirement. The instructions below describe the currently implemented API.
 
 ## Prerequisites

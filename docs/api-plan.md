@@ -2,7 +2,7 @@
 
 Status: implementation plan, 6 November 2026. Numerical defaults and hardware-dependent details below are design targets to validate during delivery. None of the new endpoints or examples in this document is implemented yet.
 
-Read alongside the [delivery plan](delivery-plan.md), [client contract guide](client-contract.md), and [research evidence](research-notes.md).
+Read alongside the [delivery plan](delivery-plan.md), [runtime design](runtime-design.md), [client contract guide](client-contract.md), and [research evidence](research-notes.md).
 
 ## 1. Product boundary
 
@@ -45,14 +45,14 @@ Use domain nouns: `robot`, `motion`, `speech`, `sensors`, `vision`, `audio`, `li
 - JSON uses UTF-8 and `snake_case`. Resources are objects, collections are `{ "items": [...], "next_cursor": null }`. No redundant `success: true` wrappers.
 - Successful reads return 200. Resource creation returns 201 and `Location`; command acceptance returns 202, an Operation, and its `Location`. Deletion returns 204 after cleanup is confirmed; potentially slow stops use an operation instead.
 - Reject unknown request fields, nonfinite numbers, invalid combinations, and unsupported options. Never silently clamp a motion target or substitute a different behavior. Clients tolerate additive response fields.
-- Versioned, language-neutral OpenAPI and JSON Schema documents are the canonical contract. Give every endpoint a stable unique `operationId` and every public payload a named schema. Tooling may be written in Python, but Python classes are not an independent source of truth. The Python 2 server uses compatible validation code and generated/static schema artifacts; do not introduce a modern runtime dependency into that container to serve documentation.
+- Versioned, language-neutral OpenAPI and JSON Schema documents are the canonical contract. Give every endpoint a stable unique `operationId` and every public payload a named schema. The modern API process serves and validates the public contract; Python classes are not an independent source of truth. The Python 2 robot agent validates only its small internal protocol and robot-side command constraints.
 - Paginate operation and asset history. Bound request sizes, sequence length, trajectory size, subscription count, recording size, and concurrent activities. Advertise limits in capabilities and return actionable limit errors.
 
 ### Language-neutral behavior and evolution
 
 The server implements domain defaults, validation, resource ownership, trajectory execution, and sequence scheduling for every caller. SDKs may add early validation and ergonomic helpers, but cannot supply otherwise-missing robot semantics. An OpenAPI `default` is documentation unless the server actually applies it; direct HTTP tests must verify omitted-field behavior.
 
-Schemas define required versus optional fields, permitted null values, numeric bounds/units, timestamp precision, collection ordering, and explicit discriminator fields for event/action/result variants. Keep identifiers and replay cursors opaque strings. Use finite JSON numbers for measurements; integer counters are bounded to the exactly representable range 0–9007199254740991 unless a narrower range is specified. Unbounded counters, if needed, use a documented decimal-string representation. Avoid Python-specific serialization, coercion, object tags, or positional tuples masquerading as objects. The [client guide](client-contract.md) defines wire-level lifecycle and extension behavior.
+Schemas define required versus optional fields, permitted null values, numeric bounds/units, timestamp precision, collection ordering, and explicit discriminator fields for event/action/result variants. Keep identifiers opaque strings. Use finite JSON numbers for measurements; integer counters are bounded to the exactly representable range 0–9007199254740991 unless a narrower range is specified. Unbounded counters, if needed, use a documented decimal-string representation. Avoid Python-specific serialization, coercion, object tags, or positional tuples masquerading as objects. The [client guide](client-contract.md) defines wire-level lifecycle and extension behavior.
 
 Publish immutable contract bundles with the container/client release, including OpenAPI, referenced payload schemas, examples, and conformance fixtures. Contract version is independent of package/image version. Within a major version, minor releases may add endpoints, optional fields, request options, and explicitly extensible variants; patch releases must not change observable semantics. Removing/renaming fields, changing units/defaults or requiredness, changing nullability, changing lifecycle semantics, or extending a closed response enum requires a major version. Correcting implementation drift to match the published contract is a bug fix, with release notes for affected callers.
 
@@ -69,6 +69,7 @@ This is a compatibility policy for future clients of the replacement API. It doe
 - Odometry has an `origin_id` and `connection_generation`. It can drift and is not an application map. Reconnect or reset can change the origin; never stitch poses across origins silently.
 - Each command carries its own duration or speed option. No global duration, shared fluent job queue, or hidden persistent motion mode.
 - Public timestamps are UTC RFC 3339. Duration/expiry calculations use a monotonic clock. `source_time` is accompanied by its clock domain and is not assumed synchronized with bridge receipt time.
+- State/events also carry `bridge_time_ms` at emission and `sampled_bridge_time_ms` or `received_bridge_time_ms` at acquisition/receipt, scoped to `bridge_instance_id`. These are milliseconds since that API instance's monotonic origin. Clients can compare bridge-side intervals, but cannot subtract their own clock or infer network transit time. Keep agent/source clock domains separate and do not compare values across instance restarts.
 
 Common defaults are part of the contract, not whatever mutable defaults the native service happens to hold:
 
@@ -86,13 +87,15 @@ If an explicit default is unsupported, return the capability error; do not silen
 
 ### State and discovery
 
-`GET /robot` returns bridge build/contract version, `bridge_instance_id`, configured `robot_id`, observed robot name/model/NAOqi version, connection status, and `connection_generation`. A configured stable ID works even while the robot is offline. Connection states are `connecting`, `connected`, `disconnected`, and `faulted`; the HTTP service stays available during connection failure.
+`GET /robot` returns bridge build/contract version, `bridge_instance_id`, `agent_instance_id`, configured `robot_id`, observed robot name/model/NAOqi version, connection status, and `connection_generation`. A configured stable ID works even while the robot is offline. Connection states are `connecting`, `connected`, `disconnected`, and `faulted`; the HTTP service stays available during connection failure.
 
 `GET /robot/capabilities` returns domain features, hardware identifiers, allowed settings/ranges, supported event types, sampling limits, media formats, and cancellation support. Each feature has `available`, `unsupported`, `unavailable`, or `unknown` status and a reason. Absence on a particular robot is not a successful no-op. Probe at connection time and refresh on reconnect; do not infer availability from the robot name alone.
 
-`GET /robot/state?include=joints,sensors,motion,autonomy` returns selected state groups. Each group has `value`, `sampled_at`, optional `source_time`, `age_ms`, and `quality` (`fresh`, `stale`, or `unavailable`). The envelope includes acquisition start/end times and connection generation. Missing readings are null with reasons, never fabricated zero values. `max_age_ms` bounds acceptable cache age; if a requested refresh cannot complete, retain explicit stale/unavailable status. The SDK offers `require_fresh=True` to reject partial or stale snapshots.
+`GET /state?include=joints,sensors,motion,autonomy` is the single state-read surface. Domain SDK helpers select groups on this route; there are no duplicate `/robot/state`, `/motion/state`, `/sensors/state`, `/lights/state`, or `/motion/odometry` routes. Joint positions/stiffness are in `joints`; motion status, posture, awake state, and odometry are in `motion`; other groups include `sensors`, `lights`, and `autonomy`. Discovery catalogs remain domain-specific.
 
-Combined reads reduce round trips but are not atomic robot snapshots. Include observed sampling skew; Recorder and Wanderer decide their acceptable tolerance. Capability-supported demand sampling activates and reference-counts necessary sensor producers such as sonar; unavailable or warming sensors remain explicitly unavailable until a valid reading arrives.
+Each group has `value`, `sampled_at`, optional `source_time`, `age_ms`, and `quality` (`fresh`, `stale`, or `unavailable`). The envelope includes acquisition start/end times, monotonic timing, and connection generation. Missing readings are null with reasons, never fabricated zero values. `max_age_ms` classifies acceptable age. Default reads return the latest cached values immediately, with stale/unavailable status where necessary. Optional `wait_for_fresh_ms` waits up to a bounded deadline for the shared sampler's next suitable values; it never starts per-request native polling. The SDK's `require_fresh=True` rejects any remaining stale/partial result.
+
+A shared background sampler collects common joint/motion/sensor state, initially targeting 10 Hz, with a 20 Hz mode only if measured and advertised. Batch ALMemory reads where suitable and use service calls for other state. Track per-source age and acquisition skew; neither batching nor polling frequency makes observations atomic or guarantees a source updated. Slow reads cannot block independent sampling groups or control dispatch. Sonar, cameras, recognition, and other demand producers activate only when requested and are reference-counted; warming/unavailable sources remain explicit. Publish supported sampling rates and measure robot/IPC load before increasing them.
 
 ### Errors
 
@@ -125,8 +128,14 @@ States: `accepted → running → succeeded | failed`; cancellation goes through
 - The adapter retains the originating service and native task handle. Native IDs never become public IDs. Waiting, completion, and cancellation are service-specific.
 - HTTP commands always return promptly after acceptance. In Python, finite command methods default to `wait=True`, wait locally, and return the completed Operation; `wait=False` returns the accepted handle. Async methods have exactly the same semantics when awaited. Ongoing activity creation and velocity updates return immediately with their handle/status rather than waiting for expiry.
 - `operation.wait(timeout=...)` uses SSE with polling fallback. A client timeout raises `OperationTimeout` carrying the operation ID; it does not cancel the robot command. Failed/cancelled/unknown outcomes have distinct typed exceptions and retain the Operation for inspection.
-- Mutating requests accept `Idempotency-Key`. Within a session, identical key and body return the original result; different bodies return 409. Keep keys and terminal operations for at least 15 minutes after completion, with a documented bounded capacity. Reject new work before losing deduplication guarantees for retained keys. Deduplication does not survive bridge restart; the SDK must not automatically resubmit an uncertain command.
+- Operation-creating and resource-creating POSTs accept optional `Idempotency-Key`, including recordings, listeners, and sessions. Within the documented scope, the same key/method/route/canonical JSON body returns the original result; a changed request returns 409. Canonicalization ignores object-key order/insignificant whitespace but does not insert defaults or coerce types: an omitted field and an explicitly supplied default are different requests. The SDK generates a key for these POSTs and retains the original request for retries. Keep keys and terminal operations for a documented bounded period (initial target: 15 minutes after completion), reject new keyed admissions before evicting unexpired keys, and publish limits. Creation of a session is scoped to authenticated caller and bridge instance; other creation is session-scoped. Binary uploads compare declared metadata and content digest, not JSON. GET/renewal and ordered setpoint updates use their own semantics, not a generic mutation retry scheme. Deduplication does not survive bridge restart; the SDK must not automatically resubmit an uncertain command.
 - Resource reservation and operation registration happen before native dispatch. Where dispatch acknowledgement is lost, retain an `unknown` operation rather than claiming the command was rejected without effects.
+
+### Targeted replacement
+
+Supported finite motion commands accept optional `replace_operation_id`. Validate the new request first, then coordinate cancellation of the named active operation and admission of its replacement without an intervening claimant. Both operations must belong to the same session; replacement cannot revoke another client's control. Other resource conflicts remain 409. Return the replacement Operation immediately with `replaces_operation_id`; it remains `accepted` while waiting for the previous operation to stop. If the old operation has already ended, proceed only if it is in a known terminal state and required resources remain available. An unknown outcome or unconfirmed cancellation prevents new native dispatch and fails the replacement with a specific reason. Cancelling a replacement before dispatch prevents it starting; it does not undo cancellation already requested for the old work.
+
+Replacement initially covers standalone motion/trajectory operations. Sequence child operations are controlled through their parent; replacing an individual child is rejected. Interactive target updates use the setpoint protocol instead of repeatedly replacing finite commands. This is one server-coordinated transition, not a general `preempt: true` permission.
 
 ### Sessions and resource conflicts
 
@@ -134,15 +143,19 @@ The SDK opens a session lazily on first mutation or subscription, renews it whil
 
 Target lease: 30 seconds, renewed every 10 seconds. Responses advertise actual expiry. Renewals use bridge monotonic deadlines. SSE heartbeats and traffic do not renew a control session. Closed/expired sessions cannot be revived; a new connection generation requires a new control session and deliberate application resumption. The SDK reconnects event transport while its session remains valid. After invalidation, the application reopens its client context and subscriptions; no interrupted command resumes automatically. Discovery/state reads remain usable without control ownership.
 
+Explicit renewal is intentional: a healthy observer/SSE connection does not establish that a control loop is healthy, and receiving server heartbeats does not establish application intent to retain control. One session may have several observers, and HTTP-only clients need the same ownership semantics. Renewal remains independent of stream callbacks; velocity and joint-setpoint controls have much shorter agent-enforced expiry.
+
 Resources include joint sets, locomotion, speech output, speech recognition configuration, light groups, tracking, camera modes, and autonomy configuration. Expand overlaps: a posture owns its affected joints and locomotion; walking reserves legs and any arms it controls; animated speech reserves the joints/lights it may animate. An installed behavior with unknown effects reserves all actuators conservatively.
 
-Commands acquire resources for their lifetime. Conflicting work returns `resource_busy` immediately; there is no implicit queue or cancellation. To replace work, explicitly cancel it and wait for stop confirmation. Ongoing state changes such as stiffness and light settings hold their resource until changed or the owning session ends. An application can reserve a larger set through `POST /sessions` or `PATCH /sessions/{id}` with `reserve`; adding reservations is all-or-nothing and conflicts do not change existing ownership. Releasing a reservation is explicit via the same field, and cannot release resources still used by active work.
+Commands acquire resources for their lifetime. Conflicting work returns `resource_busy` immediately; there is no implicit queue or cancellation. Use targeted replacement where supported, or explicit cancel/wait/start otherwise. Ongoing state changes such as stiffness and light settings hold their resource until changed or the owning session ends; interactive controls hold their declared joint set. This gives Recorder stable ownership between updates. No public advance-reservation field or endpoint is planned. Internal all-or-nothing command acquisition and whole-sequence reservations remain necessary.
 
 Session ownership permits subsequent commands from that session to use its reserved/configured resources. It does not permit two incompatible active commands to run together, even from the same client. Read-only state consumers do not acquire actuator ownership.
 
-Session close is itself a cleanup operation. It stops velocity control, stops owned activities, and attempts cancellation of owned work. It releases resources only when safe to do so; uncertain native work leaves a resource quarantined until reconciled. Cleanup reports failures instead of hiding them. Finite native motion may continue when the robot connection is lost.
+Session close is itself a cleanup operation. It stops/holds interactive controls, stops owned activities, and attempts cancellation of owned work. It releases resources only when safe to do so; uncertain native work leaves a resource quarantined until reconciled. Cleanup reports failures instead of hiding them. Finite native motion may continue when the robot connection is lost.
 
-Reconciliation requires fresh service evidence that the affected activity stopped, for example after a confirmed priority stop and idle-state query. Elapsed time, a new client session, or a missing old task handle alone cannot clear quarantine. Expose the reason and unresolved resource in diagnostics; no automatic force-unlock endpoint is planned.
+Reconciliation normally requires fresh service evidence that the affected activity stopped, for example after a confirmed priority stop and idle-state query. Elapsed time, a new client session, or a missing old task handle alone cannot clear quarantine. Expose the reason and unresolved resource in diagnostics.
+
+`POST /sessions/{id}/revoke` is an operator-only recovery action with mandatory `confirm: true` and a reason. It creates a recovery Operation: invalidate the old session, reject its future requests, fence queued work/updates at the agent, attempt cancellation/stop, and reconcile resources. Configure separate operator authorization; ordinary client credentials cannot perform recovery or override. Default `force_release: false` releases only confirmed resources. An explicit operator override with `force_release: true` may release unresolved ownership only after the agent acknowledges the new control generation and rejects old queued/in-flight dispatch attempts. If that fencing cannot be established, reject the override. Native tasks already running may still need physical/operator intervention; the result lists unresolved physical outcomes, records the override, and leaves original operations `unknown`. Releasing ownership never establishes physical safety or native success. Audit the action without recording secrets; no automatic recovery client invokes this override.
 
 Do not automatically relax motors, stand, sit, or replay a pose on cleanup. Stiffness/pose/light settings remain as last applied; ownership ends. Autonomy restoration has its own explicit, guarded policy below. App shutdown is not evidence that it is safe to remove support from the robot.
 
@@ -154,18 +167,19 @@ Every row is part of the planned public contract. Resource identifiers and optio
 
 | HTTP surface | Python surface | Contract | Increment |
 | --- | --- | --- | --- |
-| `GET /robot`, `/robot/capabilities`, `/robot/state` | `robot.info()`, `.capabilities()`, `.state(...)` | Identity, support, and fresh/stale state. | 1; groups expand later |
+| `GET /robot`, `/robot/capabilities`, `/state` | `robot.info()`, `.capabilities()`, `.state(...)` | Identity, support, and fresh/stale state. | 1; groups expand later |
 | `GET /motion/joints` | `motion.joints()` | Names, unit, limits, chains, coupled joints, readable/writable status. | 2 |
-| `GET /motion/state` | `motion.state(...)` | Measured and commanded positions kept separate, stiffness, awake/posture, motion status. | 2 |
+| `GET /state?include=joints,motion` | `motion.state(...)` | Measured and commanded positions kept separate, stiffness, awake/posture, motion status. | 2 |
 | `POST /motion/wake`, `/motion/rest` | `motion.wake()`, `.rest()` | Explicit robot transitions; no implicit wake in unrelated commands. | 2 |
-| `POST /motion/stiffness` | `motion.set_stiffness(targets, duration=...)` | Map of joint/chain names to ratios; expand and reject contradictory targets. | 2 |
-| `POST /motion/joints` | `motion.move_joints(positions, duration=...)` | Absolute joint map and positive duration; measured start, omitted joints unchanged. | 2 |
-| `POST /motion/trajectories` | `motion.play(trajectory)` | Validated timed pose data; one native trajectory submission. | 2 |
-| `GET /motion/postures`; `POST /motion/postures` | `motion.postures()`, `.posture(name, speed=...)` | Discovered posture names and a 0–1 speed fraction greater than zero. | 2 |
+| `POST /motion/stiffness_changes` | `motion.set_stiffness(targets, duration=...)` | Map of joint/chain names to ratios; expand and reject contradictory targets. | 2 |
+| `POST /motion/joint_moves` | `motion.move_joints(positions, duration=...)` | Absolute joint map and positive duration; measured start, omitted joints unchanged. | 2 |
+| `PUT /motion/joint_setpoints` | `motion.set_joint_targets(positions, speed=..., ttl=...)` | Replaceable absolute targets within one owned control, for sliders/jogging; ordered updates and expiry. | 2 |
+| `POST /motion/trajectory_runs` | `motion.play(trajectory)` | Validated timed pose data; one native trajectory submission. | 2 |
+| `GET /motion/postures`; `POST /motion/posture_changes` | `motion.postures()`, `.posture(name, speed=...)` | Discover postures separately from commands to move to them; speed fraction in (0, 1]. | 2 |
 | `POST /motion/moves` | `motion.move(x=..., y=..., yaw=..., speed=...)` | Finite displacement relative to robot pose at execution start; meters/radians. | 3 |
 | `PUT /motion/velocity` | `motion.set_velocity(x=..., y=..., yaw=..., ttl=...)` | Physical velocity setpoint with short expiry; never normalized joystick values. | 3 |
 | `POST /motion/stop` | `motion.stop(scope="locomotion")` | Priority stop, scope `locomotion` or `all`; reports confirmed/uncertain stop. | 1 diagnostic; 2–3 full |
-| `GET /motion/odometry` | `motion.odometry()` | Planar pose, measured velocity, origin, timestamps and quality. | 3 |
+| `GET /state?include=motion` | `motion.odometry()` | Select planar pose, measured velocity, origin, timestamps and quality from motion state. | 3 |
 
 The SDK's `motion.head(yaw=..., pitch=..., duration=...)` and `motion.hand(side, openness=..., duration=...)` are thin conveniences over absolute joint commands. Zero means zero, omitted means unchanged. A small discoverable gesture library, including wave and point, arrives in increment 4 as ordinary trajectories/sequences, not special motion machinery.
 
@@ -173,9 +187,15 @@ Reject out-of-range/coupled-joint conflicts and invalid trajectories before disp
 
 `motion.stop` can interrupt work owned by another session: stopping is an explicit operator action. It bypasses normal resource queues and has reserved execution capacity. `scope="all"` requests a supported controlled stop of active motion, not torque removal. It does not claim to be a hardware emergency stop.
 
-Velocity control is one active Operation per owning session. Wire requests carry a client-generated `control_id` and monotonically increasing `sequence`. Sequence zero creates the control; subsequent PUTs return the same operation and update its setpoint/expiry. A missing control with a nonzero sequence is rejected. Retain ended control IDs for the session lifetime: late updates cannot reopen an expired/stopped control. The SDK manages IDs/counters; creating a new control requires a deliberate new application action, never an automatic retry after expiry. Reject out-of-order updates; replaying an update cannot extend its original expiry. Default TTL is 0.5 seconds, maximum 1 second, subject to the increment 3 gate. Session renewal does not renew velocity. Expiry requests a stop and finishes the Operation as `succeeded` with reason `velocity_expired` once stopped; explicit cancellation finishes as `cancelled`. Failure to confirm stop produces `unknown`.
+### Interactive controls: joint targets and base velocity
 
-The optional Python `motion.velocity(...)` context manager refreshes setpoints while its scope is active and stops on exit. Raw `set_velocity` is one update only. The watchdog must run independently of SSE and blocked command workers. It protects against application-to-bridge loss while the bridge can reach the robot; bridge-to-robot loss or a bridge crash cannot guarantee a stop. Default Wanderer examples use bounded finite moves. Enable continuous control only after measured expiry/stop tests and document the remaining failure boundary.
+Both setpoint routes use `control_id`, monotonic `sequence`, and `ttl`. Sequence zero creates an owned control Operation; subsequent PUTs update it and return the same Operation. A missing control with a nonzero sequence is rejected. Joint controls fix their joint set at creation; each update contains a full target for that set, avoiding ambiguous partial-update loss. Disjoint joint controls may coexist; locomotion has only one owner. Continuous controls do not create an operation per update.
+
+Pending setpoints use a bounded latest-value slot per control, not a FIFO that executes stale targets after the UI moves on. Validate every update before replacement; the agent checks generation, sequence, range, and remaining expiry again before native dispatch. Acknowledgement means accepted target, not reached target. Retain ended IDs for the session lifetime so late updates cannot reopen them. The SDK manages IDs/counters; a new control requires deliberate application action. Duplicate/out-of-order updates never extend expiry. Default TTL is 0.5 seconds, maximum 1 second, subject to the relevant hardware gate; session renewal does not renew a setpoint.
+
+Joint updates map to native nonblocking target setting with a speed fraction. On expiry/cancel, reject further targets and request a verified controlled hold of the owned joints, without removing stiffness or restoring an old pose. The adapter must establish the supported hold mechanism on each robot before advertising the control. If it cannot confirm the hold, report `unknown` and quarantine affected resources. Base-velocity expiry requests a controlled locomotion stop. Confirmed expiry completes with reason `joint_control_expired` or `velocity_expired`; explicit cancellation completes as `cancelled`. Neither control promises an instantaneous physical stop.
+
+Python supplies scoped `motion.joint_control(...)` and `motion.velocity(...)` helpers to manage IDs, refresh while active, and cancel on exit. Raw setters send one update only. Agent-side watchdogs run independently of HTTP/SSE, media, and ordinary command workers; loss of the modern API process/IPC heartbeat also triggers stop/hold attempts. Loss of the agent, entire container, or robot network cannot guarantee a physical stop. Default Wanderer examples use bounded finite moves. Enable continuous controls only after their measured expiry/stop gates pass.
 
 ### Trajectories and pose capture
 
@@ -207,7 +227,7 @@ Each used joint has its own timeline, formed from frames that mention it. Its fi
 | `POST /speech/utterances` | `speech.say(text, language=..., animated=False, ...)` | Per-utterance language, volume, rate, voice where available; plain speech by default. | 1 basic; 4 options |
 | `POST /speech/listeners`; `GET /speech/listeners/{id}`; `POST /speech/listeners/{id}/stop` | `speech.listen(vocabulary=..., language=...)` | Vocabulary recognition activity, confidence threshold and pause-during-speech policy. | 2 |
 | `PATCH /speech/listeners/{id}` | `listener.configure(...)` | Pause/resume or replace vocabulary using backend-safe configuration transitions. | 2 |
-| `GET /lights`; `GET /lights/state`; `POST /lights/transitions` | `lights.groups()`, `.state()`, `.set(...)` | Discover groups and RGB/mono support; brightness/color with fade duration. | 4 |
+| `GET /lights`; `GET /state?include=lights`; `POST /lights/transitions` | `lights.groups()`, `.state()`, `.set(...)` | Discover groups and RGB/mono support; brightness/color with fade duration. | 4 |
 | `POST /audio/playbacks` | `audio.play(asset_id, volume=...)` | Play validated uploaded audio, cancellable where supported. | 4 |
 
 Speech and playback use the same output resource when the backend cannot mix them predictably. Speech recognition is vocabulary recognition, not promised general transcription. Conflicting listener configurations return 409; identical configurations can share a native producer. Each listener's events carry its ID and hypotheses with confidence values. Confidence is backend evidence, not a calibrated probability.
@@ -220,7 +240,7 @@ Lights expose measured/read-back channel state where available, otherwise `quali
 
 | HTTP surface | Python surface | Contract | Increment |
 | --- | --- | --- | --- |
-| `GET /sensors`; `GET /sensors/state` | `sensors.list()`, `.state(...)` | Touch, bumpers, sonar, battery, inertial data, foot contact/pressure, and joint temperature where available. | 2 touch/battery; 3 remainder |
+| `GET /sensors`; `GET /state?include=sensors` | `sensors.list()`, `.state(...)` | Touch, bumpers, sonar, battery, inertial data, foot contact/pressure, and joint temperature where available. | 2 touch/battery; 3 remainder |
 | `POST /vision/observers`; `GET /vision/observers/{id}`; `POST /vision/observers/{id}/stop` | `vision.observe(faces=True, people=False, landmarks=False)` | Explicit managed producer for common detections; requested camera/rate negotiated. | 3 faces; 4 people/landmarks |
 | `POST /vision/trackers`; `GET /vision/trackers/{id}`; `POST /vision/trackers/{id}/stop` | `vision.track(target="face")` | Optional head-only tracking; no implicit locomotion. | 4 |
 
@@ -255,10 +275,10 @@ Assets use opaque IDs, declared content type, byte count, checksum, creation/exp
 
 | HTTP surface | Python surface | Contract | Increment |
 | --- | --- | --- | --- |
-| `GET /autonomy`; `POST /autonomy/transitions` | `autonomy.state()`, `.configure(...)` | Observed life state and discovered ability controls; explicit transition Operation. | 2 minimal manual control; 4 complete |
-| `GET /autonomy/profiles`; `POST /autonomy/profiles` | `autonomy.profiles()`, `.apply(profile, ...)` | Named, inspectable setting bundles with per-setting application results. | 4 |
+| `GET /state?include=autonomy`; `POST /autonomy/transitions` | `autonomy.state()`, `.configure(...)` | Observed life state; available ability controls are in capabilities; explicit transition Operation. | 2 minimal manual control; 4 complete |
+| `GET /autonomy/profiles`; `POST /autonomy/profile_applications` | `autonomy.profiles()`, `.apply(profile, ...)` | Named, inspectable setting bundles with per-setting application results. | 4 |
 | `GET /behaviors`; `POST /behaviors/runs` | `behaviors.list()`, `.run(name)` | Run already-installed behavior/animation by discovered name; normal Operation/cancellation. | 4 |
-| `GET /motion/gestures`; `POST /motion/gestures` | `motion.gestures()`, `.gesture(name, ...)` | Small built-in library, hardware requirements and affected resources declared. | 4 |
+| `GET /motion/gestures`; `POST /motion/gesture_runs` | `motion.gestures()`, `.gesture(name, ...)` | Small built-in library, hardware requirements and affected resources declared. | 4 |
 
 Autonomous life state, individual autonomous abilities, animated speech, and speech-recognition expression are distinct settings. Discovery says which controls exist. `autonomy.configure` and profiles reserve affected resources before transitions that can stop other work. Preserve native fall/collision/thermal protections; do not equate disabling spontaneous behavior with disabling safeguards.
 
@@ -273,11 +293,11 @@ Apply profiles strictly by default: validate required settings first and fail if
 ### Subscription lifecycle
 
 - `GET /events/types` lists documented normalized event types and their schemas/support.
-- `POST /events/subscriptions` creates a session-owned subscription with exact event names, optional entity filters, and sample requests. Returns 201 with its ID, accepted rates, producer readiness, replay limits, and `stream_url`.
+- `POST /events/subscriptions` creates a session-owned subscription with exact event names, optional entity filters, and sample requests. Returns 201 with its ID, accepted rates, producer readiness, queue limits, `replay_supported: false`, and `stream_url`.
 - `GET /events/subscriptions/{id}` exposes status; `GET /events/subscriptions/{id}/stream` opens SSE; `DELETE /events/subscriptions/{id}` releases it. To change filters, create a replacement subscription before closing the original.
 - Subscriptions survive temporary stream disconnects while their session lease is valid. Only one active stream per subscription is allowed; two consumers create two subscriptions and independently receive matching events.
-- On creation, start collecting live events before sampling initial state. Emit `stream.ready`, initial `state.sample` messages, then buffered live events. Snapshot and events are not atomic; include times/cursors so clients can reconcile them. Initial state does not fabricate historic touch edges.
-- Assign subscription cursor IDs when assembling this ordered output, including initial messages; preserve the original receipt/source timestamps of buffered events. Subsequent delivery/replay never changes an event's ID.
+- On stream attachment, establish bounded live-event collection, then emit `stream.ready`, fresh or explicitly stale/unavailable initial samples, and buffered events from that attachment. A reattachment also emits `stream.reset` before samples. Snapshot and events are not atomic; preserve acquisition/receipt times. Initial state does not fabricate historic touch edges.
+- Assign opaque event IDs in output order, including initial messages; preserve original receipt/source timestamps of buffered events. IDs support correlation/deduplication, not historical replay.
 - Keep native callbacks short: copy/normalize payload and enqueue. Dispatch commands outside callback threads. Reference-count native registrations; removing one consumer must not unsubscribe another.
 
 Example creation body:
@@ -295,11 +315,11 @@ SSE uses UTF-8 `text/event-stream`, no intermediary buffering/cache, and comment
 ```text
 id: bridge-a:sub-b:42
 event: touch.changed
-data: {"id":"bridge-a:sub-b:42","type":"touch.changed","schema_version":"1.0","robot_id":"nao-1","connection_generation":3,"received_at":"2026-11-06T10:00:00Z","source_time":null,"data":{"sensor":"touch.head.front","pressed":true}}
+data: {"id":"bridge-a:sub-b:42","type":"touch.changed","schema_version":"1.0","robot_id":"nao-1","bridge_instance_id":"bridge-a","connection_generation":3,"bridge_time_ms":12505,"received_bridge_time_ms":12500,"received_at":"2026-11-06T10:00:00Z","source_time":null,"data":{"sensor":"touch.head.front","pressed":true}}
 
 ```
 
-The cursor is opaque and ordered within one subscription, not a global ordering of physical robot events. Each envelope also carries relevant `operation_id` or activity ID when known. Keep payload types intact; do not convert arbitrary native data into strings.
+The ID is opaque and scoped to a subscription, not a global ordering of physical robot events. Each envelope also carries relevant `operation_id` or activity ID when known. Keep payload types intact; do not convert arbitrary native data into strings.
 
 ### Event catalog
 
@@ -320,17 +340,15 @@ The cursor is opaque and ordered within one subscription, not a global ordering 
 
 Thresholds are optional subscription fields: sensor, enter/exit values, and comparison direction. Validate hysteresis and report both crossings; otherwise clients derive policy from sampled sensors. A sonar threshold is an observation aid, not a collision-prevention guarantee.
 
-### Reconnect, replay, and pressure
+### Reconnect, gaps, and pressure
 
-Use `Last-Event-ID` to resume within a retained subscription. Bound replay by both bytes and count/time; starting target is 60 seconds, at most 1,000 discrete events and 1 MiB per subscription, whichever limit is reached first. Heartbeats have no ID. Cap total subscriptions/aggregate memory. Retain lifecycle/sensor-edge events for replay; sampled telemetry is latest-state delivery and is explicitly not fully replayed.
+The first contract has no event-history replay or replay cursor retention. `Last-Event-ID`, if sent by a generic SSE implementation, does not request replay: the server returns `stream.ready` with `replay_supported: false` and `stream.reset` before current samples. Every reattachment to an existing subscription reports a gap, even if no missed event is known. Detached subscriptions do not accumulate historic events. Brief startup buffering on an attached stream is delivery coordination, not a replay log.
 
-Track the issued cursor high-water mark and the last evicted discrete-event cursor separately. A cursor identifying a telemetry sample is still valid for resuming later retained discrete events; omitting old samples alone does not indicate a discrete-event gap. After replay, send a fresh sample with its own acquisition times.
+Slow consumers get coalesced `state.sample` updates with `skipped_samples`. Discrete events must not silently disappear: on queue overflow, close the stream, record the reason, and return a reset on reattachment. If a final reset frame cannot be sent, the client's connection-loss notification still declares continuity lost. A bridge restart or session expiry removes the subscription; 404/410 requires an explicit client gap notification and a new subscription/session as appropriate. A fresh sample cannot recover a missed button press, spoken word, or other transient event.
 
-Slow consumers get coalesced `state.sample` updates with `skipped_samples`. Discrete events must not silently disappear: if their queue overflows, close the stream and remember continuity loss; the next connection receives `stream.reset` and fresh state. A lost/expired cursor similarly resets. After bridge restart or session expiry, the subscription is gone; a 404/410 requires a new subscription and an explicit client gap notification. Do not pretend a fresh feed is continuous.
+Advertise numeric capacity in capabilities. Initial targets, to validate in increment 1: `max_sse_streams=8`, `max_sse_streams_per_session=4`, `max_subscriptions=16`, and per-stream discrete queues bounded by both 256 events and 256 KiB. Include initial-event buffering in these bounds. Reject excess admission with 429 while retaining command/stop capacity. An async server need not allocate a thread per stream, but streams still consume connections, memory, and processing time. Ship measured limits rather than an unspecified promise of being bounded.
 
-Delivery may duplicate events after reconnect. Clients deduplicate by ID; no exactly-once claim. The SDK yields a typed gap/reset notification before resumed samples and never automatically replays an action triggered by a historical event. Applications decide whether replayed touch/voice events are still actionable; the example applications ignore stale action triggers. Mark replay deliveries explicitly.
-
-The SDK reconnects with bounded exponential backoff and jitter while the session remains valid. Operation waiting reconciles through GET while that history is retained; a missing record after restart/expiry does not prove success. Telemetry is suitable for UI and live decisions, not lossless recording; use bridge-side recording for that purpose. Each robot has its own stream and clocks; a multi-robot client receives no implied global timestamp ordering.
+Clients retain bounded ID deduplication, handle reset before delivering new samples to application logic, and ignore stale action triggers. The SDK reconnects with bounded exponential backoff/jitter while the session remains valid. Operation waiting reconciles through GET while history is retained; missing history is not success. Use server-side recordings for retained sample/media data. Each robot has independent clocks; no global timestamp ordering is implied. Historical event replay is deferred beyond these four increments.
 
 ## 7. Sequence composition and Python ergonomics
 
@@ -379,34 +397,20 @@ Joint trajectories use native timing. Parallel speech/light/motion actions start
 
 ## 8. Implementation structure and deployment
 
-```mermaid
-flowchart LR
-    App[Application and optional pure action builder] --> Client[Typed Python client]
-    Other[Future clients or direct HTTP callers] --> HTTP
-    Client --> HTTP[HTTP handlers and schema validation]
-    HTTP --> Domain[Domain services and resource ownership]
-    Domain --> Ops[Operations and bounded workers]
-    Ops --> Adapter[NAOqi service adapters]
-    Adapter <--> Robot[NAO]
-    Adapter --> Hub[Event hub and shared sampling]
-    Domain --> Hub
-    Hub --> SSE[SSE subscriptions]
-    SSE --> Client
-    Adapter --> Assets[Recordings and assets]
-```
+Use two supervised processes in one container: a thin Python 2 NAOqi agent and a modern API process. Modern Python with ASGI is the preferred API runtime, subject to increment 1A packaging/concurrency proof; Rust is a fallback if that proof fails or measured constraints justify it. The [runtime design](runtime-design.md) defines responsibilities, internal protocol, crash behavior, language tradeoffs, and the rationale for retaining HTTP/SSE.
 
-Use Python 2-compatible modules in the server for transport, validation, connection supervision, operations, ownership, events/sampling, media/assets, and domain adapters. Keep native proxies and callback handles inside adapters. Share contract fixtures with the modern Python client; do not share runtime code that forces either interpreter to emulate the other.
+The modern process owns public HTTP/SSE, schemas, sessions, resource arbitration, operations, sequence scheduling, state cache, and recordings/assets. The agent alone owns native SDK connections, callbacks, native handles, common sampling acquisition, last-moment dispatch validation, and expiry/stop enforcement independent of API health. Bulk media cannot block their bounded control channel. Public schemas remain language-neutral regardless of API implementation language.
 
-One process owns each robot's connection, callbacks, sessions, and resource table. Use bounded execution workers and separately bounded stream/media handling. A multi-process WSGI deployment cannot simply duplicate that state. The exact packaged WSGI/thread arrangement is an increment 1 experiment; prove it in the existing Ubuntu/SDK image before selecting it. Preserve Ubuntu's Flask dependency source and inspect the installed version; a requirements pin is not evidence of the running version.
+On robot/agent loss, keep diagnostics available, mark uncertain operations unknown, invalidate old control generations/sessions, and reconcile native handles before permitting affected work. API restart must also fence its former control generation at the agent before enabling new commands. Rebuild capabilities/state after reconnect; never continue scripts or restore actuator setpoints automatically.
 
-Connection supervision reconnects with backoff while serving status. On loss, mark affected operations unknown, stop new robot commands, invalidate old control sessions, notify subscriptions, and discard native handles. Rebuild capabilities and sensor registrations on return. Do not continue scripts or restore actuator setpoints automatically.
-
-Keep one container per robot with configuration for robot address, stable ID, API bind/auth, callback address if needed, data volume, and bounded resource limits. No required MQTT, WebSocket server, database service, or extra container. Optional MQTT export is outside the four increments.
+Keep one container per robot with robot address, stable ID, API/operator auth, callback address if needed, data volume, and numeric resource limits. No required MQTT, WebSocket service, database service, or second container. Preserve the working legacy SDK dependencies during the split; Ubuntu Flask can be removed when it no longer serves HTTP. Do not replace legacy dependencies with unavailable PyPI packages to make the modern process fit.
 
 Require a configured bearer token for non-loopback deployments; permit unauthenticated local development only when explicitly bound to loopback. Serve browser apps from the same origin by default; cross-origin access requires an allowlist. Browser SSE clients use fetch streaming with Authorization, or an authenticated same-origin gateway; do not put long-lived credentials in stream URLs. Native EventSource authentication is not a reason to weaken command authorization. These controls do not replace network isolation of the legacy robot SDK.
 
-Expose `/health/live` for the bridge process and `/health/ready` for configured connection/callback readiness. Record structured logs with request, operation, session, robot, and connection IDs; expose bounded diagnostic counters for active streams, native subscriptions, queue loss, stop latency, and reconnects through authenticated `GET /diagnostics`. Avoid logging media, speech text, tokens, or full event payloads by default.
+Expose `/health/live` for the API process and `/health/ready` for agent/connection/callback readiness. Record structured logs with request, operation, session, robot, process-instance, and connection IDs; expose bounded diagnostic counters for active streams, native subscriptions, queue loss, IPC pressure, stop latency, and reconnects through authenticated `GET /diagnostics`. Avoid logging media, speech text, tokens, or full event payloads by default.
 
 ## 9. Completion standard
 
 The full plan is complete only when every in-scope surface has matching HTTP schema, sync/async client support, examples, documented capability behavior, and integration coverage; the four delivery gates define the actual release evidence. A simulator or fake backend proves contracts and failure handling, not physical behavior. Recorder, Wanderer, and the presentation must work using only the public API, without raw NAOqi or private imports. Direct HTTP/SSE conformance scenarios must demonstrate the same workflows without importing the Python SDK. The published contract, client guide, and fixtures must be sufficient to implement another client independently; no additional language client is required for this release.
+
+As each domain is implemented, move its detailed HTTP/event contracts and examples into living domain references generated or checked against the authoritative schemas. Keep this file focused on design decisions, boundaries, and links to delivered references; do not maintain competing copies of endpoint documentation. Record changes of decision explicitly during the four increments.

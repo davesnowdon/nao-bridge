@@ -8,9 +8,11 @@ Research date: 6 November 2026. These notes preserve findings that informed the 
 - FluentNao is design inspiration, not a dependency or compatibility requirement for the new API.
 - Favor a coherent, learnable surface for common tasks. Do not mirror obscure NAOqi features or add an expert passthrough merely for nominal completeness.
 - Use SSE for events and HTTP for commands. No mandatory MQTT broker or second container; optional MQTT integration can be considered later.
-- Ubuntu's packaged Flask was chosen because the old Python 2 dependencies could no longer be fetched from PyPI. Preserve the working source while validating the runtime; do not infer the deployed version from unused requirements.
+- Ubuntu's packaged Flask was chosen because the old Python 2 dependencies could no longer be fetched from PyPI. Preserve the working SDK environment during the process split; Flask need not remain once the modern process owns HTTP. Do not infer the deployed version from unused requirements.
 - Modern Recorder, Wanderer, and a scripted presentation are the design guides. This task produces documentation, not a feature implementation or an existing-application migration.
 - Future clients, including a possible Rust client for a Tauri Recorder, must be implementable from the language-neutral HTTP/SSE contract and fixtures. Python is the first implementation, not the definition of the protocol. No additional client is part of the four delivery increments.
+- Split a thin Python 2 native agent from the modern API within one container. Prefer modern Python/ASGI, with packaging proof and a Rust fallback in increment 1A; see the [runtime design](runtime-design.md) for evidence and tradeoffs.
+- Keep SSE after reconsidering modern WebSocket support. Historical event replay and public advance session reservations are deferred. Retain recordings/assets and server-side sequence composition; add interactive joint controls, targeted replacement, and explicit operator recovery.
 
 ## Current bridge: observations and implications
 
@@ -76,7 +78,7 @@ The bundled SDK identifies a 2.1-era runtime; later documentation shows useful c
 
 | Primary source | Relevant fact and consequence |
 | --- | --- |
-| [Joint control, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/motion/control-joint-api.html) | Timed multi-joint interpolation accepts angle/time arrays and an absolute flag. Compile trajectories into native calls instead of pacing them with HTTP. |
+| [Joint control, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/motion/control-joint-api.html) | Timed interpolation supports whole trajectories; nonblocking `setAngles` supports interactive targets with a speed fraction. Both need distinct lifecycle/expiry behavior. |
 | [Motion information, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/motion/tools-general-api.html) | Body names, limits, and robot configuration support runtime joint discovery. |
 | [Stiffness, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/motion/control-stiffness-api.html) | Wake/rest and stiffness are distinct controls; recording needs explicit stiffness handling. |
 | [Locomotion, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk-api.html) | Physical velocity, normalized velocity, and finite displacement are different native APIs. The public API chooses physical units and finite movement, with explicit expiry for velocity. |
@@ -88,6 +90,6 @@ The bundled SDK identifies a 2.1-era runtime; later documentation shows useful c
 | [Speech recognition, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/audio/alspeechrecognition-api.html) | Vocabulary/configuration, activation, and recognized-word events form a managed listener, not general transcription. |
 | [Video device, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/vision/alvideodevice-api.html) | Camera subscriptions have lifecycle/settings and image metadata. They require resource cleanup and capability-aware sharing. |
 | [LEDs, NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/sensors/alleds-api.html) | Groups, channels, read-back, and fade operations support a coherent lights domain. |
-| [WHATWG server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html) | SSE supplies framing and reconnect cursors; retention/replay/fan-out/cleanup remain application responsibilities. Python clients need explicit reconnect logic. |
+| [WHATWG server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html) | SSE supplies framing and reconnection fields, not automatic history retention. This plan deliberately sends gaps/current state instead of replay; clients need explicit reconnect logic. |
 
 These are design inputs, not a promise to wrap every method on those pages. Hardware tests remain necessary for callback networking, cancellation, autonomy effects, sample rates, and media compatibility.
