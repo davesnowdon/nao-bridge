@@ -106,6 +106,11 @@ make check             # lint, types, server/client tests, socket conformance
 make test-container    # production image, offline SDK callbacks and agent faults
 ```
 
+For a real robot, use the [hardware acceptance guide](docs/hardware-acceptance.md)
+and [results checklist](docs/hardware-acceptance-checklist.md). The guided runner
+checks speech and head touch over HTTP/SSE and saves evidence; read-only preflight
+is the default, and speech tests require `--mode exercise --allow-speech`.
+
 uv manages project runtimes and dependencies; manual Python installations are not
 required. Local server development uses Python 3.12; the image carries pinned
 Python 3.13 and a private Python 2/SDK bundle. Legacy library paths are confined to
