@@ -2,6 +2,8 @@
 
 Status: planned architecture, 6 November 2026. The process split is the target architecture. Modern Python is the preferred API implementation; the build and hardware experiments in delivery increment 1A must establish a reproducible deployment before broad implementation begins. No runtime changes are implemented by these documents.
 
+The [container experiment](runtime-experiment.md) now provides executable packaging and IPC evidence for Linux amd64. It exercises the complete pinned candidate dependency set beside the real SDK; production integration, physical robot behavior, and Apple Silicon acceptance remain separate gates.
+
 ## Two processes, one container
 
 ```mermaid
@@ -56,6 +58,8 @@ Maintain separate bounded control/response, observation, and bulk-media paths so
 Protocol fixtures must cover version mismatch, partial/malformed frames, unexpected EOF, request timeout after native dispatch, duplicate request IDs, stale generations, saturated queues, and agent restart. Never retransmit uncertain side-effecting native calls merely because an IPC response was lost. Translate ambiguity into the public Operation's `unknown` state.
 
 The API grants bounded control authority tied to the current session/generation. The agent rejects old generations and expired grants before dispatch. Convert API deadlines into agent-local monotonic deadlines through a measured bounded request exchange; do not extend a TTL by a long queue delay or compare unrelated clock origins blindly. The API must retain enough request evidence to reconcile a lost reply while both process instances remain unchanged. This is not durable exactly-once execution across crashes.
+
+For processes in the same Linux container/time namespace, the experiment confirms Python 2 `clock_gettime(CLOCK_MONOTONIC)` and Python 3 `time.monotonic()` share a clock domain. Use that explicit deployment invariant with a handshake sanity check, preserving the original absolute deadline through queues. A future split across clock domains requires measured clock translation instead.
 
 ## Expiry, failures, and recovery
 

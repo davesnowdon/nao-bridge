@@ -23,6 +23,8 @@ The milestones below are work packages, not claims that implementation has start
 
 ### 1A. Prove the runtime and network path
 
+Progress: [the container experiment](runtime-experiment.md) proves the pinned modern stack, local native SDK IPC, fault handling, and initial load target on Linux amd64. It is an isolated feasibility harness. Physical touch/service cancellation, production supervision/reconciliation, and Apple Silicon Docker Desktop remain open; 1A is not fully closed.
+
 1. Establish the existing SDK-container baseline and record interpreter, native-library, and system-package versions. Preserve its working dependency sources; do not assume obsolete PyPI pins are installable.
 2. Package a thin Python 2 agent beside an isolated modern Python/ASGI process in one container, with pinned runtime/build inputs and dependencies. Prove interpreter, library-path, TLS, and compiled-extension compatibility. A relocatable runtime is the first candidate; a fully static interpreter cannot be assumed to support the needed extension modules.
 3. Prove a bounded local protocol carrying one command, native task result, touch notification, and independent stop/heartbeat path. Kill each process separately and block an ordinary native call to verify the proposed failure boundary before building the full API. Test a separate bulk-transfer path so media cannot starve control.
