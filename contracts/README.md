@@ -4,7 +4,11 @@ The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.
 and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
 serves these exact files at `/api/openapi.json` and `/api/schemas.json`. OpenAPI's
 server prefix is `/api`; its paths omit that prefix. `/health/live`, `/health/ready`
-and `/docs` are infrastructure routes outside that prefix. Protected routes accept
+and `/docs` are infrastructure routes outside that prefix. `/` redirects to the
+bundled Swagger UI at `/docs`. Documentation, its assets, the two static contract
+files and liveness are public so browsers can load the UI before authorization;
+robot data, commands and readiness retain their authentication requirements.
+Protected routes accept
 `Authorization: Bearer …`; owned routes also require `X-Session-ID`.
 
 CI publishes the schemas, this directory's fixtures and the client lifecycle guide

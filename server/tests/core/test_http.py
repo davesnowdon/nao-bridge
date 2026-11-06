@@ -213,3 +213,39 @@ async def test_session_creation_retry_and_resource_limits(rig):
         response = await client.post("/api/sessions", json={})
         assert response.status_code == 429
         assert response.headers["retry-after"] == "1"
+
+
+async def test_browser_docs_bootstrap_without_token_and_api_stays_protected(rig):
+    async with rig() as (client, core, backend):
+        client.headers.pop("Authorization")
+        root = await client.get("/")
+        assert root.status_code == 307 and root.headers["location"] == "/docs"
+        docs = await client.get("/docs")
+        assert docs.status_code == 200
+        assert 'url: "/api/openapi.json"' in docs.text or "url: '/api/openapi.json'" in docs.text
+        assert "https://" not in docs.text
+        assert '"validatorUrl": null' in docs.text
+        assert '"persistAuthorization": false' in docs.text
+        for name, content_type in [
+            ("swagger-ui-bundle.js", "text/javascript"),
+            ("swagger-ui.css", "text/css"),
+        ]:
+            asset = await client.get("/docs/" + name)
+            assert asset.status_code == 200 and asset.content
+            assert content_type in asset.headers["content-type"]
+        assert (await client.get("/api/openapi.json")).json() == OPENAPI
+        assert (await client.get("/api/schemas.json")).json() == SCHEMAS
+        for path in ("/api/robot", "/api/state", "/health/ready", "/docs/private"):
+            assert (await client.get(path)).status_code == 401
+        assert (await client.post("/api/sessions", json={})).status_code == 401
+        assert not backend.calls
+        client.headers["Authorization"] = "Bearer test-client"
+        client.headers["Origin"] = "http://test"
+        _, headers = await new_session(client)
+        response = await client.post(
+            "/api/speech/utterances", json={"text": "Hello from the browser"}, headers=headers
+        )
+        assert response.status_code == 202
+        assert (await wait_operation(client, response.json()["id"], headers))[
+            "status"
+        ] == "succeeded"

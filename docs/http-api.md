@@ -1,5 +1,11 @@
 # Using contract 1.0.0 over HTTP
 
+For interactive requests, open the bridge's `/docs` page (also linked from `/`).
+Swagger UI and all its assets are bundled, including for offline use. Click
+**Authorize** with the configured bearer token, then **Try it out** on an endpoint.
+See the [browser walkthrough](../README.md#explore-the-api-in-a-browser) for sessions
+and command execution.
+
 All commands below target the increment 1 surface. Motion, media and sequence routes
 in the broader API plan are not implemented. The Python client is optional.
 

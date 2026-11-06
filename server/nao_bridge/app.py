@@ -5,13 +5,21 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from html import escape
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.docs import get_swagger_ui_html
 from starlette.exceptions import HTTPException
-from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 
 from .backend import Backend, FakeBackend
 from .config import Settings
@@ -21,6 +29,18 @@ from .errors import BridgeError
 from .events import StreamWriteTimeout
 
 LOG = logging.getLogger(__name__)
+DOC_ASSETS = Path(__file__).parent / "static" / "swagger-ui"
+PUBLIC_PATHS = frozenset(
+    {
+        "/",
+        "/docs",
+        "/docs/swagger-ui-bundle.js",
+        "/docs/swagger-ui.css",
+        "/api/openapi.json",
+        "/api/schemas.json",
+        "/health/live",
+    }
+)
 
 
 def create_app(settings: Settings | None = None, backend: Backend | None = None) -> FastAPI:
@@ -89,11 +109,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                 authenticated = operator or bool(
                     settings.token and hmac.compare_digest(token, settings.token)
                 )
-                if (
-                    settings.token
-                    and not authenticated
-                    and request.url.path not in ("/health/live",)
-                ):
+                if settings.token and not authenticated and request.url.path not in PUBLIC_PATHS:
                     raise BridgeError("unauthenticated", "A valid bearer token is required", 401)
                 request.state.operator = operator
                 request.state.owner = (
@@ -202,21 +218,31 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     async def schemas() -> dict[str, Any]:
         return SCHEMAS
 
+    @app.get("/")
+    async def index() -> RedirectResponse:
+        return RedirectResponse("/docs")
+
+    @app.get("/docs/swagger-ui-bundle.js")
+    async def docs_script() -> FileResponse:
+        return FileResponse(DOC_ASSETS / "swagger-ui-bundle.js", media_type="text/javascript")
+
+    @app.get("/docs/swagger-ui.css")
+    async def docs_style() -> FileResponse:
+        return FileResponse(DOC_ASSETS / "swagger-ui.css", media_type="text/css")
+
     @app.get("/docs", response_class=HTMLResponse)
-    async def docs() -> str:
-        rows = "".join(
-            (
-                f"<li><code>{verb.upper()} /api{escape(path)}</code> — "
-                f"{escape(item['operationId'])}</li>"
-            )
-            for path, methods in OPENAPI["paths"].items()
-            for verb, item in methods.items()
-        )
-        return (
-            '<!doctype html><html lang="en"><meta charset="utf-8"><title>NAO Bridge API</title>'
-            "<h1>NAO Bridge API 1.0</h1><p>HTTP commands and SSE events. "
-            'Robot hardware acceptance is pending.</p><p><a href="/api/openapi.json">OpenAPI</a> · '
-            '<a href="/api/schemas.json">Payload schemas</a></p><ul>' + rows + "</ul></html>"
+    async def docs() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url="/api/openapi.json",
+            title="NAO Bridge API",
+            swagger_js_url="/docs/swagger-ui-bundle.js",
+            swagger_css_url="/docs/swagger-ui.css",
+            swagger_favicon_url="data:,",
+            swagger_ui_parameters={
+                "validatorUrl": None,
+                "persistAuthorization": False,
+                "displayRequestDuration": True,
+            },
         )
 
     @app.get("/api/robot")

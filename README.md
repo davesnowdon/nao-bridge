@@ -26,7 +26,7 @@ uv run --project server nao-bridge --backend fake
 
 The fake backend serves the API on `127.0.0.1:3000`. It simulates speech and sampled
 head touch state. Tests inject touch edges; the standalone fake backend does not
-invent user touches. Browse `http://127.0.0.1:3000/docs` for the route index. No token
+invent user touches. Browse `http://127.0.0.1:3000/` for interactive Swagger UI. No token
 is required for this default loopback-only development configuration.
 
 ```bash
@@ -65,6 +65,26 @@ restarts a failed agent while retaining API diagnostics.
 To exercise the actual SDK without a robot, use `--backend native-fixture`. This
 registers local fixture services and produces synthetic head touches through the
 real SDK callback path. It is explicitly identified as a fixture in discovery.
+
+## Explore the API in a browser
+
+Open `http://<bridge>:3000/` (or `/docs`). Swagger UI is bundled with the bridge;
+there is no separate download, installation, CDN or internet requirement.
+If authentication is enabled, click **Authorize** and enter the client token
+without the `Bearer ` prefix. Credentials are kept only in the current page.
+
+Expand an endpoint, click **Try it out**, then **Execute**. Start with `GET /robot`.
+For commands, create a session with `POST /sessions` and body `{}`, then copy the
+returned `id` into the `X-Session-ID` header field on command requests. For example,
+call `POST /speech/utterances` with `{"text": "Hello"}` and inspect the returned
+operation with `GET /operations/{operation_id}`. Renew the session before its
+advertised lease expires, or create a new one. Requests act on the configured
+backend; use `--backend fake` to experiment without a robot.
+
+The docs, bundled assets and static contract schemas load without authentication;
+robot data and commands still require the configured token. Swagger UI exercises
+ordinary HTTP endpoints; use the Python events example or an SSE client to observe
+live event streams (Swagger UI does not display events as they arrive).
 
 ## Use the Python client
 

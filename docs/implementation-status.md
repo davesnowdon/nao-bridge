@@ -23,6 +23,8 @@ Every discovery response reports `hardware_verified: false`.
 - `Nao` and `AsyncNao`: matching domain helpers, independent renewal/readers, typed
   errors, wait/cancel, explicit ambiguous-request retry, reconnect/deduplication and
   bounded queues. The sync facade delegates transport/lifecycle to the async core.
+- Bundled offline Swagger UI at `/docs`, with `/` redirect, bearer authorization
+  and public static schemas; robot endpoints retain token checks.
 - Replaced v1 entry points/docs; two-observer event examples, optional speech on
   touch, and SDK-independent HTTP walkthrough/conformance runner.
 
@@ -38,9 +40,11 @@ On Linux amd64, 6 November 2026:
 
 | Verification | Result |
 | --- | --- |
-| Server/core/socket tests | 43 passed: handlers, auth, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure and agent fences |
+| Server/core/socket tests | 44 passed: handlers, auth, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure and agent fences |
 | Client parser tests | 23 passed: UTF-8/chunk/CRLF boundaries, comments, multiline data, unknown events, malformed IDs/payloads/numbers and byte bounds |
 | Modern server/client type checks | Passed |
+| Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, bearer authorization, robot discovery, session creation and speech submission; token cleared on reload |
+| Server distribution build | Passed; wheel includes canonical schemas, Swagger UI assets and license notices |
 | Production Docker build | Passed from pinned Ubuntu 24.04 and immutable legacy donor; locked wheels and checked Python archive |
 | Native fixture conformance | Passed: discovery → session → speech/idempotency → touch SSE → reconnect reset → cleanup using actual bundled qi calls/signals |
 | Native fixture at eight SSE streams | Five HTTP command admissions: 10.85, 11.03, 10.84, 11.22, 11.45 ms; all under the 250 ms target |
