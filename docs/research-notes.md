@@ -2,9 +2,9 @@
 
 Research date: 6 November 2026. These notes preserve findings that informed the [API plan](api-plan.md), not an exhaustive code tour. The [delivery plan](delivery-plan.md) contains unresolved experiments and verification gates.
 
-## User decisions
+## Design decisions
 
-- No current compatibility obligation beyond Dave and one beta tester; old routes/client behavior and FluentNao semantics may be replaced.
+- No compatibility obligation to the old routes/client behavior or FluentNao semantics; these may be replaced.
 - FluentNao is design inspiration, not a dependency or compatibility requirement for the new API.
 - Favor a coherent, learnable surface for common tasks. Do not mirror obscure NAOqi features or add an expert passthrough merely for nominal completeness.
 - Use SSE for events and HTTP for commands. No mandatory MQTT broker or second container; optional MQTT integration can be considered later.
@@ -38,17 +38,7 @@ The old [head handler](../server/nao_bridge/nao_bridge_api.py) passes requested 
 | pitch +5 degrees | HeadPitch −43 degrees |
 | yaw/pitch zero | No head command |
 
-This is a software target-construction defect independent of autonomous life. It supports absolute joint targets with explicit units and regression cases for zero/omitted axes. It does not prove which deployed image the beta tester ran or exactly what their robot executed.
-
-## Beta report: separate observations from explanations
-
-Source supplied by Dave: `~/Downloads/NAO_Bridge_Power_Explainer_Status_Report_Updated_1_Jan_2026.md`, dated 1 January 2026, Stephen J. Perkins's presentation work with Roy, a NAO v6, using Docker on Apple Silicon.
-
-Reported observations: a roughly three-minute speech script completed; head turns were exaggerated; expected LEDs were not visibly reflected; the robot sometimes sat during performance; two attempted endpoint paths returned 405. The report attributes these symptoms broadly to autonomous behavior, but those causes are not all established.
-
-The attempted `/autonomous-life/set` and `/motion/wake` routes differ from the implemented old `/api/v1/robot/autonomous_life/state` and `/api/v1/robot/wake`. Wake/rest/stiffness/autonomy routes were in repository history before the report. A 405 on a different path is not evidence that the intended capability was absent from every bridge build.
-
-The head defect above supplies a separate plausible cause of exaggerated movement. LED/posture causes and the report's boot-setting conclusions still require reproduction on a recorded image/firmware with actual settings read back. The new API should expose capabilities, absolute targets, operation outcomes, and individual autonomy settings so applications can diagnose this instead of inferring success from HTTP 200.
+This is a software target-construction defect independent of autonomous life. It supports absolute joint targets with explicit units and regression cases for zero/omitted axes. Hardware acceptance must distinguish requested targets, measured motion, and autonomous behavior instead of inferring physical success from an HTTP acknowledgement.
 
 ## FluentNao upstream
 
@@ -70,13 +60,13 @@ Source: [Nao implementation](https://github.com/dnajd/FluentNao/blob/55899a65ec8
 
 ### Recorder
 
-Inspected `../nao-recorder/src/main/python/recorder/core.py`, its UI/README, and `src/main/python/translators/json/core.py`. It captures measured joint angles and stiffness, selectively relaxes/stiffens chains, saves timed pose changes, and uses touch/vocabulary events to control recording. It suppresses input subscriptions during script playback. It also manages autonomous-life state around a session.
+NAO Recorder captures measured joint angles and stiffness, selectively relaxes/stiffens chains, saves timed pose changes, and uses touch/vocabulary events to control recording. It suppresses input subscriptions during script playback. It also manages autonomous-life state around a session.
 
 The transferable requirements are discovery instead of a hardcoded joint array, timestamped measured pose capture, per-chain stiffness, independent event consumers, listener pause/resume, and native trajectory playback. Timeline editing, formats unrelated to the new API, UI state, and undo belong to the application. A continuous recording needs loss/gap metadata that a live viewer alone cannot supply.
 
 ### Wanderer
 
-Inspected both `../nao-wanderer/wanderer/` and `../nao-wanderer/wanderer2/`, especially the latter's planner/executor, robot state, grid mapping, and Choregraphe `behavior.xar` wiring. It combines sonar/bumper events and readings with robot position, finite/continuous walking, completion callbacks, face observations, photos, and application-owned maps/history. Its position helper uses a torso pose in the NAOqi world frame; do not silently equate that with a new planar base-odometry contract.
+NAO Wanderer combines sonar/bumper events and readings with robot position, finite/continuous walking, completion callbacks, face observations, photos, and application-owned maps/history. Its position helper uses a torso pose in the NAOqi world frame; do not silently equate that with a new planar base-odometry contract.
 
 The bridge should provide observations with declared frames/origins and acquisition skew, common detections, finite movement, cancellable operations, and explicit stop/velocity-expiry behavior. Grid mapping, route selection, behavior planning, and the application's event/state store stay outside the bridge. Its old use of ALMemory as an application bus is not a requirement to expose arbitrary memory writes.
 
@@ -101,9 +91,3 @@ The bundled SDK identifies a 2.1-era runtime; later documentation shows useful c
 | [WHATWG server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html) | SSE supplies framing and reconnect cursors; retention/replay/fan-out/cleanup remain application responsibilities. Python clients need explicit reconnect logic. |
 
 These are design inputs, not a promise to wrap every method on those pages. Hardware tests remain necessary for callback networking, cancellation, autonomy effects, sample rates, and media compatibility.
-
-## Lithos context
-
-Project context note: `15e857a2-f283-4949-b1fb-9aae91c81a42`, path `projects/nao-bridge/nao-bridge-project-context.md`. The SSE decision is recorded there and in event task `7c077b48-8236-4def-b371-0b96b88ef311`. The [delivery plan](delivery-plan.md#existing-lithos-backlog) maps the older backlog to the replacement design.
-
-The old context note describes eliminating the security risk of legacy Python. Containerization isolates deployment dependencies; it does not eliminate the risk of a legacy interpreter, libraries, or robot-side services. Treat that sentence as an old aspiration, not a verified property of the project.

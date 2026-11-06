@@ -1,6 +1,6 @@
 # NAO Bridge API plan
 
-Status: implementation plan, 6 November 2026. The direction reflects Dave's decisions; numerical defaults and hardware-dependent details below are design targets to validate during delivery. None of the new endpoints or examples in this document is implemented yet.
+Status: implementation plan, 6 November 2026. Numerical defaults and hardware-dependent details below are design targets to validate during delivery. None of the new endpoints or examples in this document is implemented yet.
 
 Read alongside the [delivery plan](delivery-plan.md), [client contract guide](client-contract.md), and [research evidence](research-notes.md).
 
@@ -295,7 +295,7 @@ SSE uses UTF-8 `text/event-stream`, no intermediary buffering/cache, and comment
 ```text
 id: bridge-a:sub-b:42
 event: touch.changed
-data: {"id":"bridge-a:sub-b:42","type":"touch.changed","schema_version":"1.0","robot_id":"roy","connection_generation":3,"received_at":"2026-11-06T10:00:00Z","source_time":null,"data":{"sensor":"touch.head.front","pressed":true}}
+data: {"id":"bridge-a:sub-b:42","type":"touch.changed","schema_version":"1.0","robot_id":"nao-1","connection_generation":3,"received_at":"2026-11-06T10:00:00Z","source_time":null,"data":{"sensor":"touch.head.front","pressed":true}}
 
 ```
 

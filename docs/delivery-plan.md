@@ -164,7 +164,7 @@ Live bidirectional audio streaming, optional MQTT, advanced navigation/manipulat
 ### Exit gate
 
 - A presentation combines plain speech, a wave, and eye lighting, and exposes actual child completion. Invalid/conflicting scripts fail before motion; partial failures and cancellation do not masquerade as rollback or success.
-- Inspect the beta tester's head/LED/posture symptoms independently on a known image/robot. Record settings, measured head targets, and observed posture/lights; do not attribute all deviations to autonomous life by assumption.
+- Verify head targets, light transitions, and posture during a presentation on a known image/robot. Record settings and measured/observed outcomes; distinguish software target errors from autonomous behavior.
 - Restore-on-close only restores still-owned, unchanged settings on the same connection generation. External changes and reconnect are tested. Stiffness is never silently removed on cleanup.
 - Run a 30-minute mixed workload with events, a slow observer, recordings/previews, and finite commands. Record bounded memory/worker counts, native subscription cleanup, asset quotas, and continued command/stop responsiveness.
 - Validate recording stop/finalization, partial assets, download integrity, session expiry, storage exhaustion, and incompatible camera/audio configurations.
@@ -185,26 +185,6 @@ Use three complementary layers:
 Existing client tests are not evidence for these new contracts. New server tests must invoke production handlers/adapters, not locally reimplemented validation functions. Keep a minimal hardware checklist and result record per increment; hardware tests must be deliberately invoked and must state their expected motion.
 
 At the end of each increment, update the capability matrix and runnable docs to what actually ships. Run lint/type checks on the modern client, appropriate Python 2 checks in the container, contract/integration tests, and the increment's hardware checklist. There is no requirement to add speculative tests for features not yet delivered.
-
-## Existing Lithos backlog
-
-The 6 November 2026 read found 36 open tasks via both `project:nao-bridge` and `metadata.project = nao-bridge`, with no active claims. Many were imported from older notes and describe the previous architecture. This documentation does not complete, cancel, or authorize autonomous execution of those tasks.
-
-| Existing task prefix | How it relates to this plan |
-| --- | --- |
-| `18a14407` broader NAOqi coverage | This plan refines the goal to common coherent capabilities, not complete SDK coverage. |
-| `7c077b48` event handling; `a03810d9` connection handling | Increment 1; SSE is already recorded as the transport choice. |
-| `8a72ce77`, `9cb738ae`, `f19bb5ea`, `0be75a28`, `ead2aa9a` MQTT work | Superseded as the default event implementation; optional future integration only. |
-| `22eb0d38` joint subscriptions; `a6c33b1b` Recorder rewrite | Increment 2 supplies the foundation/reference example; a complete standalone Recorder product remains separate work. |
-| `35c1c85a` FluentNao JSON scripts | Replace with the new finite sequence/trajectory formats in increments 2 and 4. |
-| `49166d60` LEDs; `44cb372d` beta feedback | Increment 4 completion, with the head regression addressed in increment 2. |
-| `92e74c57` video streaming; `87dc4b36` audio streaming | Increment 4 preview/recording/playback; general live duplex audio remains deferred. |
-| `50010514` and old endpoint verification children | Reuse the behavioral concerns as new acceptance tests; do not recreate obsolete routes. |
-| `98913a80`, `dd58666a` architecture research | Evidence is captured in the research notes; runtime/hardware questions remain. |
-| `784c7a3a` automatic Docker startup | Outside this API release. |
-| `868613c3` Dramatibot; publication/demo tasks | Potential consumers and follow-up work, not release gates. |
-
-When implementation tasks are created, use these four increments as epics and represent real prerequisite edges. Reconcile imported tasks explicitly rather than silently completing them because a design document now exists.
 
 ## Decisions to resolve with experiments
 
