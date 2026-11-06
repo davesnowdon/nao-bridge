@@ -18,7 +18,7 @@ def test_canonical_contract_schemas():
     assert canonical(True) != canonical(1)
 
 
-async def test_discovery_state_and_origins(rig):
+async def test_discovery_state(rig):
     async with rig() as (client, core, backend):
         for path, schema in [
             ("/api/robot", "Robot"),
@@ -29,9 +29,6 @@ async def test_discovery_state_and_origins(rig):
             response = await client.get(path)
             assert response.status_code == 200, response.text
             VALIDATORS[schema].validate(response.json())
-        assert (
-            await client.get("/api/robot", headers={"Origin": "https://evil.example"})
-        ).status_code == 403
         response = await client.get("/api/robot/diagnostics")
         VALIDATORS["Diagnostics"].validate(response.json())
         assert (await client.get("/api/state?include=unknown")).status_code == 400
@@ -232,3 +229,35 @@ async def test_browser_docs_and_requests_work_without_setup(rig):
         assert (await wait_operation(client, response.json()["id"], headers))[
             "status"
         ] == "succeeded"
+
+
+@pytest.mark.parametrize("origin", ["http://localhost:5173", "https://recorder.example", "null"])
+async def test_browser_apps_need_no_origin_configuration(rig, origin):
+    async with rig() as (client, core, backend):
+        client.headers["Origin"] = origin
+        preflight = await client.options(
+            "/api/speech/utterances",
+            headers={
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Private-Network": "true",
+                "Access-Control-Request-Headers": "content-type,x-session-id,idempotency-key",
+            },
+        )
+        assert preflight.status_code == 200
+        assert preflight.headers["access-control-allow-origin"] == "*"
+        assert preflight.headers["access-control-allow-private-network"] == "true"
+        assert "POST" in preflight.headers["access-control-allow-methods"]
+        assert "x-session-id" in preflight.headers["access-control-allow-headers"]
+        _, headers = await new_session(client)
+        response = await client.post(
+            "/api/speech/utterances", json={"text": "New browser app"}, headers=headers
+        )
+        assert response.status_code == 202
+        assert response.headers["access-control-allow-origin"] == "*"
+        assert "Location" in response.headers["access-control-expose-headers"]
+        await wait_operation(client, response.json()["id"], headers)
+        error = await client.post("/api/speech/utterances", json={}, headers=headers)
+        assert error.status_code == 400
+        assert error.headers["access-control-allow-origin"] == "*"
+        assert "X-Request-ID" in error.headers["access-control-expose-headers"]
+        assert "access-control-allow-credentials" not in response.headers

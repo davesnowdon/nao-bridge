@@ -9,7 +9,7 @@ Every discovery response reports `hardware_verified: false`.
 
 - Canonical contract 1.0.0: OpenAPI, named JSON schemas, JSON/SSE fixtures, scenario
   manifests, schema/route parity tests and a conservative compatibility CI guard.
-- Modern ASGI API: origin checks, health/discovery/capabilities, shared head
+- Modern ASGI API: browser CORS support, health/discovery/capabilities, shared head
   touch state with freshness, sessions/renewal/expiry, plain speech, operations,
   cancellation, idempotency, resource conflicts, priority stop and explicit recovery.
 - Process-local operation/session history: uncertain work remains visible while the
@@ -39,10 +39,11 @@ On Linux amd64, 6 November 2026:
 
 | Verification | Result |
 | --- | --- |
-| Server/core/socket tests | 44 passed: handlers, origins, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure and agent fences |
+| Server/core/socket tests | 47 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure and agent fences |
 | Client parser tests | 23 passed: UTF-8/chunk/CRLF boundaries, comments, multiline data, unknown events, malformed IDs/payloads/numbers and byte bounds |
 | Modern server/client type checks | Passed |
 | Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, robot discovery, session creation and speech submission without client setup |
+| Separate browser application in headless Chrome | Passed from a different HTTP origin without bridge configuration: discovery, session creation, speech, SSE stream, response headers and typed errors |
 | Server distribution build | Passed; wheel includes canonical schemas, Swagger UI assets and license notices |
 | Production Docker build | Passed from pinned Ubuntu 24.04 and immutable legacy donor; locked wheels and checked Python archive |
 | Native fixture conformance | Passed: discovery → session → speech/idempotency → touch SSE → reconnect reset → cleanup using actual bundled qi calls/signals |

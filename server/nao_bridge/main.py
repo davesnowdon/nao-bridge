@@ -29,7 +29,6 @@ def main() -> None:
         robot_address=args.robot_address,
         robot_port=args.robot_port,
         robot_id=args.robot_id,
-        origins=tuple(v for v in os.environ.get("NAO_BRIDGE_ORIGINS", "").split(",") if v),
         agent_python=os.environ.get("NAO_AGENT_PYTHON", "/opt/legacy/bin/python2.7"),
         agent_script=Path(os.environ.get("NAO_AGENT_SCRIPT", "/opt/nao-bridge/agent/agent.py")),
     )

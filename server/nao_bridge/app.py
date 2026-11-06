@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from starlette.exceptions import HTTPException
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import (
     FileResponse,
     HTMLResponse,
@@ -67,32 +68,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     @app.middleware("http")
     async def boundary(request: Request, call_next: Any) -> Response:
         request.state.request_id = uuid.uuid4().hex
-        origin = request.headers.get("origin")
-        same_origin = str(request.base_url).rstrip("/")
         try:
-            if origin and origin != same_origin and origin not in settings.origins:
-                raise BridgeError("forbidden", "Origin is not allowed", 403)
-            if request.method == "OPTIONS":
-                if not origin or origin not in settings.origins:
-                    raise BridgeError("forbidden", "Cross-origin access is not configured", 403)
-                response: Response = Response(
-                    status_code=204,
-                    headers={
-                        "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
-                        "Access-Control-Allow-Headers": (
-                            "Content-Type,X-Session-ID,Idempotency-Key,Last-Event-ID"
-                        ),
-                        "Access-Control-Max-Age": "600",
-                    },
-                )
-            else:
-                response = await call_next(request)
-            if origin in settings.origins:
-                response.headers["Access-Control-Allow-Origin"] = origin
-                response.headers["Vary"] = "Origin"
-                response.headers["Access-Control-Expose-Headers"] = (
-                    "Location,X-Request-ID,Retry-After"
-                )
+            response = await call_next(request)
             response.headers["X-Request-ID"] = request.state.request_id
             response.headers["X-Content-Type-Options"] = "nosniff"
             return response
@@ -418,4 +395,12 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
 
     app.add_middleware(StreamWriteTimeout, timeout=settings.sse_write_timeout_seconds)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        allow_private_network=True,
+        expose_headers=["Location", "X-Request-ID", "Retry-After"],
+    )
     return app

@@ -104,7 +104,7 @@ Use `{ "error": { "code", "message", "details", "retryable" }, "request_id" }`. 
 | HTTP | Codes and meaning |
 | --- | --- |
 | 400 | `invalid_request`: schema, units, names, or range validation. |
-| 403 | `forbidden`: session mismatch or disallowed browser origin. |
+| 403 | `forbidden`: session mismatch. |
 | 404 / 410 | `not_found` / `expired`: unknown resource or known expired lease/history. |
 | 409 | `resource_busy`, `invalid_state`, `session_invalid`, `idempotency_conflict`. |
 | 422 | `unsupported`: known feature or option absent on this robot. |
@@ -417,7 +417,7 @@ On robot/agent loss, keep diagnostics available, mark uncertain operations unkno
 
 Keep one container per robot with robot address, stable ID, callback address if needed, a data volume when recordings are implemented, and numeric resource limits. No required MQTT, WebSocket service, database service, or second container. Preserve the working legacy SDK dependencies during the split; Ubuntu Flask can be removed when it no longer serves HTTP. Do not replace legacy dependencies with unavailable PyPI packages to make the modern process fit.
 
-Serve browser apps from the same origin by default; cross-origin access requires an allowlist. Browser SSE clients use fetch streaming to send the session header. The bundled API explorer runs from the bridge origin without additional setup.
+Browser apps can connect from any origin without per-application bridge configuration. Serve permissive CORS responses for requests and errors, handle preflight, and expose response headers used by clients. Browser SSE clients use fetch streaming to send the session header. The bundled API explorer runs from the bridge origin without additional setup.
 
 Expose `/health/live` for the API process and `/health/ready` for agent/connection/callback readiness. Record structured logs with request, operation, session, robot, process-instance, and connection IDs; expose bounded diagnostic counters for active streams, native subscriptions, queue loss, IPC pressure, stop latency, and reconnects through `GET /robot/diagnostics`. Avoid logging media, speech text or full event payloads by default.
 

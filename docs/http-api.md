@@ -4,7 +4,8 @@ For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
 **Try it out** on an endpoint.
 See the [browser walkthrough](../README.md#explore-the-api-in-a-browser) for sessions
-and command execution.
+and command execution. Browser applications on other origins can use the same
+HTTP/SSE endpoints without bridge configuration.
 
 All commands below target the increment 1 surface. Motion, media and sequence routes
 in the broader API plan are not implemented. The Python client is optional.

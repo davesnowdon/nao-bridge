@@ -8,7 +8,6 @@ class Settings:
     robot_id: str = "nao"
     host: str = "127.0.0.1"
     port: int = 3000
-    origins: tuple[str, ...] = ()
     backend: str = "naoqi"
     robot_address: str = "127.0.0.1"
     robot_port: int = 9559

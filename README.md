@@ -45,8 +45,8 @@ docker run --rm --init --name nao-bridge \
   -e NAO_IP nao-bridge-core
 ```
 
-Browser apps served from another origin can be enabled with comma-separated
-`NAO_BRIDGE_ORIGINS`. The bundled UI uses the bridge's own origin.
+Browser apps can connect from any origin without bridge configuration. CORS
+preflight requests and session headers are supported automatically.
 
 Run one API process per robot; multiworker deployment is unsupported.
 `/health/live` stays available during robot/agent loss; `/health/ready` reports
