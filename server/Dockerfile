@@ -2,11 +2,11 @@
 ARG LEGACY_IMAGE=davesnowdon/nao-bridge@sha256:792fc4c8b46b0645898494555d39460d654058a44a24b94592bfb4066283ee86
 ARG MODERN_BASE=ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 FROM ${LEGACY_IMAGE} AS legacy
-COPY experiments/runtime-ipc/collect_legacy.py /tmp/collect_legacy.py
+COPY server/packaging/collect_legacy.py /tmp/collect_legacy.py
 RUN /usr/bin/python2.7 /tmp/collect_legacy.py
 
 FROM ${MODERN_BASE} AS runtime
-COPY experiments/runtime-ipc/os-packages.lock /opt/nao-bridge/os-packages.lock
+COPY server/packaging/os-packages.lock /opt/nao-bridge/os-packages.lock
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive xargs -a /opt/nao-bridge/os-packages.lock \
        apt-get install -y --no-install-recommends \

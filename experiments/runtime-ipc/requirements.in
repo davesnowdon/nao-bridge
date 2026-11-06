@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-pydantic
-httpx
-python-multipart
-jsonschema
-Pillow

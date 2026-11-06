@@ -39,7 +39,7 @@ On Linux amd64, 6 November 2026:
 
 | Verification | Result |
 | --- | --- |
-| Server/core/socket tests | 47 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure and agent fences |
+| Server/core/socket tests | 61 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure, agent fences, critical-thread failure, session churn and bounded renewal retries |
 | Client parser tests | 23 passed: UTF-8/chunk/CRLF boundaries, comments, multiline data, unknown events, malformed IDs/payloads/numbers and byte bounds |
 | Modern server/client type checks | Passed |
 | Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, robot discovery, session creation and speech submission without client setup |
@@ -59,9 +59,12 @@ user. Its local services simulate behavior; SDK marshaling, signal delivery,
 processes, sockets, HTTP and SSE are real. The five latency samples characterize
 this local fixture run, not a robot-network SLA or a sustained soak benchmark.
 A repeat native run measured 12.63–15.32 ms for the same five-admission check.
+After the admission/recovery review fixes and packaging cleanup, both suites
+passed again; the five native-fixture admissions measured 0.54–1.20 ms.
 Reproduce with `make check` and `make test-container`. CI runs both and exports the
 contract bundle. Build inputs are recorded in `server/Dockerfile`,
-`server/requirements.lock`, `server/uv.lock`, and the maintained-base package lock.
+`server/requirements.lock`, `server/uv.lock`, and
+[`server/packaging`](../server/packaging/README.md).
 
 Two bundled-SDK details were discovered by execution: `qi.Session` supplies
 connection signals but no `isConnected()` method, and numeric signal values can be
@@ -78,11 +81,19 @@ Commands, stop work and observations have separate bounded queues. Priority requ
 have reserved admission; heartbeats retain their own outstanding slot. A separate
 watchdog stop latch survives a saturated priority queue.
 
+Session admission distinguishes live sessions from retained history; completed
+cleanup history can be evicted under pressure, while each session has a dedicated
+priority-stop slot. See the [retention policy](../contracts/README.md#request-fingerprints).
+Critical agent thread failure is logged and terminates the agent for supervision
+to replace it; normal lane disconnects are logged separately. Same-agent,
+same-connection late completion can reconcile an unknown operation; stale
+results remain unknown.
+
 Default public limits are eight streams, four per session, 16 subscriptions,
 256 events/256 KiB per stream (including initial buffering), two seconds for a
 blocked SSE send, 30-second leases and 900-second history/key retention. Ordinary
-and recovery operation/key admission have separate budgets. Exhausted budgets
-reject new work; uncertain ownership is not evicted to make room. The shared sensor
+command admission retains its bounded history guarantee; uncertain ownership is
+not evicted to make room. The shared sensor
 sampler runs at 10 Hz. Capabilities publish actual configured limits.
 
 Sessions, operations, subscriptions, retry keys and resource ownership are held in
@@ -94,9 +105,12 @@ release remain available within that API instance.
 
 ## Remaining hardware and later-increment gates
 
-1. Verify real robot connection/callback routing, plain speech defaults and native
-   cancellation using the actual model/NAOqi version. The fixture uses a separate
-   safety service to exercise priority transport; it does not prove real
+1. Verify real robot connection/callback routing,
+   `ALTextToSpeech.say(text, language)`, the `\vol=\` / `\rspd=\` speech controls,
+   plain speech defaults and native cancellation using the actual model/NAOqi
+   version. Verify touch callbacks through `ALMemory.subscriber(event).signal` on
+   `qi.Session` with NAOqi 2.1. The fixture uses a separate safety service to
+   exercise priority transport; it does not prove real
    `ALTextToSpeech.stopAll` can interrupt every native blocking call.
 2. Test network unplug/reconnect, robot-side work after process loss, source update
    age and practical sample/event rates. Confirm stop outcomes by observation.

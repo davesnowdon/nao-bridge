@@ -4,7 +4,7 @@ on:
   # Trigger on pushes to main branch when server files change
   push:
     branches: [main]
-    paths: ['server/**', 'experiments/runtime-ipc/collect_legacy.py', 'experiments/runtime-ipc/os-packages.lock', '.dockerignore']
+    paths: ['server/**', '.dockerignore']
   
   # Trigger on new releases for versioned builds
   release:

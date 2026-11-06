@@ -114,4 +114,6 @@ those locks requires rerunning the native/container checks.
 
 The [API plan](docs/api-plan.md), [delivery plan](docs/delivery-plan.md) and
 [runtime design](docs/runtime-design.md) describe the complete intended system.
-Historical packaging experiments remain in [experiments/runtime-ipc](experiments/runtime-ipc).
+Maintained build inputs live in [server/packaging](server/packaging/README.md).
+Historical findings and archived sources are linked from the
+[packaging decision](docs/inverted-packaging-experiment.md).

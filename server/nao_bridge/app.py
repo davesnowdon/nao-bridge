@@ -111,7 +111,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         raw = bytearray()
         async for part in request.stream():
             if len(raw) + len(part) > settings.max_request_bytes:
-                raise BridgeError("limit_exceeded", "Request body exceeds advertised limit", 429)
+                raise BridgeError("payload_too_large", "Request body exceeds advertised limit", 413)
             raw.extend(part)
         value = parse_json(bytes(raw))
         validate(name, value)

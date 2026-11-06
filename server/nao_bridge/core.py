@@ -45,6 +45,7 @@ class Session:
     public: dict[str, Any]
     deadline: float
     retained_until: float | None = None
+    stop_operation_id: str | None = None
 
 
 @dataclass
@@ -268,6 +269,7 @@ class Core:
                 for k in (
                     "history_seconds",
                     "max_sessions",
+                    "max_session_history",
                     "max_operations",
                     "max_recovery_operations",
                     "max_idempotency_keys",
@@ -358,8 +360,18 @@ class Core:
         return session
 
     def create_session(self, body: dict[str, Any]) -> dict[str, Any]:
-        if len(self.sessions) >= self.settings.max_sessions:
+        self.sweep()
+        live = sum(self.session_is_live(item) for item in self.sessions.values())
+        if live >= self.settings.max_sessions:
             raise BridgeError("limit_exceeded", "Session capacity exhausted", 429, retryable=True)
+        self.trim_session_history(self.settings.max_session_history - 1)
+        if (
+            sum(not self.session_is_live(item) for item in self.sessions.values())
+            >= self.settings.max_session_history
+        ):
+            raise BridgeError(
+                "limit_exceeded", "Unresolved session history capacity exhausted", 429
+            )
         value = {
             "id": identifier(),
             "name": body.get("name", ""),
@@ -395,6 +407,7 @@ class Core:
         create: Callable[[], dict[str, Any]],
         recovery: bool = False,
     ) -> dict[str, Any]:
+        stop = route == "POST /robot/stop"
         async with self.admission:
             if self.closing:
                 raise BridgeError("dependency_unavailable", "Bridge is shutting down", 503)
@@ -411,16 +424,30 @@ class Core:
                             "idempotency_conflict", "Key already used for a different request", 409
                         )
                     return copy.deepcopy(retained.response)
+                if recovery and not stop:
+                    self.trim_recovery_history(self.settings.max_recovery_operations - 1)
                 capacity = (
                     self.settings.max_recovery_operations
                     if recovery
                     else self.settings.max_idempotency_keys
                 )
-                if sum(record.recovery == recovery for record in self.keys.values()) >= capacity:
+                if (
+                    not stop
+                    and sum(
+                        record.recovery == recovery
+                        and not record.fingerprint.startswith("POST /robot/stop\n")
+                        for record in self.keys.values()
+                    )
+                    >= capacity
+                ):
                     raise BridgeError(
                         "limit_exceeded", "Idempotency capacity exhausted", 429, retryable=True
                     )
             result = create()
+            if stop:
+                for old_key, record in list(self.keys.items()):
+                    if old_key[0] == scope and record.fingerprint.startswith("POST /robot/stop\n"):
+                        del self.keys[old_key]
             if key:
                 resource_kind = (
                     "operation"
@@ -443,11 +470,18 @@ class Core:
         self, session: Session, kind: str, resources: list[str], cancellable: bool = True
     ) -> Operation:
         recovery = kind in RECOVERY_KINDS
+        if recovery and kind != "robot.stop":
+            self.trim_recovery_history(self.settings.max_recovery_operations - 1)
         capacity = (
             self.settings.max_recovery_operations if recovery else self.settings.max_operations
         )
         if (
-            sum((o.public["kind"] in RECOVERY_KINDS) == recovery for o in self.operations.values())
+            kind != "robot.stop"
+            and sum(
+                (o.public["kind"] in RECOVERY_KINDS) == recovery
+                for o in self.operations.values()
+                if o.public["kind"] != "robot.stop"
+            )
             >= capacity
         ):
             raise BridgeError(
@@ -544,15 +578,17 @@ class Core:
         if session.public["status"] != "active" or session.deadline <= self.clock():
             self.finish(op, "cancelled", {"dispatched": False})
             return
+        agent_instance = self.backend.instance
+        generation = self.generation
         self.update(op, status="running", started_at=utc())
         try:
             result = await self.backend.speak(op.public["id"], op.public["session_id"], payload)
-            if op.public["status"] == "unknown":
-                # A late result cannot silently clear uncertainty across connection generations.
+            if generation != self.generation or agent_instance != self.backend.instance:
                 return
             self.finish(op, "cancelled" if result.get("cancelled") else "succeeded", result)
         except BridgeError as exc:
-            self.finish(op, "failed", error=exc)
+            if generation == self.generation and agent_instance == self.backend.instance:
+                self.finish(op, "failed", error=exc)
         except BackendUnknown as exc:
             self.finish(op, "unknown", error=BridgeError("native_outcome_unknown", str(exc), 503))
         except asyncio.CancelledError:
@@ -741,7 +777,13 @@ class Core:
         return stopped
 
     def priority_stop(self, session: Session) -> dict[str, Any]:
+        previous = self.operations.get(session.stop_operation_id or "")
+        if previous:
+            if previous.public["status"] not in TERMINAL:
+                return copy.deepcopy(previous.public)
+            self.forget_operation(previous.public["id"])
         op = self.new_operation(session, "robot.stop", [], False)
+        session.stop_operation_id = op.public["id"]
         self.spawn(self.run_stop(op))
         return copy.deepcopy(op.public)
 
@@ -915,6 +957,57 @@ class Core:
             self.sweep()
             await asyncio.sleep(min(0.1, self.settings.lease_seconds / 4))
 
+    def trim_recovery_history(self, limit: int) -> None:
+        history = [
+            o
+            for o in self.operations.values()
+            if o.public["kind"] in RECOVERY_KINDS - {"robot.stop"}
+        ]
+        count = len(history)
+        for op in history:
+            if count <= limit:
+                break
+            if op.released and op.public["status"] in TERMINAL:
+                self.forget_operation(op.public["id"])
+                count -= 1
+
+    def forget_operation(self, oid: str) -> None:
+        self.operations.pop(oid, None)
+        for key, record in list(self.keys.items()):
+            if record.resource_id == oid:
+                del self.keys[key]
+
+    def session_is_live(self, session: Session) -> bool:
+        cleanup = self.operations.get(session.public["cleanup_operation_id"] or "")
+        return session.public["status"] in {"active", "closing"} or bool(
+            cleanup and cleanup.public["status"] not in TERMINAL
+        )
+
+    def forget_session(self, sid: str) -> None:
+        session = self.sessions.pop(sid)
+        if session.stop_operation_id:
+            self.forget_operation(session.stop_operation_id)
+        for key, record in list(self.keys.items()):
+            if record.resource_kind == "session" and record.resource_id == sid:
+                del self.keys[key]
+
+    def trim_session_history(self, limit: int) -> None:
+        history = sorted(
+            (s for s in self.sessions.values() if not self.session_is_live(s)),
+            key=lambda s: s.retained_until or 0,
+        )
+        count = len(history)
+        for session in history:
+            if count <= limit:
+                break
+            sid = session.public["id"]
+            if any(
+                o.public["session_id"] == sid and not o.released for o in self.operations.values()
+            ):
+                continue
+            self.forget_session(sid)
+            count -= 1
+
     def sweep(self) -> None:
         now = self.clock()
         for session in list(self.sessions.values()):
@@ -928,10 +1021,11 @@ class Core:
                     for o in self.operations.values()
                 )
             ):
-                self.sessions.pop(session.public["id"], None)
+                self.forget_session(session.public["id"])
         for oid, op in list(self.operations.items()):
             if op.retained_until and op.retained_until <= now and op.released:
                 del self.operations[oid]
+        self.trim_session_history(self.settings.max_session_history)
         self.sweep_keys()
 
     def sweep_keys(self) -> None:

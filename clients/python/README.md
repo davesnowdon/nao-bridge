@@ -51,7 +51,8 @@ Sync subscriptions use `with nao.events.subscribe(...)` and ordinary iteration.
 
 Enter the client context before use. The first mutation/subscription creates a
 session; reads alone do not. Renewal runs independently of waits and event
-consumption. A synchronous client uses a dedicated transport thread. An async
+consumption. Transient renewal failures retry with bounded backoff within the last
+confirmed lease; definitive session loss stops renewal immediately. A synchronous client uses a dedicated transport thread. An async
 application must keep its event loop responsive; blocking work belongs in a worker
 thread. Context exit deletes subscriptions, closes the session and waits for its
 cleanup operation. Cleanup uncertainty raises an error. If application code is

@@ -171,3 +171,86 @@ async def test_blocked_sse_send_times_out_and_detaches(rig):
         assert sent[0]["status"] == 200
         assert core.subscriptions[sid].public["connected"] is False
         assert core.subscriptions[sid].buffer is None
+
+
+async def test_session_churn_has_separate_bounded_history(rig):
+    async with rig(max_sessions=2, max_session_history=2, max_recovery_operations=2) as (
+        client,
+        core,
+        backend,
+    ):
+        for index in range(8):
+            session, headers = await new_session(client, key=f"session-{index}")
+            close = await client.post(
+                "/api/sessions/" + session["id"] + "/close", json={}, headers=headers
+            )
+            assert (await wait_operation(client, close.json()["id"], headers))[
+                "status"
+            ] == "succeeded"
+            core.sweep()
+        assert len(core.sessions) <= 2
+        assert sum(k.resource_kind == "session" for k in core.keys.values()) <= 2
+        await new_session(client)
+        await new_session(client)
+        assert (await client.post("/api/sessions", json={})).status_code == 429
+
+
+async def test_priority_stop_survives_full_recovery_records_and_keys(rig):
+    async with rig(max_recovery_operations=2, duration=10) as (client, core, backend):
+        for index in range(2):
+            session, headers = await new_session(client)
+            close = await client.post(
+                "/api/sessions/" + session["id"] + "/close",
+                json={},
+                headers={**headers, "Idempotency-Key": f"close-{index}"},
+            )
+            await wait_operation(client, close.json()["id"], headers)
+        _, headers = await new_session(client)
+        speech = await client.post("/api/speech/utterances", json={"text": "long"}, headers=headers)
+        await asyncio.sleep(0.02)
+        release = asyncio.Event()
+        original_stop = backend.stop
+
+        async def held_stop(*args, **kwargs):
+            await release.wait()
+            return await original_stop(*args, **kwargs)
+
+        backend.stop = held_stop
+        ids = set()
+        for index in range(12):
+            stop = await client.post(
+                "/api/robot/stop", json={}, headers={**headers, "Idempotency-Key": f"stop-{index}"}
+            )
+            assert stop.status_code == 202, stop.text
+            ids.add(stop.json()["id"])
+        assert len(ids) == 1
+        assert sum(o.public["kind"] == "robot.stop" for o in core.operations.values()) == 1
+        assert sum(k.fingerprint.startswith("POST /robot/stop\n") for k in core.keys.values()) == 1
+        release.set()
+        assert (await wait_operation(client, stop.json()["id"], headers))["status"] == "succeeded"
+        assert (await wait_operation(client, speech.json()["id"], headers))["status"] == "cancelled"
+        retry = await client.post(
+            "/api/robot/stop", json={}, headers={**headers, "Idempotency-Key": "stop-11"}
+        )
+        assert retry.json()["id"] == stop.json()["id"]
+        next_stop = await client.post("/api/robot/stop", json={}, headers=headers)
+        assert next_stop.status_code == 202 and next_stop.json()["id"] != stop.json()["id"]
+        assert (
+            await client.get("/api/operations/" + stop.json()["id"], headers=headers)
+        ).status_code == 404
+        await wait_operation(client, next_stop.json()["id"], headers)
+
+
+async def test_unresolved_session_history_is_not_silently_evicted(rig):
+    async with rig(max_sessions=1, max_session_history=1) as (client, core, backend):
+        session, headers = await new_session(client)
+        backend.fail_next = "unknown"
+        backend.stop_confirmed = False
+        speech = await client.post("/api/speech/utterances", json={"text": "lost"}, headers=headers)
+        await wait_operation(client, speech.json()["id"], headers)
+        close = await client.post(
+            "/api/sessions/" + session["id"] + "/close", json={}, headers=headers
+        )
+        await wait_operation(client, close.json()["id"], headers)
+        assert (await client.post("/api/sessions", json={})).status_code == 429
+        assert core.resources and session["id"] in core.sessions

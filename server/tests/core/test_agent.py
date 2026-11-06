@@ -130,3 +130,20 @@ def test_watchdog_stop_survives_full_priority_queue(agent_module):
     with pytest.raises(StopIteration):
         agent.safety_worker()
     assert calls == [None]
+
+
+@pytest.mark.parametrize("crashes", [False, True])
+def test_critical_thread_failure_fences_and_exits(agent_module, monkeypatch, caplog, crashes):
+    agent = bare_agent(agent_module)
+    exits = []
+    monkeypatch.setattr(agent_module.os, "_exit", exits.append)
+
+    def work():
+        if crashes:
+            raise RuntimeError("worker failed")
+
+    agent.run_critical(work)
+    assert exits == [1]
+    assert agent.epoch == 2 and agent.heartbeat == 0
+    assert agent.emergency_stop.is_set()
+    assert "Critical agent thread failed: work" in caplog.text

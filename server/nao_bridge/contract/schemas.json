@@ -401,6 +401,10 @@
             },
             "sample_rate_hz": {
               "type": "number"
+            },
+            "max_session_history": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "required": [
@@ -415,7 +419,8 @@
             "event_queue_bytes",
             "max_request_bytes",
             "max_state_wait_ms",
-            "sample_rate_hz"
+            "sample_rate_hz",
+            "max_session_history"
           ],
           "additionalProperties": true
         },

@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -313,19 +314,33 @@ class Agent(object):
                                 self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued"}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
-            except (Exception, StopIteration):
-                pass
+            except (socket.error, ValueError, StopIteration, queue.Full):
+                logging.warning("Agent %s lane disconnected", lane, exc_info=True)
+            except Exception:
+                logging.exception("Agent %s lane failed", lane)
+                raise
             finally:
                 closed.set()
                 conn.close()
                 if lane == "priority" and owner == self.api:
                     self.lose_authority("priority_eof")
 
+    def run_critical(self, function, *args):
+        try:
+            function(*args)
+            raise RuntimeError("Critical thread returned unexpectedly")
+        except BaseException:
+            logging.exception("Critical agent thread failed: %s", function.__name__)
+            try:
+                self.lose_authority("thread_failed")
+            finally:
+                os._exit(1)
+
     def run(self):
         for worker in (self.worker, self.safety_worker, self.watchdog, self.sampling):
-            background(worker)
+            background(self.run_critical, worker)
         for lane in ("priority", "command", "events"):
-            background(self.serve, lane)
+            background(self.run_critical, self.serve, lane)
         while True:
             time.sleep(1)
             with self.lock:
@@ -339,4 +354,5 @@ class Agent(object):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
     Agent().run()

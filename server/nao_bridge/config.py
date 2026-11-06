@@ -18,6 +18,7 @@ class Settings:
     lease_seconds: float = 30.0
     history_seconds: float = 900.0
     max_sessions: int = 64
+    max_session_history: int = 4096
     max_operations: int = 4096
     max_recovery_operations: int = 128
     max_idempotency_keys: int = 4096
@@ -45,6 +46,7 @@ class Settings:
             raise ValueError("Sample rate must be in (0, 20]")
         for name in (
             "max_sessions",
+            "max_session_history",
             "max_operations",
             "max_recovery_operations",
             "max_idempotency_keys",

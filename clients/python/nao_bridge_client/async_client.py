@@ -91,6 +91,7 @@ class AsyncNao:
         self._history_seconds = 0.0
         self._pending_session: PendingRequest | None = None
         self._session: SessionData | None = None
+        self._lease_deadline = 0.0
         self._renew_task: asyncio.Task | None = None
         self._lost: SessionLost | None = None
         self._session_lock = asyncio.Lock()
@@ -249,6 +250,7 @@ class AsyncNao:
                 if identity.connection != "connected":
                     raise BridgeError("robot_unavailable", "Robot is not connected", 503)
                 self._identity = identity
+                sent = time.monotonic()
                 self._session = decode(
                     SessionData,
                     await self._request(
@@ -257,20 +259,58 @@ class AsyncNao:
                 )
                 if self._session.status != "active":
                     raise self._lose("Created session is not active")
+                self._lease_deadline = self.lease_deadline(self._session, sent)
                 self._renew_task = asyncio.create_task(self._renew())
             return self._session
+
+    @staticmethod
+    def lease_deadline(session: SessionData, sent: float) -> float:
+        # The server grants its lease after request dispatch; client wall clocks may differ.
+        return sent + session.lease_seconds - min(1.0, session.lease_seconds * 0.1)
 
     async def _renew(self) -> None:
         try:
             while self._session and not self._lost:
-                await asyncio.sleep(self._session.renew_after_seconds)
-                renewed = decode(
-                    SessionData,
-                    await self._request("PATCH", "/api/sessions/" + self._session.id, body={}),
+                await asyncio.sleep(
+                    min(
+                        self._session.renew_after_seconds,
+                        max(0, self._lease_deadline - time.monotonic()),
+                    )
                 )
-                if renewed.status != "active":
-                    raise SessionLost("Renewed session is not active")
-                self._session = renewed
+                delay = 0.1
+                while self._session and not self._lost:
+                    sent = time.monotonic()
+                    remaining = self._lease_deadline - sent
+                    if remaining <= 0:
+                        raise SessionLost("Session renewal deadline elapsed")
+                    try:
+                        renewed = decode(
+                            SessionData,
+                            await asyncio.wait_for(
+                                self._request(
+                                    "PATCH", "/api/sessions/" + self._session.id, body={}
+                                ),
+                                remaining,
+                            ),
+                        )
+                    except BridgeError as exc:
+                        if exc.code != "transport_error" and exc.status not in {502, 503, 504}:
+                            raise
+                        await asyncio.sleep(
+                            min(delay, max(0, self._lease_deadline - time.monotonic()))
+                        )
+                        delay = min(1.0, delay * 2)
+                        continue
+                    if (
+                        renewed.status != "active"
+                        or renewed.id != self._session.id
+                        or renewed.bridge_instance_id != self._session.bridge_instance_id
+                        or renewed.connection_generation != self._session.connection_generation
+                    ):
+                        raise SessionLost("Renewed session is no longer the same active session")
+                    self._session = renewed
+                    self._lease_deadline = self.lease_deadline(renewed, sent)
+                    break
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -316,7 +356,22 @@ class AsyncNao:
             )
             if current.status != "active":
                 raise self._lose("Recovered session is no longer active")
-            self._session = current
+            sent = time.monotonic()
+            renewed = decode(
+                SessionData,
+                await self._request(
+                    "PATCH", "/api/sessions/" + current.id, body={}, session_id=current.id
+                ),
+            )
+            if (
+                renewed.status != "active"
+                or renewed.id != current.id
+                or renewed.bridge_instance_id != current.bridge_instance_id
+                or renewed.connection_generation != current.connection_generation
+            ):
+                raise self._lose("Recovered session changed during renewal")
+            self._session = renewed
+            self._lease_deadline = self.lease_deadline(renewed, sent)
             self._pending_session = None
             self._renew_task = asyncio.create_task(self._renew())
         return result

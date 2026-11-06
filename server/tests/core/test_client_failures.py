@@ -4,6 +4,7 @@ import dataclasses
 import json
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 
 import httpx
@@ -130,3 +131,61 @@ async def test_changed_contract_major_between_open_and_first_mutation_is_refused
             with pytest.raises(ProtocolError):
                 await nao.speech.say("Must not dispatch")
             assert not core.sessions and not backend.calls
+
+
+@pytest.mark.parametrize("failure", ["once", "always", "hang", "invalidated", "changed"])
+async def test_renewal_retries_only_transient_failures_within_confirmed_lease(rig, failure):
+    async with rig(lease_seconds=0.6) as (client, core, backend):
+        attempts = []
+        successful = asyncio.Event()
+        inner = client._transport
+
+        async def handle(request):
+            if request.method == "PATCH":
+                attempts.append(time.monotonic())
+                if failure == "always" or (failure == "once" and len(attempts) == 1):
+                    raise httpx.ReadError("Transient renewal failure", request=request)
+                if failure == "hang":
+                    await asyncio.Event().wait()
+                if failure == "invalidated":
+                    return httpx.Response(
+                        409,
+                        json={
+                            "error": {
+                                "code": "session_invalid",
+                                "message": "Session ended",
+                                "details": {},
+                                "retryable": False,
+                            },
+                            "request_id": "renewal",
+                        },
+                    )
+                response = await inner.handle_async_request(request)
+                if failure == "changed":
+                    value = response.json()
+                    value["connection_generation"] += 1
+                    return httpx.Response(200, json=value)
+                successful.set()
+                return response
+            return await inner.handle_async_request(request)
+
+        nao = AsyncNao("http://test", transport=httpx.MockTransport(handle))
+        await nao.__aenter__()
+        try:
+            session = await nao._ensure_session()
+            deadline = nao._lease_deadline
+            if failure == "once":
+                await asyncio.wait_for(successful.wait(), 1)
+                await asyncio.sleep(0.01)
+                assert len(attempts) == 2 and nao._lost is None
+                assert nao.session_id == session.id and nao._lease_deadline > deadline
+            else:
+                await asyncio.wait_for(nao._renew_task, 1)
+                assert nao._lost is not None
+                assert all(attempt < deadline for attempt in attempts)
+                assert time.monotonic() < deadline + 0.15
+                assert len(attempts) >= 2 if failure == "always" else len(attempts) == 1
+            assert len(core.sessions) == 1 and not backend.calls
+        finally:
+            with suppress(SessionLost):
+                await nao.close()

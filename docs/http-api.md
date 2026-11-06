@@ -74,8 +74,9 @@ For a lost creation response, retain the same key, route, body, bridge instance 
 session. An identical retry within advertised retention returns the original ID;
 changed content returns `idempotency_conflict`. Omission differs from explicit
 defaults. Never retry after instance/session loss or retention expiry. Recovery
-routes have a separate bounded history/key budget so ordinary admission saturation
-does not consume their capacity. Limits are returned by capabilities.
+routes have separate bounded history/key budgets. Finished cleanup records can be
+evicted early; priority stop uses a dedicated per-session slot. See the
+[retention rules](../contracts/README.md#request-fingerprints). Limits are returned by capabilities.
 
 ## Events and reconnect
 
@@ -129,7 +130,9 @@ explicit recovery where necessary.
 ## Priority stop and explicit recovery
 
 `POST /api/robot/stop` with an active session and `{}` requests priority cancellation
-of implemented speech work, including other sessions. It is not an emergency-stop
+of implemented speech work, including other sessions. Stop admission does not
+depend on ordinary or cleanup history capacity. It retains the latest stop
+operation/key per session and coalesces calls while that stop is running. It is not an emergency-stop
 certification or a motion stop: this slice exposes no motion. Its Operation becomes
 unknown if affected native work cannot be confirmed stopped.
 

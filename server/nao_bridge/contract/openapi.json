@@ -225,7 +225,8 @@
               "minLength": 1,
               "maxLength": 128,
               "pattern": "^[A-Za-z0-9_-]+$"
-            }
+            },
+            "description": "Must match the session_id path parameter; both identify the same session."
           }
         ]
       },
@@ -284,7 +285,8 @@
               "minLength": 1,
               "maxLength": 128,
               "pattern": "^[A-Za-z0-9_-]+$"
-            }
+            },
+            "description": "Must match the session_id path parameter; both identify the same session."
           }
         ]
       }
@@ -353,7 +355,8 @@
               "minLength": 1,
               "maxLength": 128,
               "pattern": "^[A-Za-z0-9_-]+$"
-            }
+            },
+            "description": "Must match the session_id path parameter; both identify the same session."
           },
           {
             "name": "Idempotency-Key",
@@ -775,7 +778,8 @@
             },
             "description": "Identical retained requests return the original resource; changed content conflicts."
           }
-        ]
+        ],
+        "description": "Uses a dedicated per-session slot, independent of cleanup history capacity. Calls while a stop is in progress share its operation. Only the latest stop operation and latest stop idempotency key per session are retained; later stop requests can replace that history."
       }
     },
     "/robot/diagnostics": {

@@ -261,3 +261,36 @@ async def test_browser_apps_need_no_origin_configuration(rig, origin):
         assert error.headers["access-control-allow-origin"] == "*"
         assert "X-Request-ID" in error.headers["access-control-expose-headers"]
         assert "access-control-allow-credentials" not in response.headers
+
+
+@pytest.mark.parametrize("change", [None, "generation", "agent"])
+async def test_late_completion_only_reconciles_original_dispatch(rig, change):
+    async with rig(duration=10) as (client, core, backend):
+        _, headers = await new_session(client)
+        response = await client.post(
+            "/api/speech/utterances", json={"text": "late"}, headers=headers
+        )
+        oid = response.json()["id"]
+        while oid not in backend.active:
+            await asyncio.sleep(0.005)
+        backend.stop_confirmed = False
+        await client.post("/api/operations/" + oid + "/cancel", json={}, headers=headers)
+        assert (await wait_operation(client, oid, headers))["status"] == "unknown"
+        if change == "generation":
+            core.generation += 1
+        elif change == "agent":
+            backend.instance = "replacement"
+        backend.active[oid][1].set()
+        await asyncio.wait_for(core.operations[oid].task, 1)
+        result = (await client.get("/api/operations/" + oid, headers=headers)).json()
+        assert result["status"] == ("unknown" if change else "cancelled")
+        assert bool(core.resources) == bool(change)
+
+
+async def test_oversized_body_is_not_a_retryable_capacity_error(rig):
+    async with rig(max_request_bytes=8) as (client, core, backend):
+        response = await client.post("/api/sessions", json={"name": "too long"})
+        assert response.status_code == 413
+        assert response.json()["error"]["code"] == "payload_too_large"
+        assert "retry-after" not in response.headers
+        assert not core.sessions

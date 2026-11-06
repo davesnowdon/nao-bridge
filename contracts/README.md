@@ -58,12 +58,27 @@ Reject duplicate keys, invalid UTF-8/unpaired surrogates, NaN and infinities,
 including finite-looking exponents that overflow binary64. Do not coerce strings,
 booleans or numbers, or insert default fields before comparison.
 
-Keys and operation history are retained for at least 900 seconds by default;
+Ordinary command keys and operation history are retained for 900 seconds by default;
 active/uncertain operations and active resources keep their identities longer.
 Capacity limits are advertised. All sessions, operations, subscriptions and keys
 are process-local and disappear on API restart. Prior IDs return 404; a missing
 operation does not prove that its robot-side work stopped. Never replay uncertain
 work after restart.
+
+Live sessions (including cleanup still in progress) are limited separately from
+retained inactive sessions: defaults are 64 and 4,096 respectively. Under history
+pressure, the oldest fully released inactive session and its creation retry key
+may be discarded early; unresolved work is never evicted to free capacity.
+Cleanup history holds at most 128 close/revoke operations; finished records and
+their retry keys may be evicted early to admit cleanup. If all cleanup slots are
+still running, admission can fail without preventing priority stop.
+
+Priority stop has a dedicated slot per session, independent of ordinary and
+cleanup budgets. Requests during an in-progress stop share its operation. Only the
+latest stop operation and latest stop retry key per session are retained; a new
+stop request can replace that history. A missing old result does not prove any
+physical outcome. Clients must not rely on the ordinary 15-minute retention
+window for session history under pressure, cleanup history, or stop requests.
 
 ## Version and change guard
 

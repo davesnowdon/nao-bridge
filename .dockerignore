@@ -8,5 +8,4 @@
 **/dist
 **/.env
 **/.nao-bridge-data
-experiments/runtime-ipc/artifacts
 server/lib
