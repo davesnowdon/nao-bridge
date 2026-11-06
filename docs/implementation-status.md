@@ -39,7 +39,7 @@ On Linux amd64, 6 November 2026:
 
 | Verification | Result |
 | --- | --- |
-| Server/core/socket tests | 61 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure, agent fences, critical-thread failure, session churn and bounded renewal retries |
+| Server/core/socket tests | 69 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure, agent fences, critical-thread failure, session churn, bounded renewal retries and hardware-runner rehearsals |
 | Client parser tests | 23 passed: UTF-8/chunk/CRLF boundaries, comments, multiline data, unknown events, malformed IDs/payloads/numbers and byte bounds |
 | Modern server/client type checks | Passed |
 | Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, robot discovery, session creation and speech submission without client setup |
@@ -104,6 +104,11 @@ state still held by the API, including uncertain outcomes. Explicit cleanup and
 release remain available within that API instance.
 
 ## Remaining hardware and later-increment gates
+
+Use the [repeatable hardware acceptance procedure](hardware-acceptance.md) and
+[per-run results checklist](hardware-acceptance-checklist.md) to collect the first
+live-robot evidence. The runner is tested against a fake robot over real HTTP/SSE;
+that verifies the test tooling, not the hardware gates below.
 
 1. Verify real robot connection/callback routing,
    `ALTextToSpeech.say(text, language)`, the `\vol=\` / `\rspd=\` speech controls,
