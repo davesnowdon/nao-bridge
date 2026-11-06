@@ -1,6 +1,6 @@
 # NAO Bridge API plan
 
-Status: implementation plan, 6 November 2026. Numerical defaults and hardware-dependent details below are design targets to validate during delivery. None of the new endpoints or examples in this document is implemented yet.
+Status: implementation plan, 6 November 2026. Numerical defaults and hardware-dependent details below are design targets to validate during delivery. The increment 1 surface is implemented; later domains remain planned. [Implementation status](implementation-status.md) and the [canonical contract](../contracts/README.md) identify the delivered subset.
 
 Read alongside the [delivery plan](delivery-plan.md), [runtime design](runtime-design.md), [client contract guide](client-contract.md), and [research evidence](research-notes.md).
 

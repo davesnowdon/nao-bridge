@@ -1,0 +1,77 @@
+{
+  "version": "1.0.0",
+  "cases": [
+    {
+      "name": "object order and whitespace",
+      "a": "{\"text\":\"hello\",\"volume\":0.5}",
+      "b": "{ \"volume\": 0.5, \"text\": \"hello\" }",
+      "equal": true,
+      "fingerprint_a": "{s:\"text\":s:\"hello\",s:\"volume\":f:3fe0000000000000}",
+      "fingerprint_b": "{s:\"text\":s:\"hello\",s:\"volume\":f:3fe0000000000000}"
+    },
+    {
+      "name": "omission and default",
+      "a": "{\"text\":\"hello\"}",
+      "b": "{\"text\":\"hello\",\"volume\":0.5}",
+      "equal": false,
+      "fingerprint_a": "{s:\"text\":s:\"hello\"}",
+      "fingerprint_b": "{s:\"text\":s:\"hello\",s:\"volume\":f:3fe0000000000000}"
+    },
+    {
+      "name": "integer and real",
+      "a": "{\"volume\":1}",
+      "b": "{\"volume\":1.0}",
+      "equal": false,
+      "fingerprint_a": "{s:\"volume\":i:1}",
+      "fingerprint_b": "{s:\"volume\":f:3ff0000000000000}"
+    },
+    {
+      "name": "real exponent",
+      "a": "{\"volume\":1.0}",
+      "b": "{\"volume\":1e0}",
+      "equal": true,
+      "fingerprint_a": "{s:\"volume\":f:3ff0000000000000}",
+      "fingerprint_b": "{s:\"volume\":f:3ff0000000000000}"
+    },
+    {
+      "name": "negative real zero",
+      "a": "{\"volume\":0.0}",
+      "b": "{\"volume\":-0.0}",
+      "equal": false,
+      "fingerprint_a": "{s:\"volume\":f:0000000000000000}",
+      "fingerprint_b": "{s:\"volume\":f:8000000000000000}"
+    },
+    {
+      "name": "boolean distinct from integer",
+      "a": "{\"value\":true}",
+      "b": "{\"value\":1}",
+      "equal": false,
+      "fingerprint_a": "{s:\"value\":true}",
+      "fingerprint_b": "{s:\"value\":i:1}"
+    },
+    {
+      "name": "unicode escape equivalent",
+      "a": "{\"text\":\"café 🤖\"}",
+      "b": "{\"text\":\"caf\\u00e9 \\ud83e\\udd16\"}",
+      "equal": true,
+      "fingerprint_a": "{s:\"text\":s:\"caf\\u00e9 \\ud83e\\udd16\"}",
+      "fingerprint_b": "{s:\"text\":s:\"caf\\u00e9 \\ud83e\\udd16\"}"
+    },
+    {
+      "name": "no unicode normalization",
+      "a": "{\"text\":\"é\"}",
+      "b": "{\"text\":\"é\"}",
+      "equal": false,
+      "fingerprint_a": "{s:\"text\":s:\"\\u00e9\"}",
+      "fingerprint_b": "{s:\"text\":s:\"e\\u0301\"}"
+    },
+    {
+      "name": "array order",
+      "a": "[\"a\",\"b\"]",
+      "b": "[\"b\",\"a\"]",
+      "equal": false,
+      "fingerprint_a": "[s:\"a\",s:\"b\"]",
+      "fingerprint_b": "[s:\"b\",s:\"a\"]"
+    }
+  ]
+}

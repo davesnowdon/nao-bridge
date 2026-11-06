@@ -1,0 +1,1376 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nao-bridge.dev/contracts/1.0.0/schemas.json",
+  "$defs": {
+    "EmptyRequest": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "SessionCreate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "SessionRenew": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "SessionRevoke": {
+      "type": "object",
+      "properties": {
+        "confirm": {
+          "const": true
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "force_release": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "confirm",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "SpeechCreate": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "animated": {
+          "type": "boolean",
+          "default": false
+        },
+        "volume": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 2,
+          "default": 1.0
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "voice": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "SampleRequest": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "sensors",
+              "joints",
+              "motion",
+              "autonomy",
+              "lights"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 5,
+          "uniqueItems": true
+        },
+        "rate_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "groups",
+        "rate_hz"
+      ],
+      "additionalProperties": false
+    },
+    "SubscriptionCreate": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "samples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SampleRequest"
+          },
+          "maxItems": 1
+        },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "sensor": {
+              "type": "string"
+            },
+            "operation_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "allow_lower_rate": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ErrorDetail": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "details",
+        "retryable"
+      ],
+      "additionalProperties": true
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorDetail"
+        },
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "request_id"
+      ],
+      "additionalProperties": true
+    },
+    "Feature": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unsupported",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "Robot": {
+      "type": "object",
+      "properties": {
+        "robot_id": {
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "naoqi_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bridge_version": {
+          "type": "string"
+        },
+        "contract_version": {
+          "type": "string"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "agent_instance_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "connection": {
+          "type": "string",
+          "enum": [
+            "connecting",
+            "connected",
+            "disconnected",
+            "faulted"
+          ]
+        },
+        "backend": {
+          "type": "string"
+        },
+        "hardware_verified": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "robot_id",
+        "name",
+        "model",
+        "naoqi_version",
+        "bridge_version",
+        "contract_version",
+        "bridge_instance_id",
+        "agent_instance_id",
+        "connection_generation",
+        "connection",
+        "backend",
+        "hardware_verified"
+      ],
+      "additionalProperties": true
+    },
+    "Capabilities": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "features": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Feature"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "session_lease_seconds": {
+              "type": "number"
+            },
+            "history_seconds": {
+              "type": "number"
+            },
+            "max_sessions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_operations": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_idempotency_keys": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_subscriptions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_streams": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "event_queue_count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "event_queue_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_request_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max_state_wait_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "sample_rate_hz": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "session_lease_seconds",
+            "history_seconds",
+            "max_sessions",
+            "max_operations",
+            "max_idempotency_keys",
+            "max_subscriptions",
+            "max_streams",
+            "event_queue_count",
+            "event_queue_bytes",
+            "max_request_bytes",
+            "max_state_wait_ms",
+            "sample_rate_hz"
+          ],
+          "additionalProperties": true
+        },
+        "event_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "state_groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "replay_supported": {
+          "const": false
+        },
+        "speech": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "contract_version",
+        "connection_generation",
+        "features",
+        "limits",
+        "event_types",
+        "state_groups",
+        "replay_supported",
+        "speech"
+      ],
+      "additionalProperties": true
+    },
+    "Session": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "closing",
+            "closed",
+            "expired",
+            "invalidated",
+            "revoked"
+          ]
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lease_seconds": {
+          "type": "number"
+        },
+        "renew_after_seconds": {
+          "type": "number"
+        },
+        "cleanup_operation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "status",
+        "bridge_instance_id",
+        "connection_generation",
+        "created_at",
+        "expires_at",
+        "lease_seconds",
+        "renew_after_seconds",
+        "cleanup_operation_id"
+      ],
+      "additionalProperties": true
+    },
+    "Operation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "running",
+            "cancelling",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "unknown"
+          ]
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "cancellable": {
+          "type": "boolean"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "child_operation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "session_id",
+        "status",
+        "resources",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "connection_generation",
+        "bridge_instance_id",
+        "cancellable",
+        "result",
+        "error",
+        "child_operation_ids"
+      ],
+      "additionalProperties": true
+    },
+    "OperationPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Operation"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": true
+    },
+    "StateGroup": {
+      "type": "object",
+      "properties": {
+        "value": {},
+        "quality": {
+          "type": "string",
+          "enum": [
+            "fresh",
+            "stale",
+            "unavailable"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sampled_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sampled_bridge_time_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "age_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "quality",
+        "reason",
+        "sampled_at",
+        "sampled_bridge_time_ms",
+        "source_time",
+        "age_ms"
+      ],
+      "additionalProperties": true
+    },
+    "State": {
+      "type": "object",
+      "properties": {
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bridge_time_ms": {
+          "type": "number"
+        },
+        "acquisition_started_bridge_time_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acquisition_finished_bridge_time_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "groups": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/StateGroup"
+          }
+        }
+      },
+      "required": [
+        "bridge_instance_id",
+        "connection_generation",
+        "bridge_time_ms",
+        "acquisition_started_bridge_time_ms",
+        "acquisition_finished_bridge_time_ms",
+        "groups"
+      ],
+      "additionalProperties": true
+    },
+    "AcceptedSample": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rate_hz": {
+          "type": "number"
+        },
+        "readiness": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "unavailable",
+            "warming"
+          ]
+        }
+      },
+      "required": [
+        "groups",
+        "rate_hz",
+        "readiness"
+      ],
+      "additionalProperties": true
+    },
+    "Subscription": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filters": {
+          "type": "object"
+        },
+        "samples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AcceptedSample"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "closed"
+          ]
+        },
+        "stream_url": {
+          "type": "string"
+        },
+        "replay_supported": {
+          "const": false
+        },
+        "queue_limits": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "count",
+            "bytes"
+          ],
+          "additionalProperties": false
+        },
+        "connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "events",
+        "filters",
+        "samples",
+        "status",
+        "stream_url",
+        "replay_supported",
+        "queue_limits",
+        "connected"
+      ],
+      "additionalProperties": true
+    },
+    "EventType": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "support": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "type",
+        "schema",
+        "support"
+      ],
+      "additionalProperties": true
+    },
+    "EventTypes": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventType"
+          }
+        },
+        "next_cursor": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": true
+    },
+    "StreamReady": {
+      "type": "object",
+      "properties": {
+        "subscription_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "replay_supported": {
+          "const": false
+        }
+      },
+      "required": [
+        "subscription_id",
+        "replay_supported"
+      ],
+      "additionalProperties": true
+    },
+    "StreamReset": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "recover": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "reason",
+        "recover"
+      ],
+      "additionalProperties": true
+    },
+    "TouchChanged": {
+      "type": "object",
+      "properties": {
+        "sensor": {
+          "type": "string"
+        },
+        "pressed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sensor",
+        "pressed"
+      ],
+      "additionalProperties": true
+    },
+    "StateSample": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/State"
+        },
+        "skipped_samples": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "state",
+        "skipped_samples"
+      ],
+      "additionalProperties": true
+    },
+    "ConnectionChanged": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "enum": [
+            "connecting",
+            "connected",
+            "disconnected",
+            "faulted"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connection",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "Event": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0"
+        },
+        "robot_id": {
+          "type": "string"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bridge_time_ms": {
+          "type": "number"
+        },
+        "received_bridge_time_ms": {
+          "type": "number"
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "schema_version",
+        "robot_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "bridge_time_ms",
+        "received_bridge_time_ms",
+        "received_at",
+        "source_time",
+        "data"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "stream.ready"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/StreamReady"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "stream.reset"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/StreamReset"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "touch.changed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/TouchChanged"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "state.sample"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/StateSample"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "operation.changed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/Operation"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session.changed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/Session"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "robot.connection_changed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/ConnectionChanged"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "robot.capabilities_changed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/Capabilities"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Diagnostics": {
+      "type": "object",
+      "properties": {
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "agent_instance_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connection": {
+          "type": "string"
+        },
+        "quarantined_resources": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        },
+        "active_operations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "subscriptions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "streams": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "bridge_instance_id",
+        "connection_generation",
+        "agent_instance_id",
+        "connection",
+        "quarantined_resources",
+        "active_operations",
+        "sessions",
+        "subscriptions",
+        "streams",
+        "backend"
+      ],
+      "additionalProperties": true
+    },
+    "Health": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "degraded"
+          ]
+        },
+        "robot_connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status",
+        "robot_connected"
+      ],
+      "additionalProperties": true
+    },
+    "StopRequest": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

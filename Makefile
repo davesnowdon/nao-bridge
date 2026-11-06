@@ -1,30 +1,20 @@
-.PHONY: install fmt lint typecheck test check server-init server-up server-bash
+.PHONY: install fmt lint typecheck test check image test-container
 
-# Client library targets (delegate to clients/python/)
 install:
+	$(MAKE) -C server install
 	$(MAKE) -C clients/python install
 
-fmt:
-	$(MAKE) -C clients/python fmt
+fmt lint typecheck test:
+	$(MAKE) -C server $@
+	$(MAKE) -C clients/python $@
 
-lint:
-	$(MAKE) -C clients/python lint
+check: lint typecheck test
 
-typecheck:
-	$(MAKE) -C clients/python typecheck
+image:
+	docker build --platform linux/amd64 -f server/Dockerfile -t nao-bridge-core .
 
-test:
-	$(MAKE) -C clients/python test
-
-check:
-	$(MAKE) -C clients/python check
-
-# Server targets (delegate to server/)
-server-init:
-	$(MAKE) -C server init
-
-server-up:
-	$(MAKE) -C server up
-
-server-bash:
-	$(MAKE) -C server bash
+test-container: image
+	docker run --rm --network none --entrypoint /opt/modern/bin/python3 \
+		-v "$(CURDIR)/server/tests/container_smoke.py:/tests/container_smoke.py:ro" \
+		-v "$(CURDIR)/scripts/conformance.py:/tests/conformance.py:ro" \
+		nao-bridge-core /tests/container_smoke.py

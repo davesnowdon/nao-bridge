@@ -1,144 +1,106 @@
 # NAO Bridge
 
-The NAOqi python SDK is based on python 2.7.9 and relies heavily on proprietary native libraries and so would be difficult to upgrade to a more modern version of python. This project encapsulate the SDK in a docker container and exports a REST API. The hope is that modern applications can use the HTTP API without the dependency on an acient and insecure version of python. This also opens the way to using NAO from applications not written in a language for which Aldebaran provided an SDK.
+NAO Bridge exposes NAO functionality through a language-neutral HTTP/SSE API and
+modern synchronous/asynchronous Python clients. A thin Python 2 process loads the
+NAOqi SDK; a separate modern Python process handles HTTP, sessions, operations and
+events. Both run in one Ubuntu 24.04 container.
 
-This project borrows heavily from the work of [Don Najd](https://github.com/dnajd) and his [FluentNAO](https://github.com/dnajd/FluentNao) project both in terms of using FluentNAO as the basis of the REST API and the idea of packaging the SDK inside a docker container.
+The replacement currently delivers the increment 1 software foundation: discovery,
+head touch state/events, plain speech, leased sessions, operation cancellation,
+priority stop, resource conflicts and recovery. Contract 1.0.0 and package 0.2.0
+replace the old API without compatibility adapters. Motion, recordings and sequences
+remain planned in [increments 2–4](docs/delivery-plan.md).
 
-## Planned replacement API
+Robot-free tests cover real SDK loopback services and injected process failures.
+Physical robot behavior and Apple Silicon remain unverified; see the
+[delivery evidence and limitations](docs/implementation-status.md).
 
-The [API plan](docs/api-plan.md) defines a fresh, language-neutral API for common robot capabilities, with HTTP commands and SSE events. Python is its first client; the [client contract guide](docs/client-contract.md) defines the lifecycle rules needed by future implementations. The [four-increment delivery plan](docs/delivery-plan.md) uses Recorder, Wanderer, and a scripted presentation as acceptance applications. [Research notes](docs/research-notes.md) record the evidence and decisions behind the design.
+## Run without a robot
 
-The [runtime design](docs/runtime-design.md) separates a thin Python 2 NAOqi agent from a modern API process in one container. The [packaging comparison](docs/inverted-packaging-experiment.md) selects maintained Ubuntu 24.04 with an isolated legacy SDK, verifying the modern stack, native dependencies, media binaries and bounded IPC on Linux amd64. Physical robot and Apple Silicon checks remain open. The [review follow-up](docs/review-follow-up.md) records additional design decisions and experiments. SSE reconnects report gaps and current state; recordings/assets and server-side sequences remain in scope.
-
-This is planned work, with no v1 or FluentNao compatibility requirement. The instructions below describe the currently implemented API.
-
-## Prerequisites
-
-- Docker installed on your system
-- A NAO robot accessible on your network
-- The IP address of your NAO robot
-
-## Quick Start
-
-Run the latest release from docker hub
+Install uv, then from the repository root:
 
 ```bash
-docker  run -it -p 3000:3000 -e NAO_IP=<YOUR NAO ROBOT IP> davesnowdon/nao-bridge:latest
+make install
+uv run --project server nao-bridge --backend fake
 ```
 
-**Please note:** on Macs with Apple silicon you will need to specify the platform as AMD64 using `--platform linux/amd64` so the command to launch the docker container becomes:
+The fake backend serves the API on `127.0.0.1:3000`. It simulates speech and sampled
+head touch state. Tests inject touch edges; the standalone fake backend does not
+invent user touches. Browse `http://127.0.0.1:3000/docs` for the route index. No token
+is required for this default loopback-only development configuration.
 
 ```bash
-docker run -it -p 3000:3000 -e NAO_IP=192.168.1.81 --platform linux/amd64 davesnowdon/nao-bridge:latest
+uv run --project clients/python python clients/python/example_usage.py
+uv run --project clients/python python clients/python/examples/events.py
 ```
 
-You can then navigate to http://localhost:3000/swagger in your web browser and try out the API
+## Build and run the container
 
-You can get basic information about the current state of the robot from `/api/v1/status` using curl this would look like
+The bundled SDK requires Linux amd64. Build from the repository root:
 
 ```bash
-curl -X 'GET' \
-  'http://localhost:3000/api/v1/status' \
-  -H 'accept: application/json'
+make image
+export NAO_BRIDGE_TOKEN='replace-with-a-long-random-client-token'
+export NAO_BRIDGE_OPERATOR_TOKEN='replace-with-a-different-operator-token'
+export NAO_IP='192.168.1.100'
+docker run --rm --init --name nao-bridge \
+  -p 127.0.0.1:3000:3000 \
+  -e NAO_IP -e NAO_BRIDGE_TOKEN -e NAO_BRIDGE_OPERATOR_TOKEN \
+  -v nao-bridge-data:/data nao-bridge-core
 ```
 
-Many other NAO operations are also supported, if you wanted a VGA resolution image from NAO's top camera you could use this curl command
+The token is required when the API binds beyond loopback, including its container
+binding. Use a TLS reverse proxy if exposing it beyond a trusted local network.
+Explicit browser origins can be configured with comma-separated
+`NAO_BRIDGE_ORIGINS`; unsolicited cross-origin requests are rejected. The operator
+token grants diagnostics/revocation and must differ from the application token.
 
-```bash
-curl -X 'GET' \
-  'http://localhost:3000/api/v1/vision/top/vga?format=jpeg' \
-  -H 'accept: image/jpeg'
-```
+The `/data` volume stores dispatch evidence. Keep it across restarts so uncertain
+operations continue to quarantine resources. Losing it loses that recovery
+history. Run one API process per robot/data directory; multiworker deployment is
+unsupported. `/health/live` stays available during robot/agent loss;
+`/health/ready` reports whether the robot connection is ready. Agent supervision
+restarts a failed agent while retaining API diagnostics.
 
-or to say something
+To exercise the actual SDK without a robot, use `--backend native-fixture`. This
+registers local fixture services and produces synthetic head touches through the
+real SDK callback path. It is explicitly identified as a fixture in discovery.
 
-```bash
-curl -X 'POST' \
-  'http://localhost:3000/api/v1/speech/say' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "animated": true,
-  "blocking": true,
-  "text": "This is NAO via the magic of NAO bridge"
-}'
-```
-
-## Build and run the Docker image locally
-
-Navigate to the server directory and build the Docker image:
-
-```bash
-cd server
-docker build -t nao-bridge .
-```
-
-run the container:
-
-```bash
-docker run -p 3000:3000 -e NAO_IP=<YOUR NAO ROBOT IP> nao-bridge
-```
-
-## Verify the API is Running
-
-The API server will be available at `http://localhost:3000`. You can test it with:
-
-```bash
-curl http://localhost:3000/api/v1/status
-```
-
-## Configuration
-
-### Environment Variables
-
-- `NAO_IP`: **Required** - The IP address of your NAO robot (e.g., `192.168.1.100`)
-
-### Port Configuration
-
-The API server runs on port 3000 by default. You can change this by modifying the port mapping in the docker run command:
-
-```bash
-# Example: Run on port 3001 instead
-docker run -p 3001:3000 -e NAO_IP=$NAO_IP nao-bridge
-```
-
-## API Documentation
-
-The server exports a swagger 2.0 speciification document at http://localhost:3000/api/v1/swagger.json and hosts the swagger UI at http://localhost:3000/swagger
-
-## Multiple NAOs
-
-If you're lucky enough to have more than one NAO you can run a container for each one at a different port and then a single program can create clients for each one
-
-```bash
-# run in one shell (or in background)
-docker run -it -p 3000:3000 -e NAO_IP=192.168.0.184 nao-bridge
-
-# and in a different shell (unless other container running in background)
-docker run -it -p 3001:3000 -e NAO_IP=192.168.0.241 nao-bridge
-```
-
-The internal port (the second number) is always 3000, change the first port to be whatever value you like as long as it's unique for each container.
-
-Then in a client application you can create clients for each robot
+## Use the Python client
 
 ```python
-from nao_bridge_client import NAOBridgeClient
-romulus = NAOBridgeClient("http://localhost:3000")
-rommie = NAOBridgeClient("http://localhost:3001")
-romulus.say("This is Romulus")
-# SuccessResponse(success=True, message='Speech command executed', timestamp='2025-07-23T06:50:52.262432Z', data={})
+import os
+from nao_bridge_client import Nao
 
-rommie.say("This is Rommie")
-#SuccessResponse(success=True, message='Speech command executed', timestamp='2025-07-23T06:51:03.503145Z', data={})
+with Nao(token=os.environ.get("NAO_BRIDGE_TOKEN")) as nao:
+    print(nao.robot.info())
+    operation = nao.speech.say("Hello from NAO Bridge", timeout=10)
+    print(operation.id, operation.status)
 ```
 
-## Development
+[`Nao` and `AsyncNao`](clients/python/README.md) manage session renewal, local
+operation waiting and bounded event streams. Commands are ordinary HTTP requests;
+SSE carries observations. Reconnecting reports a gap and current state, without
+replaying action triggers. MQTT and a second container are unnecessary.
 
-### Building for Development
+Other clients can use the [HTTP walkthrough](docs/http-api.md),
+[OpenAPI/schema bundle and fixtures](contracts/README.md), and
+[language-neutral lifecycle guide](docs/client-contract.md). A future Rust/Tauri
+client is supported by the design but is not implemented here.
 
-If you're developing the application, you can mount the source code as a volume for live reloading:
+## Develop and verify
 
 ```bash
-docker run -p 3000:3000 -e NAO_IP=$NAO_IP -v $(pwd)/server:/nao-bridge/server nao-bridge
+make check             # lint, types, server/client tests, socket conformance
+make test-container    # production image, offline SDK callbacks and agent faults
 ```
+
+uv manages project runtimes and dependencies; manual Python installations are not
+required. Local server development uses Python 3.12; the image carries pinned
+Python 3.13 and a private Python 2/SDK bundle. Legacy library paths are confined to
+the agent subprocess. Docker inputs and Python dependencies are locked; updating
+those locks requires rerunning the native/container checks.
+
+The [API plan](docs/api-plan.md), [delivery plan](docs/delivery-plan.md) and
+[runtime design](docs/runtime-design.md) describe the complete intended system.
+Historical packaging experiments remain in [experiments/runtime-ipc](experiments/runtime-ipc).

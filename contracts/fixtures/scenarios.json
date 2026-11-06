@@ -1,0 +1,95 @@
+{
+  "contract_version": "1.0.0",
+  "symbols": [
+    "bridge_instance_id",
+    "connection_generation",
+    "session_id",
+    "operation_id",
+    "subscription_id"
+  ],
+  "scenarios": [
+    {
+      "name": "speech lifecycle",
+      "steps": [
+        "GET /api/robot",
+        "POST /api/sessions",
+        "POST /api/speech/utterances",
+        "GET /api/operations/{operation_id}",
+        "POST /api/sessions/{session_id}/close"
+      ],
+      "expected": [
+        "connected fake or native-fixture",
+        "201 active session",
+        "202 accepted/running operation",
+        "succeeded within 5s in fixture",
+        "202 cleanup, then succeeded"
+      ],
+      "nondeterminism": [
+        "operation can complete before first GET",
+        "opaque IDs and timestamps"
+      ]
+    },
+    {
+      "name": "idempotency",
+      "steps": [
+        "repeat identical session creation/key",
+        "repeat identical speech creation/key",
+        "change speech body with same key"
+      ],
+      "expected": [
+        "same session ID",
+        "same operation ID",
+        "409 idempotency_conflict"
+      ]
+    },
+    {
+      "name": "stream reset",
+      "steps": [
+        "create subscription",
+        "attach stream",
+        "disconnect",
+        "reattach with arbitrary Last-Event-ID"
+      ],
+      "expected": [
+        "201",
+        "stream.ready then state.sample; live touch for native fixture",
+        "stream slot detached within 3s",
+        "stream.ready, stream.reset, state.sample; no replay"
+      ],
+      "nondeterminism": [
+        "live events may arrive between snapshots",
+        "sample coalescing reports skipped_samples"
+      ]
+    },
+    {
+      "name": "uncertain dispatch",
+      "steps": [
+        "start fixture speech",
+        "kill/freeze native agent",
+        "GET operation",
+        "operator revoke with force_release"
+      ],
+      "expected": [
+        "202",
+        "API remains live; agent restarts",
+        "unknown; speech.output quarantined",
+        "fencing acknowledgement required; original unknown remains unknown"
+      ]
+    },
+    {
+      "name": "expired session",
+      "steps": [
+        "create session with short test lease",
+        "start speech",
+        "stop renewing",
+        "try mutation"
+      ],
+      "expected": [
+        "active",
+        "running",
+        "expired; cleanup stops or quarantines work",
+        "410 expired; never recreate session implicitly"
+      ]
+    }
+  ]
+}

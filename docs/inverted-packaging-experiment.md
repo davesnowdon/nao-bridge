@@ -2,7 +2,7 @@
 
 Date: 6 November 2026. **Adopt the inverted packaging direction for the replacement API:** start with pinned Ubuntu 24.04, copy an isolated Python 2/NAOqi runtime from the existing immutable image, and run the modern Python API alongside it. This replaces the legacy-base preference in the original plan. HTTP/SSE, modern Python, and the two-process/one-container architecture remain unchanged.
 
-The maintained-base experiment passes the same 21 integration/failure checks as the legacy-base comparison, plus a broader binary and media audit. This establishes the Linux amd64 packaging choice. It does not close the physical-robot, Apple Silicon, production-supervision, or recording-pipeline gates. The production `server/Dockerfile` is unchanged; [Dockerfile.inverted](../experiments/runtime-ipc/Dockerfile.inverted) is the executable recipe to carry into increment 1B after the remaining 1A gates.
+The maintained-base experiment passes the same 21 integration/failure checks as the legacy-base comparison, plus a broader binary and media audit. This establishes the Linux amd64 packaging choice. It does not close the physical-robot, Apple Silicon, production-supervision, or recording-pipeline gates. At the time of this experiment the production Dockerfile was unchanged; the replacement now adopts this recipe (see [implementation status](implementation-status.md)). [Dockerfile.inverted](../experiments/runtime-ipc/Dockerfile.inverted) is the executable recipe to carry into increment 1B after the remaining 1A gates.
 
 ## Why adopt it
 

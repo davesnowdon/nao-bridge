@@ -1,8 +1,8 @@
 # Runtime and event transport design
 
-Status: planned architecture, 6 November 2026. The process split is the target architecture. Modern Python is the preferred API implementation; the build and hardware experiments in delivery increment 1A must establish a reproducible deployment before broad implementation begins. No runtime changes are implemented by these documents.
+Status: architecture and implementation direction, 6 November 2026. The maintained-base Python/ASGI split is implemented for increment 1; see [implementation evidence](implementation-status.md). Physical robot behavior and Apple Silicon acceptance remain separate gates. Media, motion and sequences below describe later increments.
 
-The [original container experiment](runtime-experiment.md) and [maintained-base comparison](inverted-packaging-experiment.md) provide executable packaging and IPC evidence for Linux amd64. It exercises the complete pinned candidate dependency set beside the real SDK; production integration, physical robot behavior, and Apple Silicon acceptance remain separate gates.
+The [original container experiment](runtime-experiment.md) and [maintained-base comparison](inverted-packaging-experiment.md) provide executable packaging and IPC evidence for Linux amd64. It exercises the complete pinned candidate dependency set beside the real SDK; the production increment-1 suite adds API/agent supervision and HTTP/SSE conformance. Physical robot behavior and Apple Silicon acceptance remain separate gates.
 
 ## Two processes, one container
 

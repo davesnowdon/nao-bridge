@@ -2,7 +2,7 @@
 
 This is a reproducible feasibility experiment, not the replacement bridge implementation. It runs the complete selected ASGI dependency stack beside the bundled Python 2 SDK in one container. It never connects to a robot. Native calls and signals use real NAOqi bindings and local test services; service behavior, sensor values, and media are fixtures.
 
-The production Dockerfile and application are unchanged. See [the runtime decision](../../docs/runtime-design.md), [original results](../../docs/runtime-experiment.md), and [maintained-base adoption and binary audit](../../docs/inverted-packaging-experiment.md).
+These results describe the pre-implementation baseline. The production Dockerfile now builds the replacement API; `make test-container` runs its separate acceptance suite. See [the runtime decision](../../docs/runtime-design.md), [original results](../../docs/runtime-experiment.md), and [maintained-base adoption and binary audit](../../docs/inverted-packaging-experiment.md).
 
 ## Prepare artifacts and legacy baseline
 
@@ -17,10 +17,11 @@ docker run --rm --network none --cpus 2 --memory 512m \
 
 Preparation downloads the official standalone Python archive and hash-locked wheels at build time. The test runs offline, including a local TLS server with certificate verification. The final image contains the scripts, dependencies, and SDK; the results mount is its only required host input. No robot address, published port, MQTT broker, or second application container is needed. The command uses the image's existing default user. Docker may create root-owned result files.
 
-The default baseline is the immutable published NAO Bridge image digest in `Dockerfile`. To repeat against the current repository build:
+The default baseline is the immutable published NAO Bridge image digest in `Dockerfile`. The historical “current” comparison used commit `ddd3888` before the replacement API. To reproduce that comparison, first obtain that commit in a separate checkout and build its legacy image, then run the harness from this checkout:
 
 ```bash
-docker build -t nao-bridge-current-probe -f server/Dockerfile server
+git worktree add --detach /tmp/nao-bridge-v1 ddd3888
+docker build -t nao-bridge-current-probe -f /tmp/nao-bridge-v1/server/Dockerfile /tmp/nao-bridge-v1/server
 docker build --network none --build-arg LEGACY_IMAGE=nao-bridge-current-probe \
   -t nao-bridge-ipc-current-probe experiments/runtime-ipc
 docker run --rm --network none --cpus 2 --memory 512m \
@@ -28,7 +29,7 @@ docker run --rm --network none --cpus 2 --memory 512m \
   nao-bridge-ipc-current-probe verify.py --duration 180 --output /results/current-linux-amd64.json
 ```
 
-The existing server build uses Ubuntu package repositories; its apt layer is not newly made reproducible by this experiment. The published digest provides an immutable reference. Dependency changes require deliberate re-resolution **inside the legacy runtime**, not on a newer host whose pip can select incompatible wheels. `requirements.in` describes the tested package selection; `requirements.lock` pins every resolved distribution and wheel hash. Tests verify installed versions and record source hashes, SDK tree hash, runtime versions, and measurements.
+That historical server build uses Ubuntu package repositories; its apt layer is not newly made reproducible by this experiment. The published digest provides an immutable reference. Dependency changes require deliberate re-resolution **inside the legacy runtime**, not on a newer host whose pip can select incompatible wheels. `requirements.in` describes the tested package selection; `requirements.lock` pins every resolved distribution and wheel hash. Tests verify installed versions and record source hashes, SDK tree hash, runtime versions, and measurements.
 
 ## Maintained-base recipe
 
@@ -49,7 +50,7 @@ The build needs network access to install the exact Ubuntu package versions in `
 
 `collect_legacy.py` runs in the pinned legacy donor stage. It copies the interpreter, standard library, SDK and required private libraries, records their hashes/provenance and copyright files, and supplies SDK SONAME aliases. It excludes old glibc and unrelated Python packages. `audit_binaries.py` checks every loadable ELF in the SDK/private runtimes and the selected system tools, then executes all legacy extension imports, SDK calls/signals, Pillow formats, and FFmpeg MJPEG/PCM muxing/decoding. The [decision report](../../docs/inverted-packaging-experiment.md) defines the exact audit coverage and remaining hardware limits.
 
-To repeat the comparison with identical current scripts, first build `nao-bridge-current-probe` using the existing server Dockerfile as above, then:
+To repeat the comparison with identical current scripts, first build `nao-bridge-current-probe` using the historical checkout as above, then:
 
 ```bash
 docker build --network none --build-arg LEGACY_IMAGE=nao-bridge-current-probe \

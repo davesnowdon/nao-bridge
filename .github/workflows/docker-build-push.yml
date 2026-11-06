@@ -4,7 +4,7 @@ on:
   # Trigger on pushes to main branch when server files change
   push:
     branches: [main]
-    paths: ['server/**']
+    paths: ['server/**', 'experiments/runtime-ipc/collect_legacy.py', 'experiments/runtime-ipc/os-packages.lock', '.dockerignore']
   
   # Trigger on new releases for versioned builds
   release:
@@ -92,7 +92,7 @@ jobs:
         id: build
         uses: docker/build-push-action@16ebe778df0e7752d2cfcbd924afdbbd89c1a755 # v6.6.1
         with:
-          context: ./server
+          context: .
           file: ./server/Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image == 'true' || inputs.push_image == true) }}

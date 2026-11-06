@@ -1,6 +1,6 @@
 # Client contract and implementation guide
 
-Status: design guide for the planned replacement API, 6 November 2026. These routes and behaviors are not implemented yet. Exact schemas, executable transcripts, and conformance fixtures will be delivered alongside each increment, starting with increment 1. The [API plan](api-plan.md) defines domain behavior; the [delivery plan](delivery-plan.md) defines acceptance gates.
+Status: lifecycle guide for the replacement API, 6 November 2026. Increment 1 now has [canonical schemas/fixtures](../contracts/README.md) and an [HTTP walkthrough](http-api.md). Motion, media and sequence sections below describe later delivery increments. The [API plan](api-plan.md) defines domain behavior; [implementation status](implementation-status.md) records verified software and remaining hardware gates.
 
 ## Contract ownership
 

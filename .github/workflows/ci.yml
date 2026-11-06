@@ -1,5 +1,4 @@
 name: CI
-
 on:
   push:
     branches: [main]
@@ -9,16 +8,33 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: clients/python
     steps:
       - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
         with:
-          version: "latest"
-
-      - run: uv sync --locked
-
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v4
+      - run: make install
       - run: make check
+      - name: Check contract compatibility
+        if: github.event_name == 'pull_request'
+        run: uv run --project server python scripts/check_contract.py "${{ github.event.pull_request.base.sha }}"
+      - name: Check exported runtime lock
+        working-directory: server
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock > /dev/null
+          git diff --exit-code -- requirements.lock
+      - name: Export contract bundle
+        run: |
+          mkdir -p /tmp/contract-bundle
+          cp server/modern/nao_bridge/contract/*.json /tmp/contract-bundle/
+          cp -r contracts/fixtures /tmp/contract-bundle/
+          cp contracts/README.md docs/client-contract.md docs/http-api.md /tmp/contract-bundle/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nao-bridge-contract
+          path: /tmp/contract-bundle
+  native-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-container

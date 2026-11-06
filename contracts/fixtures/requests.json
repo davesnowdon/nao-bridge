@@ -1,0 +1,79 @@
+{
+  "version": "1.0.0",
+  "cases": [
+    {
+      "schema": "SpeechCreate",
+      "value": {
+        "text": "Hello"
+      },
+      "valid": true
+    },
+    {
+      "schema": "SpeechCreate",
+      "value": {
+        "text": "Hello",
+        "volume": 0,
+        "rate": 1.0
+      },
+      "valid": true
+    },
+    {
+      "schema": "SpeechCreate",
+      "value": {
+        "text": "Hello",
+        "volume": "0.5"
+      },
+      "valid": false
+    },
+    {
+      "schema": "SpeechCreate",
+      "value": {
+        "text": "Hello",
+        "voice": null
+      },
+      "valid": false
+    },
+    {
+      "schema": "SpeechCreate",
+      "value": {
+        "text": "Hello",
+        "future_option": true
+      },
+      "valid": false
+    },
+    {
+      "schema": "SessionRevoke",
+      "value": {
+        "confirm": true,
+        "reason": "Operator checked output",
+        "force_release": true
+      },
+      "valid": true
+    },
+    {
+      "schema": "SessionRevoke",
+      "value": {
+        "confirm": false,
+        "reason": "wrong"
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "events": [
+          "touch.changed"
+        ],
+        "samples": [
+          {
+            "groups": [
+              "sensors"
+            ],
+            "rate_hz": 5
+          }
+        ]
+      },
+      "valid": true
+    }
+  ]
+}
