@@ -4,6 +4,12 @@ The NAOqi python SDK is based on python 2.7.9 and relies heavily on proprietary 
 
 This project borrows heavily from the work of [Don Najd](https://github.com/dnajd) and his [FluentNAO](https://github.com/dnajd/FluentNao) project both in terms of using FluentNAO as the basis of the REST API and the idea of packaging the SDK inside a docker container.
 
+## Planned replacement API
+
+The [API plan](docs/api-plan.md) defines a fresh, language-neutral API for common robot capabilities, with HTTP commands and SSE events. Python is its first client; the [client contract guide](docs/client-contract.md) defines the lifecycle rules needed by future implementations. The [four-increment delivery plan](docs/delivery-plan.md) uses Recorder, Wanderer, and a scripted presentation as acceptance applications. [Research notes](docs/research-notes.md) record the evidence and decisions behind the design.
+
+This is planned work, with no v1 or FluentNao compatibility requirement. The instructions below describe the currently implemented API.
+
 ## Prerequisites
 
 - Docker installed on your system
