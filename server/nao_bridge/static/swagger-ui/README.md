@@ -5,7 +5,7 @@ licensed under Apache-2.0 (see LICENSE and NOTICE). Served locally so the API
 explorer works without a CDN, browser extension or separate installation.
 
 To update, replace the JS/CSS and license files from a pinned upstream release,
-refresh these SHA-256 digests, and verify schema resolution and an authenticated
+refresh these SHA-256 digests, and verify schema resolution and a
 session/speech request in a browser with external network requests blocked.
 
 ```

@@ -68,7 +68,6 @@ class EventBuffer:
 @dataclass
 class Subscription:
     public: dict[str, Any]
-    owner: str
     buffer: EventBuffer | None = None
     attachments: int = 0
     sequence: int = 0

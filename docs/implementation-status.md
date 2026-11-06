@@ -9,12 +9,11 @@ Every discovery response reports `hardware_verified: false`.
 
 - Canonical contract 1.0.0: OpenAPI, named JSON schemas, JSON/SSE fixtures, scenario
   manifests, schema/route parity tests and a conservative compatibility CI guard.
-- Modern ASGI API: token/origin checks, health/discovery/capabilities, shared head
+- Modern ASGI API: origin checks, health/discovery/capabilities, shared head
   touch state with freshness, sessions/renewal/expiry, plain speech, operations,
-  cancellation, idempotency, resource conflicts, priority stop and operator recovery.
-- Durable dispatch journal: ambiguous work stays unknown/quarantined after restart;
-  operator recovery can fence reconstructed prior-session identities. Force release
-  never rewrites the original uncertain outcome as success.
+  cancellation, idempotency, resource conflicts, priority stop and explicit recovery.
+- Process-local operation/session history: uncertain work remains visible while the
+  API runs; API restart starts empty without restoring or replaying commands.
 - Python 2 SDK agent: private bounded command/priority/observation sockets, bounded
   dispatch/response queues, heartbeat authority, native completion/cancellation and
   three shared touch callbacks. Legacy library paths remain process-local.
@@ -23,8 +22,8 @@ Every discovery response reports `hardware_verified: false`.
 - `Nao` and `AsyncNao`: matching domain helpers, independent renewal/readers, typed
   errors, wait/cancel, explicit ambiguous-request retry, reconnect/deduplication and
   bounded queues. The sync facade delegates transport/lifecycle to the async core.
-- Bundled offline Swagger UI at `/docs`, with `/` redirect, bearer authorization
-  and public static schemas; robot endpoints retain token checks.
+- Bundled offline Swagger UI at `/docs`, with `/` redirect and locally served
+  schemas and assets; requests work directly from the browser.
 - Replaced v1 entry points/docs; two-observer event examples, optional speech on
   touch, and SDK-independent HTTP walkthrough/conformance runner.
 
@@ -40,19 +39,19 @@ On Linux amd64, 6 November 2026:
 
 | Verification | Result |
 | --- | --- |
-| Server/core/socket tests | 44 passed: handlers, auth, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure and agent fences |
+| Server/core/socket tests | 44 passed: handlers, origins, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure and agent fences |
 | Client parser tests | 23 passed: UTF-8/chunk/CRLF boundaries, comments, multiline data, unknown events, malformed IDs/payloads/numbers and byte bounds |
 | Modern server/client type checks | Passed |
-| Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, bearer authorization, robot discovery, session creation and speech submission; token cleared on reload |
+| Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, robot discovery, session creation and speech submission without client setup |
 | Server distribution build | Passed; wheel includes canonical schemas, Swagger UI assets and license notices |
 | Production Docker build | Passed from pinned Ubuntu 24.04 and immutable legacy donor; locked wheels and checked Python archive |
 | Native fixture conformance | Passed: discovery → session → speech/idempotency → touch SSE → reconnect reset → cleanup using actual bundled qi calls/signals |
 | Native fixture at eight SSE streams | Five HTTP command admissions: 10.85, 11.03, 10.84, 11.22, 11.45 ms; all under the 250 ms target |
 | Native blocked-call cancellation | Priority fixture service confirmed cancellation within two seconds; this does not establish real robot service preemption |
 | Native subscription churn | 20 create/attach/delete cycles; zero retained streams/subscriptions; three connection-scoped native callbacks |
-| Agent SIGKILL and SIGSTOP | API remained live; work became unknown; resource remained quarantined; supervised restart and acknowledged operator fencing succeeded |
+| Agent SIGKILL and SIGSTOP | API remained live; work became unknown; resource remained quarantined; supervised restart and acknowledged session fencing succeeded |
 | API SIGSTOP/SIGCONT | Agent watchdog invalidated authority; stale-generation completion was rejected; affected work remained unknown |
-| API SIGKILL/restart | Durable dispatch evidence restored quarantine; prior session remained invalidated and operator-recoverable |
+| API SIGKILL/restart | New API instance starts empty; old IDs return 404, new sessions/work accepted, no replay |
 
 The native container suite runs with `--network none`, as the configured non-root
 user. Its local services simulate behavior; SDK marshaling, signal delivery,
@@ -71,7 +70,7 @@ Python 2 `long`. The adapter uses connection signals and accepts real numeric
 ## Recovery policy and bounds
 
 Retain API diagnostics during agent loss and supervise one replacement agent.
-Do not run multiple API workers against one robot/journal. Control identity includes
+Do not run multiple API workers against one robot. Control identity includes
 API instance, agent instance and authority epoch; queued work is checked again at
 dispatch. A one-second agent heartbeat deadline is independent of HTTP/SSE readers.
 Commands, stop work and observations have separate bounded queues. Priority requests
@@ -85,10 +84,12 @@ and recovery operation/key admission have separate budgets. Exhausted budgets
 reject new work; uncertain ownership is not evicted to make room. The shared sensor
 sampler runs at 10 Hz. Capabilities publish actual configured limits.
 
-The dispatch journal must survive container restart on `/data`. It records evidence
-before native effects. It is not a durable idempotency/replay log: never retry an
-ambiguous creation across bridge restart. Fencing acknowledges a dispatch boundary,
-not a physical stop. Original outcomes remain uncertain after an operator override.
+Sessions, operations, subscriptions, retry keys and resource ownership are held in
+API process memory only. API restart creates a new bridge instance and discards
+that state; no database or data volume is needed. Prior IDs return 404, which does
+not establish whether earlier work stopped on the robot. Agent restart retains
+state still held by the API, including uncertain outcomes. Explicit cleanup and
+release remain available within that API instance.
 
 ## Remaining hardware and later-increment gates
 

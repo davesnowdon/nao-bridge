@@ -1,7 +1,6 @@
 """Observe touch from two sessions; optionally speak on fresh touch edges."""
 
 import argparse
-import os
 import threading
 
 from nao_bridge_client import BridgeError, Nao
@@ -17,10 +16,9 @@ def main():
     parser.add_argument("url", nargs="?", default="http://127.0.0.1:3000")
     parser.add_argument("--speak-on-touch", action="store_true")
     args = parser.parse_args()
-    token = os.environ.get("NAO_BRIDGE_TOKEN")
     with (
-        Nao(args.url, token=token, name="touch-application") as nao,
-        Nao(args.url, token=token, name="independent-observer") as observer,
+        Nao(args.url, name="touch-application") as nao,
+        Nao(args.url, name="independent-observer") as observer,
         nao.events.subscribe(
             events=["touch.changed"], samples=[{"groups": ["sensors"], "rate_hz": 5}]
         ) as events,

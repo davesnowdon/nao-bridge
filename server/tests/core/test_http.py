@@ -18,7 +18,7 @@ def test_canonical_contract_schemas():
     assert canonical(True) != canonical(1)
 
 
-async def test_discovery_state_auth_and_origins(rig):
+async def test_discovery_state_and_origins(rig):
     async with rig() as (client, core, backend):
         for path, schema in [
             ("/api/robot", "Robot"),
@@ -30,15 +30,9 @@ async def test_discovery_state_auth_and_origins(rig):
             assert response.status_code == 200, response.text
             VALIDATORS[schema].validate(response.json())
         assert (
-            await client.get("/api/robot", headers={"Authorization": "Bearer wrong"})
-        ).status_code == 401
-        assert (
             await client.get("/api/robot", headers={"Origin": "https://evil.example"})
         ).status_code == 403
-        assert (await client.get("/api/robot/diagnostics")).status_code == 403
-        response = await client.get(
-            "/api/robot/diagnostics", headers={"Authorization": "Bearer test-operator"}
-        )
+        response = await client.get("/api/robot/diagnostics")
         VALIDATORS["Diagnostics"].validate(response.json())
         assert (await client.get("/api/state?include=unknown")).status_code == 400
         assert (await client.get("/api/state?max_age_ms=true")).status_code == 400
@@ -127,7 +121,7 @@ async def test_cancel_is_observable_and_idempotent(rig):
         assert not core.resources
 
 
-async def test_unknown_outcome_quarantine_and_guarded_operator_release(rig):
+async def test_unknown_outcome_quarantine_and_explicit_release(rig):
     async with rig() as (client, core, backend):
         s, headers = await new_session(client)
         backend.fail_next = "unknown"
@@ -143,22 +137,13 @@ async def test_unknown_outcome_quarantine_and_guarded_operator_release(rig):
         ).status_code == 409
         route = "/api/sessions/" + s["id"] + "/revoke"
         payload = {"confirm": True, "reason": "operator checked", "force_release": True}
-        assert (await client.post(route, json=payload, headers=headers)).status_code == 403
         backend.fence_confirmed = False
-        denied = await client.post(
-            route, json=payload, headers={"Authorization": "Bearer test-operator"}
-        )
-        recovery = await wait_operation(
-            client, denied.json()["id"], {"Authorization": "Bearer test-operator"}
-        )
+        denied = await client.post(route, json=payload, headers=headers)
+        recovery = await wait_operation(client, denied.json()["id"], headers)
         assert recovery["status"] == "failed" and core.resources
         backend.fence_confirmed = True
-        response = await client.post(
-            route, json=payload, headers={"Authorization": "Bearer test-operator"}
-        )
-        recovery = await wait_operation(
-            client, response.json()["id"], {"Authorization": "Bearer test-operator"}
-        )
+        response = await client.post(route, json=payload, headers=headers)
+        recovery = await wait_operation(client, response.json()["id"], headers)
         assert recovery["status"] == "succeeded" and recovery["result"][
             "unresolved_operation_ids"
         ] == [op["id"]]
@@ -215,9 +200,8 @@ async def test_session_creation_retry_and_resource_limits(rig):
         assert response.headers["retry-after"] == "1"
 
 
-async def test_browser_docs_bootstrap_without_token_and_api_stays_protected(rig):
+async def test_browser_docs_and_requests_work_without_setup(rig):
     async with rig() as (client, core, backend):
-        client.headers.pop("Authorization")
         root = await client.get("/")
         assert root.status_code == 307 and root.headers["location"] == "/docs"
         docs = await client.get("/docs")
@@ -225,7 +209,6 @@ async def test_browser_docs_bootstrap_without_token_and_api_stays_protected(rig)
         assert 'url: "/api/openapi.json"' in docs.text or "url: '/api/openapi.json'" in docs.text
         assert "https://" not in docs.text
         assert '"validatorUrl": null' in docs.text
-        assert '"persistAuthorization": false' in docs.text
         for name, content_type in [
             ("swagger-ui-bundle.js", "text/javascript"),
             ("swagger-ui.css", "text/css"),
@@ -235,11 +218,11 @@ async def test_browser_docs_bootstrap_without_token_and_api_stays_protected(rig)
             assert content_type in asset.headers["content-type"]
         assert (await client.get("/api/openapi.json")).json() == OPENAPI
         assert (await client.get("/api/schemas.json")).json() == SCHEMAS
-        for path in ("/api/robot", "/api/state", "/health/ready", "/docs/private"):
-            assert (await client.get(path)).status_code == 401
-        assert (await client.post("/api/sessions", json={})).status_code == 401
-        assert not backend.calls
-        client.headers["Authorization"] = "Bearer test-client"
+        for path in ("/api/robot", "/api/state", "/health/ready", "/api/robot/diagnostics"):
+            assert (await client.get(path)).status_code == 200
+        assert (await client.get("/docs/private")).status_code == 404
+        assert "security" not in OPENAPI
+        assert "securitySchemes" not in OPENAPI["components"]
         client.headers["Origin"] = "http://test"
         _, headers = await new_session(client)
         response = await client.post(

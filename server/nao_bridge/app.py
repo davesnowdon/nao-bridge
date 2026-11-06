@@ -1,6 +1,4 @@
 import copy
-import hashlib
-import hmac
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -30,17 +28,6 @@ from .events import StreamWriteTimeout
 
 LOG = logging.getLogger(__name__)
 DOC_ASSETS = Path(__file__).parent / "static" / "swagger-ui"
-PUBLIC_PATHS = frozenset(
-    {
-        "/",
-        "/docs",
-        "/docs/swagger-ui-bundle.js",
-        "/docs/swagger-ui.css",
-        "/api/openapi.json",
-        "/api/schemas.json",
-        "/health/live",
-    }
-)
 
 
 def create_app(settings: Settings | None = None, backend: Backend | None = None) -> FastAPI:
@@ -69,8 +56,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
 
     def error_response(request: Request, exc: BridgeError) -> JSONResponse:
         headers = {"X-Request-ID": request.state.request_id}
-        if exc.status == 401:
-            headers["WWW-Authenticate"] = "Bearer"
         if exc.status == 429:
             headers["Retry-After"] = "1"
         return JSONResponse(
@@ -95,26 +80,12 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     headers={
                         "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
                         "Access-Control-Allow-Headers": (
-                            "Authorization,Content-Type,X-Session-ID,Idempotency-Key,Last-Event-ID"
+                            "Content-Type,X-Session-ID,Idempotency-Key,Last-Event-ID"
                         ),
                         "Access-Control-Max-Age": "600",
                     },
                 )
             else:
-                supplied = request.headers.get("authorization", "")
-                token = supplied[7:] if supplied.startswith("Bearer ") else ""
-                operator = bool(
-                    settings.operator_token and hmac.compare_digest(token, settings.operator_token)
-                )
-                authenticated = operator or bool(
-                    settings.token and hmac.compare_digest(token, settings.token)
-                )
-                if settings.token and not authenticated and request.url.path not in PUBLIC_PATHS:
-                    raise BridgeError("unauthenticated", "A valid bearer token is required", 401)
-                request.state.operator = operator
-                request.state.owner = (
-                    hashlib.sha256(token.encode()).hexdigest() if authenticated else "local"
-                )
                 response = await call_next(request)
             if origin in settings.origins:
                 response.headers["Access-Control-Allow-Origin"] = origin
@@ -187,11 +158,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         return parsed
 
     def session(request: Request, active: bool = True):
-        return core.session(request.headers.get("x-session-id"), request.state.owner, active)
-
-    def operator(request: Request) -> None:
-        if not request.state.operator:
-            raise BridgeError("forbidden", "Separate operator authorization is required", 403)
+        return core.session(request.headers.get("x-session-id"), active)
 
     def created(value: dict[str, Any], path: str, status: int) -> JSONResponse:
         return JSONResponse(
@@ -240,7 +207,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             swagger_favicon_url="data:,",
             swagger_ui_parameters={
                 "validatorUrl": None,
-                "persistAuthorization": False,
                 "displayRequestDuration": True,
             },
         )
@@ -265,12 +231,11 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     async def create_session(request: Request) -> Response:
         value = await body(request, "SessionCreate")
         result = await core.idempotent(
-            request.state.owner,
             core.instance,
             "POST /sessions",
             request.headers.get("idempotency-key"),
             value,
-            lambda: core.create_session(request.state.owner, value),
+            lambda: core.create_session(value),
         )
         return created(result, "sessions", 201)
 
@@ -296,7 +261,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         if item.public["id"] != session_id:
             raise BridgeError("forbidden", "Session header does not match route", 403)
         result = await core.idempotent(
-            request.state.owner,
             session_id,
             "POST /sessions/" + session_id + "/close",
             request.headers.get("idempotency-key"),
@@ -308,13 +272,11 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
 
     @app.post("/api/sessions/{session_id}/revoke")
     async def revoke_session(request: Request, session_id: str) -> Response:
-        operator(request)
         value = await body(request, "SessionRevoke")
         item = core.sessions.get(session_id)
         if not item:
             raise BridgeError("not_found", "Unknown session", 404)
         result = await core.idempotent(
-            request.state.owner,
             session_id,
             "POST /sessions/" + session_id + "/revoke",
             request.headers.get("idempotency-key"),
@@ -329,7 +291,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         value = await body(request, "SpeechCreate")
         item = session(request)
         result = await core.idempotent(
-            request.state.owner,
             item.public["id"],
             "POST /speech/utterances",
             request.headers.get("idempotency-key"),
@@ -344,8 +305,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             core.operation(
                 operation_id,
                 request.headers.get("x-session-id"),
-                request.state.owner,
-                request.state.operator,
             ).public
         )
 
@@ -353,22 +312,18 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     async def list_operations(request: Request) -> dict[str, Any]:
         query(request, {"status", "parent_id", "cursor", "limit"})
         sid = request.headers.get("x-session-id")
-        if not request.state.operator:
-            session(request, False)
+        session(request, False)
         status = request.query_params.get("status")
         if status and status not in SCHEMAS["$defs"]["Operation"]["properties"]["status"]["enum"]:
             raise BridgeError("invalid_request", "Unknown operation status")
         limit = bounded_int(request, "limit", 50, 100, 1)
         parent = request.query_params.get("parent_id")
         if parent:
-            core.operation(parent, sid, request.state.owner, request.state.operator)
+            core.operation(parent, sid)
         values = [
             op.public
             for op in core.operations.values()
-            if (
-                request.state.operator
-                or (op.owner == request.state.owner and op.public["session_id"] == sid)
-            )
+            if op.public["session_id"] == sid
             and (not status or op.public["status"] == status)
             and (not parent or op.public.get("parent_id") == parent)
         ]
@@ -388,7 +343,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     async def cancel(request: Request, operation_id: str) -> Response:
         await body(request, "EmptyRequest")
         item = session(request)
-        op = core.operation(operation_id, item.public["id"], request.state.owner)
+        op = core.operation(operation_id, item.public["id"])
         return created(await core.cancel(op), "operations", 202)
 
     @app.post("/api/robot/stop")
@@ -396,7 +351,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         value = await body(request, "StopRequest")
         item = session(request)
         result = await core.idempotent(
-            request.state.owner,
             item.public["id"],
             "POST /robot/stop",
             request.headers.get("idempotency-key"),
@@ -408,7 +362,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
 
     @app.get("/api/robot/diagnostics")
     async def diagnostics(request: Request) -> dict[str, Any]:
-        operator(request)
         return await core.diagnostics()
 
     @app.get("/api/events/types")
@@ -432,7 +385,6 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         value = await body(request, "SubscriptionCreate")
         item = session(request)
         result = await core.idempotent(
-            request.state.owner,
             item.public["id"],
             "POST /events/subscriptions",
             request.headers.get("idempotency-key"),
@@ -444,25 +396,19 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     @app.get("/api/events/subscriptions/{subscription_id}")
     async def get_subscription(request: Request, subscription_id: str) -> dict[str, Any]:
         return copy.deepcopy(
-            core.subscription(
-                subscription_id, request.headers.get("x-session-id"), request.state.owner
-            ).public
+            core.subscription(subscription_id, request.headers.get("x-session-id")).public
         )
 
     @app.delete("/api/events/subscriptions/{subscription_id}")
     async def delete_subscription(request: Request, subscription_id: str) -> Response:
-        sub = core.subscription(
-            subscription_id, request.headers.get("x-session-id"), request.state.owner
-        )
+        sub = core.subscription(subscription_id, request.headers.get("x-session-id"))
         sub.close()
         del core.subscriptions[subscription_id]
         return Response(status_code=204)
 
     @app.get("/api/events/subscriptions/{subscription_id}/stream")
     async def stream(request: Request, subscription_id: str) -> Response:
-        sub = core.subscription(
-            subscription_id, request.headers.get("x-session-id"), request.state.owner
-        )
+        sub = core.subscription(subscription_id, request.headers.get("x-session-id"))
         buffer, initial = core.attach(sub, request.headers.get("last-event-id"))
         request.scope["nao_stream_cleanup"] = lambda: core.detach(sub, buffer)
         return StreamingResponse(

@@ -42,7 +42,7 @@ class LoseReply(httpx.AsyncBaseTransport):
 async def test_lost_creation_response_requires_explicit_identical_retry(rig, path):
     async with rig() as (client, core, backend):
         transport = LoseReply(client._transport.app, path)
-        async with AsyncNao("http://test", token="test-client", transport=transport) as nao:
+        async with AsyncNao("http://test", transport=transport) as nao:
             with pytest.raises(AmbiguousRequest) as caught:
                 await nao.speech.say("Once", wait=False)
             pending = caught.value.request
@@ -98,9 +98,7 @@ async def test_unknown_response_fields_and_error_codes_preserved_closed_enums_re
                 response.status_code, content=json.dumps(value), headers=response.headers
             )
 
-        async with AsyncNao(
-            "http://test", token="test-client", transport=httpx.MockTransport(handle)
-        ) as nao:
+        async with AsyncNao("http://test", transport=httpx.MockTransport(handle)) as nao:
             assert (await nao.robot.info()).connection == "connected"
             mode[0] = "enum"
             with pytest.raises(ProtocolError):
@@ -128,9 +126,7 @@ async def test_changed_contract_major_between_open_and_first_mutation_is_refused
                     value["contract_version"] = "2.0.0"
             return httpx.Response(response.status_code, json=value)
 
-        async with AsyncNao(
-            "http://test", token="test-client", transport=httpx.MockTransport(handle)
-        ) as nao:
+        async with AsyncNao("http://test", transport=httpx.MockTransport(handle)) as nao:
             with pytest.raises(ProtocolError):
                 await nao.speech.say("Must not dispatch")
             assert not core.sessions and not backend.calls

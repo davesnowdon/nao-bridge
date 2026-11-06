@@ -10,11 +10,6 @@
       "url": "/api"
     }
   ],
-  "security": [
-    {
-      "BearerAuth": []
-    }
-  ],
   "paths": {
     "/robot": {
       "get": {
@@ -1060,12 +1055,6 @@
     }
   },
   "components": {
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
-      }
-    },
     "schemas": {
       "EmptyRequest": {
         "$ref": "schemas.json#/$defs/EmptyRequest"

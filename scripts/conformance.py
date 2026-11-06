@@ -10,9 +10,8 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 
 class Probe:
-    def __init__(self, url, token):
+    def __init__(self, url):
         self.origin = urlsplit(url)
-        self.token = token
         self.schemas = None
         self.session = None
 
@@ -26,7 +25,7 @@ class Probe:
 
     def request(self, method, path, body=None, *, status=200, schema=None, headers=None):
         conn = self.connection()
-        fields = {"Authorization": "Bearer " + self.token}
+        fields = {}
         if self.session:
             fields["X-Session-ID"] = self.session
         if headers:
@@ -64,7 +63,6 @@ class Probe:
     def stream(self, subscription, *, reconnect=False, touch=False):
         conn = self.connection(timeout=3)
         headers = {
-            "Authorization": "Bearer " + self.token,
             "X-Session-ID": self.session,
         }
         if reconnect:
@@ -107,8 +105,8 @@ class Probe:
         return seen
 
 
-def run(url, token):
-    probe = Probe(url, token)
+def run(url):
+    probe = Probe(url)
     probe.schemas = probe.request("GET", "/api/schemas.json")
     robot = probe.request("GET", "/api/robot", schema="Robot")
     assert robot["backend"] in {"fake", "native-fixture"}, "Conformance dispatch is robot-free only"
@@ -118,13 +116,6 @@ def run(url, token):
         time.sleep(0.1)
         robot = probe.request("GET", "/api/robot", schema="Robot")
     probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
-    probe.request(
-        "GET",
-        "/api/robot",
-        status=401,
-        schema="Error",
-        headers={"Authorization": "Bearer incorrect"},
-    )
     probe.request("GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State")
     session = probe.request(
         "POST",
@@ -207,7 +198,6 @@ def run(url, token):
         "contract_version": robot["contract_version"],
         "checks": [
             "discovery",
-            "auth",
             "state",
             "session",
             "idempotency",
@@ -223,6 +213,5 @@ def run(url, token):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
-    parser.add_argument("--token", required=True)
     args = parser.parse_args()
-    print(json.dumps(run(args.url, args.token), indent=2))
+    print(json.dumps(run(args.url), indent=2))

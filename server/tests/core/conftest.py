@@ -14,9 +14,6 @@ def rig(tmp_path):
         backend = FakeBackend(duration=duration)
         settings = Settings(
             backend="fake",
-            token="test-client",
-            operator_token="test-operator",
-            data_dir=tmp_path / "journal",
             **options,
         )
         app = create_app(settings, backend)
@@ -25,7 +22,6 @@ def rig(tmp_path):
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://test",
-                headers={"Authorization": "Bearer test-client"},
             ) as client,
         ):
             yield client, app.state.core, backend
@@ -65,9 +61,6 @@ async def socket_rig(tmp_path):
         backend = FakeBackend(duration=duration)
         settings = Settings(
             backend="fake",
-            token="test-client",
-            operator_token="test-operator",
-            data_dir=tmp_path / "socket-journal",
             **options,
         )
         app = create_app(settings, backend)

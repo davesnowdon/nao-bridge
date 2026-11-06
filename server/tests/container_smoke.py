@@ -15,13 +15,10 @@ spec.loader.exec_module(conformance)
 env = dict(
     os.environ,
     NAO_BRIDGE_BACKEND="native-fixture",
-    NAO_BRIDGE_TOKEN="fixture-client",
-    NAO_BRIDGE_OPERATOR_TOKEN="fixture-operator",
-    NAO_BRIDGE_DATA_DIR="/tmp/native-journal",
 )
 api = subprocess.Popen([sys.executable, "-m", "nao_bridge.main", "--host", "127.0.0.1"], env=env)
-probe = conformance.Probe("http://127.0.0.1:3000", "fixture-client")
-operator = conformance.Probe("http://127.0.0.1:3000", "fixture-operator")
+probe = conformance.Probe("http://127.0.0.1:3000")
+recovery_probe = conformance.Probe("http://127.0.0.1:3000")
 
 
 def until(predicate, timeout=10):
@@ -49,12 +46,12 @@ def agent_pid():
 try:
     until(connected)
     probe.schemas = probe.request("GET", "/api/schemas.json")
-    operator.schemas = probe.schemas
-    print(json.dumps(conformance.run("http://127.0.0.1:3000", "fixture-client")))
+    recovery_probe.schemas = probe.schemas
+    print(json.dumps(conformance.run("http://127.0.0.1:3000")))
     observers, streams = [], []
     try:
         for _ in range(2):
-            observer = conformance.Probe("http://127.0.0.1:3000", "fixture-client")
+            observer = conformance.Probe("http://127.0.0.1:3000")
             observer.schemas = probe.schemas
             observer.session = observer.request("POST", "/api/sessions", {}, status=201)["id"]
             observers.append(observer)
@@ -73,7 +70,6 @@ try:
                     "GET",
                     sub["stream_url"],
                     headers={
-                        "Authorization": "Bearer fixture-client",
                         "X-Session-ID": observer.session,
                     },
                 )
@@ -102,7 +98,7 @@ try:
                 "POST", "/api/sessions/" + observer.session + "/close", {}, status=202
             )
             assert observer.wait(cleanup)["status"] == "succeeded"
-    until(lambda: operator.request("GET", "/api/robot/diagnostics")["streams"] == 0)
+    until(lambda: recovery_probe.request("GET", "/api/robot/diagnostics")["streams"] == 0)
 
     probe.session = probe.request("POST", "/api/sessions", {"name": "churn"}, status=201)["id"]
     for _ in range(20):
@@ -111,8 +107,8 @@ try:
         )
         probe.stream(sub)
         probe.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
-    until(lambda: operator.request("GET", "/api/robot/diagnostics")["streams"] == 0)
-    diagnostics = operator.request("GET", "/api/robot/diagnostics")
+    until(lambda: recovery_probe.request("GET", "/api/robot/diagnostics")["streams"] == 0)
+    diagnostics = recovery_probe.request("GET", "/api/robot/diagnostics")
     assert diagnostics["subscriptions"] == 0
     assert diagnostics["backend"]["native_subscriptions"] == 3
     cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
@@ -156,14 +152,15 @@ try:
             )
         )
         assert probe.request("GET", "/health/live")["status"] == "ok"
-        diag = operator.request("GET", "/api/robot/diagnostics")
+        diag = recovery_probe.request("GET", "/api/robot/diagnostics")
         assert "speech.output" in diag["quarantined_resources"]
         until(lambda old_pid=old_pid: connected() and agent_pid() != old_pid)
         assert (
             probe.request("GET", "/api/robot")["connection_generation"]
             > before["connection_generation"]
         )
-        recovery = operator.request(
+        recovery_probe.session = session["id"]
+        recovery = recovery_probe.request(
             "POST",
             "/api/sessions/" + session["id"] + "/revoke",
             {
@@ -173,7 +170,7 @@ try:
             },
             status=202,
         )
-        assert operator.wait(recovery)["status"] == "succeeded"
+        assert recovery_probe.wait(recovery)["status"] == "succeeded"
         assert probe.request("GET", "/api/operations/" + operation["id"])["status"] == "unknown"
         print("agent fault recovered:", signal.Signals(fault).name, flush=True)
         probe.session = None
@@ -196,7 +193,8 @@ try:
             connected() and connected()["connection_generation"] > before["connection_generation"]
         )
     )
-    recovery = operator.request(
+    recovery_probe.session = session["id"]
+    recovery = recovery_probe.request(
         "POST",
         "/api/sessions/" + session["id"] + "/revoke",
         {
@@ -206,11 +204,11 @@ try:
         },
         status=202,
     )
-    assert operator.wait(recovery)["status"] == "succeeded"
+    assert recovery_probe.wait(recovery)["status"] == "succeeded"
     print("API freeze: stale-generation completion rejected", flush=True)
     probe.session = None
 
-    # Persisted dispatch evidence survives an abruptly terminated API as well.
+    # A new API instance starts empty; it cannot establish earlier robot outcomes.
     session = probe.request("POST", "/api/sessions", {"name": "api-crash"}, status=201)
     probe.session = session["id"]
     operation = probe.request(
@@ -224,21 +222,24 @@ try:
     api = subprocess.Popen(
         [sys.executable, "-m", "nao_bridge.main", "--host", "127.0.0.1"], env=env
     )
-    until(connected)
-    assert probe.request("GET", "/api/operations/" + operation["id"])["status"] == "unknown"
-    recovery = operator.request(
-        "POST",
-        "/api/sessions/" + session["id"] + "/revoke",
-        {
-            "confirm": True,
-            "reason": "API crash fixture",
-            "force_release": True,
-        },
-        status=202,
+    after = until(connected)
+    assert after["bridge_instance_id"] != before["bridge_instance_id"]
+    probe.request("GET", "/api/operations/" + operation["id"], status=404)
+    probe.request("PATCH", "/api/sessions/" + session["id"], {}, status=404)
+    diag = probe.request("GET", "/api/robot/diagnostics")
+    assert not diag["quarantined_resources"] and diag["sessions"] == 0
+    probe.session = probe.request("POST", "/api/sessions", {}, status=201)["id"]
+    assert probe.session != session["id"]
+    assert (
+        probe.wait(
+            probe.request(
+                "POST", "/api/speech/utterances", {"text": "New API instance"}, status=202
+            )
+        )["status"]
+        == "succeeded"
     )
-    assert operator.wait(recovery)["status"] == "succeeded"
     os.kill(orphan, signal.SIGTERM)
-    print("API crash: durable quarantine and recovered-session fencing passed", flush=True)
+    print("API restart: fresh state, stale IDs rejected, new work accepted", flush=True)
     print("production native fixture checks passed", flush=True)
 finally:
     api.terminate()

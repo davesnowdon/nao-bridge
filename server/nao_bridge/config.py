@@ -8,8 +8,6 @@ class Settings:
     robot_id: str = "nao"
     host: str = "127.0.0.1"
     port: int = 3000
-    token: str | None = None
-    operator_token: str | None = None
     origins: tuple[str, ...] = ()
     backend: str = "naoqi"
     robot_address: str = "127.0.0.1"
@@ -36,15 +34,10 @@ class Settings:
     sse_write_timeout_seconds: float = 2.0
     backend_timeout_seconds: float = 2.0
     shutdown_timeout_seconds: float = 3.0
-    data_dir: Path | None = None
     # Tests inject time at the core boundary; transport scheduling uses the real loop clock.
     clock: Callable[[], float] | None = field(default=None, repr=False, compare=False)
 
     def validate(self) -> None:
-        if self.host not in ("127.0.0.1", "::1", "localhost") and not self.token:
-            raise ValueError("A bearer token is required for non-loopback bindings")
-        if self.operator_token and self.operator_token == self.token:
-            raise ValueError("Operator and client tokens must differ")
         if self.backend not in ("naoqi", "fake", "native-fixture"):
             raise ValueError("Unknown backend")
         if self.lease_seconds <= 0 or self.history_seconds <= 0:

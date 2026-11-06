@@ -2,24 +2,22 @@
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
-**Authorize** with the configured bearer token, then **Try it out** on an endpoint.
+**Try it out** on an endpoint.
 See the [browser walkthrough](../README.md#explore-the-api-in-a-browser) for sessions
 and command execution.
 
 All commands below target the increment 1 surface. Motion, media and sequence routes
 in the broader API plan are not implemented. The Python client is optional.
 
-Set `BRIDGE=http://127.0.0.1:3000` and `NAO_BRIDGE_TOKEN` in your shell. Omit the
-Authorization header only for an explicitly tokenless loopback development server.
+Set `BRIDGE=http://127.0.0.1:3000` in your shell.
 Examples use `jq` to retain opaque IDs; no Python code is involved.
 
 ## Discovery and state
 
 ```bash
-curl -fsS -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" "$BRIDGE/api/robot"
-curl -fsS -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" "$BRIDGE/api/robot/capabilities"
-curl -fsS -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" \
-  "$BRIDGE/api/state?include=sensors&max_age_ms=250&wait_for_fresh_ms=1000"
+curl -fsS "$BRIDGE/api/robot"
+curl -fsS "$BRIDGE/api/robot/capabilities"
+curl -fsS "$BRIDGE/api/state?include=sensors&max_age_ms=250&wait_for_fresh_ms=1000"
 ```
 
 Check contract major `1`, `connection`, `bridge_instance_id` and
@@ -40,19 +38,19 @@ not a promise of physical speech duration.
 
 ```bash
 SESSION=$(curl -fsS -X POST "$BRIDGE/api/sessions" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: example-session-1' -d '{"name":"raw-http-example"}' | jq -r .id)
 curl -fsS -X PATCH "$BRIDGE/api/sessions/$SESSION" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION" \
+  -H "X-Session-ID: $SESSION" \
   -H 'Content-Type: application/json' -d '{}'
 OPERATION=$(curl -fsS -X POST "$BRIDGE/api/speech/utterances" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION" \
+  -H "X-Session-ID: $SESSION" \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: example-speech-1' \
   -d '{"text":"Hello from HTTP"}' | jq -r .id)
 curl -fsS "$BRIDGE/api/operations/$OPERATION" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION"
+  -H "X-Session-ID: $SESSION"
 curl -fsS -X POST "$BRIDGE/api/operations/$OPERATION/cancel" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION" \
+  -H "X-Session-ID: $SESSION" \
   -H 'Content-Type: application/json' -d '{}'
 ```
 
@@ -82,12 +80,12 @@ does not consume their capacity. Limits are returned by capabilities.
 
 ```bash
 SUBSCRIPTION=$(curl -fsS -X POST "$BRIDGE/api/events/subscriptions" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION" \
+  -H "X-Session-ID: $SESSION" \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: example-observer-1' \
   -d '{"events":["touch.changed","operation.changed"],"samples":[{"groups":["sensors"],"rate_hz":5}]}' \
   | jq -r .id)
 curl -N "$BRIDGE/api/events/subscriptions/$SUBSCRIPTION/stream" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION"
+  -H "X-Session-ID: $SESSION"
 ```
 
 The first attachment emits `stream.ready` and an initial `state.sample`. A later
@@ -114,20 +112,20 @@ recovered by fabricating robot actions.
 
 ```bash
 curl -fsS -X DELETE "$BRIDGE/api/events/subscriptions/$SUBSCRIPTION" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION"
+  -H "X-Session-ID: $SESSION"
 CLEANUP=$(curl -fsS -X POST "$BRIDGE/api/sessions/$SESSION/close" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION" \
+  -H "X-Session-ID: $SESSION" \
   -H 'Content-Type: application/json' -d '{}' | jq -r .id)
 curl -fsS "$BRIDGE/api/operations/$CLEANUP" \
-  -H "Authorization: Bearer $NAO_BRIDGE_TOKEN" -H "X-Session-ID: $SESSION"
+  -H "X-Session-ID: $SESSION"
 ```
 
 Close is explicit and returns a cleanup Operation; wait for its terminal state.
 Socket close alone allows reattachment until session expiry. An invalidated session
 cannot be closed as if it were still active; inspect retained operations and use
-operator recovery where necessary.
+explicit recovery where necessary.
 
-## Priority stop and operator recovery
+## Priority stop and explicit recovery
 
 `POST /api/robot/stop` with an active session and `{}` requests priority cancellation
 of implemented speech work, including other sessions. It is not an emergency-stop
@@ -135,24 +133,23 @@ certification or a motion stop: this slice exposes no motion. Its Operation beco
 unknown if affected native work cannot be confirmed stopped.
 
 ```bash
-curl -fsS "$BRIDGE/api/robot/diagnostics" \
-  -H "Authorization: Bearer $NAO_BRIDGE_OPERATOR_TOKEN"
+curl -fsS "$BRIDGE/api/robot/diagnostics"
+
 RECOVERY=$(curl -fsS -X POST "$BRIDGE/api/sessions/$SESSION/revoke" \
-  -H "Authorization: Bearer $NAO_BRIDGE_OPERATOR_TOKEN" -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: example-recovery-1' \
   -d '{"confirm":true,"reason":"Operator inspected robot output","force_release":true}' | jq -r .id)
-curl -fsS "$BRIDGE/api/operations/$RECOVERY" \
-  -H "Authorization: Bearer $NAO_BRIDGE_OPERATOR_TOKEN"
+curl -fsS "$BRIDGE/api/operations/$RECOVERY" -H "X-Session-ID: $SESSION"
 ```
 
 First inspect the actual robot and diagnostics. Ordinary revocation fences and
 attempts native cleanup. `force_release: true` releases quarantined ownership only
 after acknowledged agent fencing; it does not assert physical completion. The
 original uncertain Operation stays `unknown`. Missing fencing refuses the override.
-Durable prior-session identities remain recoverable after API restart; the new
-bridge never revives their control leases.
+API restart discards sessions, operations, subscriptions and retry keys. Prior IDs
+return 404, and clients must deliberately create new sessions. No work is resumed;
+missing history does not establish whether earlier robot work stopped.
 
 All failures use `{ "error": { "code", "message", "details", "retryable" },
 "request_id" }`. Keep unknown codes intact; `retryable` does not authorize arbitrary
-side-effect replay. Authenticate returned stream URLs, reject changed origins, and
-keep tokens out of URLs/logs.
+side-effect replay. Reject returned stream URLs that change the bridge origin.

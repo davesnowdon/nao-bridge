@@ -39,19 +39,17 @@ async def test_priority_cleanup_and_stop_have_reserved_capacity(rig):
         assert (await wait_operation(client, closed.json()["id"], headers))["status"] == "succeeded"
 
 
-async def test_restart_preserves_quarantine_and_operator_can_fence_recovered_session(tmp_path):
-    settings = Settings(backend="fake", data_dir=tmp_path, token="test", operator_token="operator")
+async def test_api_restart_starts_empty_and_does_not_resume_work():
+    settings = Settings(backend="fake", host="0.0.0.0")
     first_backend = FakeBackend()
     first = create_app(settings, first_backend)
     async with (
         first.router.lifespan_context(first),
         httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=first),
-            base_url="http://test",
-            headers={"Authorization": "Bearer test"},
+            transport=httpx.ASGITransport(app=first), base_url="http://test"
         ) as client,
     ):
-        session, headers = await new_session(client)
+        session, headers = await new_session(client, key="create")
         first_backend.fail_next = "unknown"
         first_backend.stop_confirmed = False
         accepted = await client.post(
@@ -59,31 +57,25 @@ async def test_restart_preserves_quarantine_and_operator_can_fence_recovered_ses
         )
         oid = accepted.json()["id"]
         assert (await wait_operation(client, oid, headers))["status"] == "unknown"
-    second = create_app(settings, FakeBackend())
+        assert first.state.core.resources
+    backend = FakeBackend()
+    second = create_app(settings, backend)
     async with (
         second.router.lifespan_context(second),
         httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=second),
-            base_url="http://test",
-            headers={"Authorization": "Bearer operator"},
-        ) as operator,
+            transport=httpx.ASGITransport(app=second), base_url="http://test"
+        ) as client,
     ):
-        assert second.state.core.resources == {"speech.output": oid}
-        assert second.state.core.sessions[session["id"]].public["status"] == "invalidated"
-        response = await operator.post(
-            "/api/sessions/" + session["id"] + "/revoke",
-            json={
-                "confirm": True,
-                "reason": "Recovery after inspecting the robot",
-                "force_release": True,
-            },
-        )
-        assert response.status_code == 202
-        result = await wait_operation(operator, response.json()["id"], {})
-        assert result["status"] == "succeeded"
-        assert result["result"]["unresolved_operation_ids"] == [oid]
-        assert not second.state.core.resources
-        assert (await operator.get("/api/operations/" + oid)).json()["status"] == "unknown"
+        core = second.state.core
+        assert core.instance != first.state.core.instance
+        assert not core.sessions and not core.operations and not core.subscriptions
+        assert not core.resources and not core.keys and not backend.calls
+        assert (await client.get("/api/operations/" + oid, headers=headers)).status_code == 404
+        assert (
+            await client.patch("/api/sessions/" + session["id"], json={}, headers=headers)
+        ).status_code == 404
+        fresh, _ = await new_session(client, key="create")
+        assert fresh["id"] != session["id"]
 
 
 async def test_stop_reports_old_uncertainty_missing_from_new_agent(rig):
@@ -172,7 +164,6 @@ async def test_blocked_sse_send_times_out_and_detaches(rig):
             "server": ("test", 80),
             "client": ("127.0.0.1", 1000),
             "headers": [
-                (b"authorization", b"Bearer test-client"),
                 (b"x-session-id", headers["X-Session-ID"].encode()),
             ],
         }

@@ -8,10 +8,9 @@ From this directory, `uv sync --locked` creates the development environment. Oth
 applications can install this directory with their normal Python package manager.
 
 ```python
-import os
 from nao_bridge_client import Nao
 
-with Nao("http://127.0.0.1:3000", token=os.environ.get("NAO_BRIDGE_TOKEN")) as nao:
+with Nao("http://127.0.0.1:3000") as nao:
     print(nao.robot.info())
     state = nao.robot.state(include=["sensors"], wait_for_fresh_ms=1000, require_fresh=True)
     operation = nao.speech.say("Hello", timeout=10)
@@ -20,11 +19,10 @@ with Nao("http://127.0.0.1:3000", token=os.environ.get("NAO_BRIDGE_TOKEN")) as n
 
 ```python
 import asyncio
-import os
 from nao_bridge_client import AsyncNao
 
 async def main():
-    async with AsyncNao(token=os.environ.get("NAO_BRIDGE_TOKEN")) as nao:
+    async with AsyncNao() as nao:
         async with await nao.events.subscribe(events=["touch.changed"]) as events:
             async for event in events:
                 print(event.type, event.data)
@@ -43,7 +41,7 @@ asyncio.run(main())
 | `operations.get(id)`, `operations.list(...)` | Retained operation history for this session |
 | `operation.refresh()`, `.wait(timeout=...)`, `.cancel(wait=...)` | Authoritative status, bounded local wait, explicit cancellation |
 | `events.types()`, `events.subscribe(...)` | Native touch, lifecycle events and sampled state |
-| `robot.diagnostics()` | Requires the separately configured operator token |
+| `robot.diagnostics()` | Connection, resource and stream diagnostics |
 
 Async methods have the same names and arguments and are awaited. Async
 subscriptions use `async with await nao.events.subscribe(...)` and `async for`.

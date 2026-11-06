@@ -21,11 +21,6 @@ def main() -> None:
     parser.add_argument("--robot-address", default=os.environ.get("NAO_IP", "127.0.0.1"))
     parser.add_argument("--robot-port", type=int, default=int(os.environ.get("NAO_PORT", "9559")))
     parser.add_argument("--robot-id", default=os.environ.get("NAO_ROBOT_ID", "nao"))
-    parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path(os.environ.get("NAO_BRIDGE_DATA_DIR", ".nao-bridge-data")),
-    )
     args = parser.parse_args()
     settings = Settings(
         host=args.host,
@@ -34,9 +29,6 @@ def main() -> None:
         robot_address=args.robot_address,
         robot_port=args.robot_port,
         robot_id=args.robot_id,
-        data_dir=args.data_dir,
-        token=os.environ.get("NAO_BRIDGE_TOKEN"),
-        operator_token=os.environ.get("NAO_BRIDGE_OPERATOR_TOKEN"),
         origins=tuple(v for v in os.environ.get("NAO_BRIDGE_ORIGINS", "").split(",") if v),
         agent_python=os.environ.get("NAO_AGENT_PYTHON", "/opt/legacy/bin/python2.7"),
         agent_script=Path(os.environ.get("NAO_AGENT_SCRIPT", "/opt/nao-bridge/agent/agent.py")),

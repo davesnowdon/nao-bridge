@@ -2,7 +2,6 @@
 
 import argparse
 import asyncio
-import os
 
 from nao_bridge_client import AsyncNao, BridgeError
 
@@ -18,10 +17,9 @@ async def consume(nao, events, label, speak):
 
 
 async def observe(url, speak):
-    token = os.environ.get("NAO_BRIDGE_TOKEN")
     async with (
-        AsyncNao(url, token=token, name="touch-application") as nao,
-        AsyncNao(url, token=token, name="independent-observer") as observer,
+        AsyncNao(url, name="touch-application") as nao,
+        AsyncNao(url, name="independent-observer") as observer,
         await nao.events.subscribe(
             events=["touch.changed"], samples=[{"groups": ["sensors"], "rate_hz": 5}]
         ) as events,

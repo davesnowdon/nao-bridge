@@ -67,7 +67,7 @@
         "start fixture speech",
         "kill/freeze native agent",
         "GET operation",
-        "operator revoke with force_release"
+        "explicit revoke with force_release"
       ],
       "expected": [
         "202",
@@ -89,6 +89,21 @@
         "running",
         "expired; cleanup stops or quarantines work",
         "410 expired; never recreate session implicitly"
+      ]
+    },
+    {
+      "name": "API restart",
+      "steps": [
+        "create session, subscription and operation",
+        "kill and restart API",
+        "GET old operation and renew old session",
+        "deliberately create a new session"
+      ],
+      "expected": [
+        "IDs belong to original bridge instance",
+        "new bridge_instance_id; empty sessions, operations, subscriptions and retry keys",
+        "404 for old IDs; earlier robot outcome remains unknown to new API",
+        "new session accepted; no old commands replayed"
       ]
     }
   ]

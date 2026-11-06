@@ -9,6 +9,6 @@ async def test_sdk_independent_http_conformance(socket_rig):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     async with socket_rig() as (url, core, backend):
-        result = await asyncio.to_thread(module.run, url, "test-client")
+        result = await asyncio.to_thread(module.run, url)
         assert "reconnect_without_replay" in result["checks"]
         assert not core.resources

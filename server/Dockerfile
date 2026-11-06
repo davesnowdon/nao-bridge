@@ -22,14 +22,12 @@ RUN mkdir -p /opt/modern \
 ENV PATH=/opt/modern/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PYTHONPATH=/opt/nao-bridge \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    NAO_BRIDGE_DATA_DIR=/data
+    PYTHONUNBUFFERED=1
 COPY server/requirements.lock /opt/nao-bridge/requirements.lock
 RUN python3 -m pip install --no-cache-dir --only-binary=:all: --require-hashes \
     -r /opt/nao-bridge/requirements.lock && python3 -m pip check
 COPY server/nao_bridge /opt/nao-bridge/nao_bridge
 COPY server/agent /opt/nao-bridge/agent
-RUN mkdir /data && chown ubuntu:ubuntu /data
 USER ubuntu
 WORKDIR /opt/nao-bridge
 EXPOSE 3000

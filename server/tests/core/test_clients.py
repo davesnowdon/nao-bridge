@@ -25,7 +25,7 @@ async def event_of(sub, kind):
 
 async def test_async_discovery_speech_events_cleanup(socket_rig):
     async with socket_rig() as (url, core, backend):
-        async with AsyncNao(url, token="test-client") as nao:
+        async with AsyncNao(url) as nao:
             assert (await nao.robot.info()).connection == "connected"
             assert nao.session_id is None
             async with await nao.events.subscribe(
@@ -59,7 +59,7 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
         def work():
             import time
 
-            with Nao(url, token="test-client") as nao:
+            with Nao(url) as nao:
                 first = nao.speech.say("first", timeout=2)
                 sid = nao.session_id
                 time.sleep(0.65)
@@ -76,7 +76,7 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
 async def test_wait_timeout_does_not_cancel_and_explicit_cancel_is_typed(socket_rig):
     async with (
         socket_rig(duration=10) as (url, core, backend),
-        AsyncNao(url, token="test-client") as nao,
+        AsyncNao(url) as nao,
     ):
         op = await nao.speech.say("Long", wait=False)
         with pytest.raises(OperationTimeout) as caught:
@@ -91,8 +91,8 @@ async def test_wait_timeout_does_not_cancel_and_explicit_cancel_is_typed(socket_
 async def test_two_observers_reconnect_reports_gap_without_replay(socket_rig):
     async with (
         socket_rig() as (url, core, backend),
-        AsyncNao(url, token="test-client") as a,
-        AsyncNao(url, token="test-client") as b,
+        AsyncNao(url) as a,
+        AsyncNao(url) as b,
         await a.events.subscribe(events=["touch.changed"]) as sa,
         await b.events.subscribe(events=["touch.changed"]) as sb,
     ):
@@ -111,7 +111,7 @@ async def test_two_observers_reconnect_reports_gap_without_replay(socket_rig):
 
 async def test_connection_loss_requires_deliberate_new_session(socket_rig):
     async with socket_rig(lease_seconds=0.3) as (url, core, backend):
-        nao = AsyncNao(url, token="test-client")
+        nao = AsyncNao(url)
         await nao.__aenter__()
         await nao.speech.say("Before disconnect", timeout=2)
         sid = nao.session_id
@@ -131,9 +131,9 @@ async def test_eight_streams_keep_commands_responsive_and_reject_excess(socket_r
 
     async with (
         socket_rig() as (url, core, backend),
-        AsyncNao(url, token="test-client") as a,
-        AsyncNao(url, token="test-client") as b,
-        AsyncNao(url, token="test-client") as c,
+        AsyncNao(url) as a,
+        AsyncNao(url) as b,
+        AsyncNao(url) as c,
     ):
         subscriptions = []
         for nao in (a, b):
@@ -161,7 +161,7 @@ async def test_eight_streams_keep_commands_responsive_and_reject_excess(socket_r
 
 async def test_connection_event_is_delivered_before_invalidated_stream_ends(socket_rig):
     async with socket_rig() as (url, core, backend):
-        nao = AsyncNao(url, token="test-client")
+        nao = AsyncNao(url)
         await nao.__aenter__()
         sub = await nao.events.subscribe(events=["robot.connection_changed"])
         await event_of(sub, "stream.ready")
@@ -178,7 +178,7 @@ async def test_sync_explicit_close_and_deliberate_reopen(socket_rig):
     async with socket_rig() as (url, core, backend):
 
         def work():
-            client = Nao(url, token="test-client")
+            client = Nao(url)
             ids = []
             for _ in range(2):
                 with client as nao:

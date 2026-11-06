@@ -5,11 +5,8 @@ and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
 serves these exact files at `/api/openapi.json` and `/api/schemas.json`. OpenAPI's
 server prefix is `/api`; its paths omit that prefix. `/health/live`, `/health/ready`
 and `/docs` are infrastructure routes outside that prefix. `/` redirects to the
-bundled Swagger UI at `/docs`. Documentation, its assets, the two static contract
-files and liveness are public so browsers can load the UI before authorization;
-robot data, commands and readiness retain their authentication requirements.
-Protected routes accept
-`Authorization: Bearer …`; owned routes also require `X-Session-ID`.
+bundled Swagger UI at `/docs`. Session-owned routes require `X-Session-ID` to
+associate work with its lifecycle and resource ownership.
 
 CI publishes the schemas, this directory's fixtures and the client lifecycle guide
 as one artifact. The [wire guide](../docs/http-api.md) gives complete requests. The
@@ -30,17 +27,17 @@ of this bundle.
 - `scripts/conformance.py`: direct HTTP/SSE checks using `http.client` and JSON
   Schema; it imports neither the Python client nor server implementation. It refuses
   to dispatch against a physical-robot backend. Run with the server uv environment:
-  `uv run --project server python scripts/conformance.py http://127.0.0.1:3000 --token "$NAO_BRIDGE_TOKEN"`.
+  `uv run --project server python scripts/conformance.py http://127.0.0.1:3000`.
 
 The fake-server integration tests add expiry, resource conflicts, ambiguity,
-backpressure, retained history and operator recovery. The production-container
+backpressure, retained history and explicit recovery. The production-container
 runner adds real SDK loopback callbacks, agent kill/freeze and restart fencing.
 Neither is evidence of physical stop or callback behavior on a robot.
 
 ## Request fingerprints
 
-A key is scoped to the authenticated caller and session (bridge instance for
-session creation). Its fingerprint includes method, route and the submitted JSON
+A key is scoped to the session (bridge instance for session creation).
+Clients must generate unique session-creation keys, for example UUIDs. Its fingerprint includes method, route and the submitted JSON
 shape, before defaults. This is an equality rule, not a signature protocol.
 
 The portable test representation is recursive:
@@ -63,8 +60,10 @@ booleans or numbers, or insert default fields before comparison.
 
 Keys and operation history are retained for at least 900 seconds by default;
 active/uncertain operations and active resources keep their identities longer.
-Capacity limits are advertised. Keys are process-local and never authorize a retry
-after bridge restart; durable operation evidence survives on the `/data` volume.
+Capacity limits are advertised. All sessions, operations, subscriptions and keys
+are process-local and disappear on API restart. Prior IDs return 404; a missing
+operation does not prove that its robot-side work stopped. Never replay uncertain
+work after restart.
 
 ## Version and change guard
 

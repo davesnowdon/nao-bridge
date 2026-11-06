@@ -26,8 +26,7 @@ uv run --project server nao-bridge --backend fake
 
 The fake backend serves the API on `127.0.0.1:3000`. It simulates speech and sampled
 head touch state. Tests inject touch edges; the standalone fake backend does not
-invent user touches. Browse `http://127.0.0.1:3000/` for interactive Swagger UI. No token
-is required for this default loopback-only development configuration.
+invent user touches. Browse `http://127.0.0.1:3000/` for interactive Swagger UI.
 
 ```bash
 uv run --project clients/python python clients/python/example_usage.py
@@ -40,27 +39,24 @@ The bundled SDK requires Linux amd64. Build from the repository root:
 
 ```bash
 make image
-export NAO_BRIDGE_TOKEN='replace-with-a-long-random-client-token'
-export NAO_BRIDGE_OPERATOR_TOKEN='replace-with-a-different-operator-token'
 export NAO_IP='192.168.1.100'
 docker run --rm --init --name nao-bridge \
   -p 127.0.0.1:3000:3000 \
-  -e NAO_IP -e NAO_BRIDGE_TOKEN -e NAO_BRIDGE_OPERATOR_TOKEN \
-  -v nao-bridge-data:/data nao-bridge-core
+  -e NAO_IP nao-bridge-core
 ```
 
-The token is required when the API binds beyond loopback, including its container
-binding. Use a TLS reverse proxy if exposing it beyond a trusted local network.
-Explicit browser origins can be configured with comma-separated
-`NAO_BRIDGE_ORIGINS`; unsolicited cross-origin requests are rejected. The operator
-token grants diagnostics/revocation and must differ from the application token.
+Browser apps served from another origin can be enabled with comma-separated
+`NAO_BRIDGE_ORIGINS`. The bundled UI uses the bridge's own origin.
 
-The `/data` volume stores dispatch evidence. Keep it across restarts so uncertain
-operations continue to quarantine resources. Losing it loses that recovery
-history. Run one API process per robot/data directory; multiworker deployment is
-unsupported. `/health/live` stays available during robot/agent loss;
-`/health/ready` reports whether the robot connection is ready. Agent supervision
-restarts a failed agent while retaining API diagnostics.
+Run one API process per robot; multiworker deployment is unsupported.
+`/health/live` stays available during robot/agent loss; `/health/ready` reports
+whether the robot connection is ready. The API restarts a failed agent while
+retaining its own diagnostics and in-memory operation state.
+
+An API restart starts a new bridge instance with empty sessions, operations,
+subscriptions and retry history. Nothing is resumed or replayed. Previously
+submitted robot work may still be running; restarting the bridge does not
+establish its outcome. No data volume is needed for the current implementation.
 
 To exercise the actual SDK without a robot, use `--backend native-fixture`. This
 registers local fixture services and produces synthetic head touches through the
@@ -70,8 +66,6 @@ real SDK callback path. It is explicitly identified as a fixture in discovery.
 
 Open `http://<bridge>:3000/` (or `/docs`). Swagger UI is bundled with the bridge;
 there is no separate download, installation, CDN or internet requirement.
-If authentication is enabled, click **Authorize** and enter the client token
-without the `Bearer ` prefix. Credentials are kept only in the current page.
 
 Expand an endpoint, click **Try it out**, then **Execute**. Start with `GET /robot`.
 For commands, create a session with `POST /sessions` and body `{}`, then copy the
@@ -81,18 +75,15 @@ operation with `GET /operations/{operation_id}`. Renew the session before its
 advertised lease expires, or create a new one. Requests act on the configured
 backend; use `--backend fake` to experiment without a robot.
 
-The docs, bundled assets and static contract schemas load without authentication;
-robot data and commands still require the configured token. Swagger UI exercises
-ordinary HTTP endpoints; use the Python events example or an SSE client to observe
+Swagger UI exercises ordinary HTTP endpoints; use the Python events example or an SSE client to observe
 live event streams (Swagger UI does not display events as they arrive).
 
 ## Use the Python client
 
 ```python
-import os
 from nao_bridge_client import Nao
 
-with Nao(token=os.environ.get("NAO_BRIDGE_TOKEN")) as nao:
+with Nao() as nao:
     print(nao.robot.info())
     operation = nao.speech.say("Hello from NAO Bridge", timeout=10)
     print(operation.id, operation.status)

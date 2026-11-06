@@ -14,7 +14,6 @@ from .config import Settings
 from .contract import VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
-from .journal import Journal
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -44,7 +43,6 @@ def identifier() -> str:
 @dataclass
 class Session:
     public: dict[str, Any]
-    owner: str
     deadline: float
     retained_until: float | None = None
 
@@ -52,7 +50,6 @@ class Session:
 @dataclass
 class Operation:
     public: dict[str, Any]
-    owner: str
     released: bool = False
     retained_until: float | None = None
     task: asyncio.Task | None = None
@@ -86,51 +83,14 @@ class Core:
         self.subscriptions: dict[str, Subscription] = {}
         self.streams: dict[str, tuple[Subscription, EventBuffer]] = {}
         self.resources: dict[str, str] = {}
-        self.keys: dict[tuple[str, str, str], Idempotent] = {}
+        self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
         self.tasks: set[asyncio.Task] = set()
         self.admission = asyncio.Lock()
-        self.journal = Journal(settings.data_dir)
         self.closing = False
         self.queue_overflows = 0
         self.stream_reattachments = 0
-        for row in self.journal.load():
-            value = row["operation"]
-            op = Operation(value, row["owner"], row["released"])
-            if value["status"] not in KNOWN_TERMINAL and not op.released:
-                value.update(
-                    status="unknown",
-                    finished_at=utc(),
-                    error=BridgeError(
-                        "bridge_restarted", "Prior dispatch outcome requires reconciliation", 503
-                    ).payload(),
-                )
-                for resource in value["resources"]:
-                    self.resources[resource] = value["id"]
-            else:
-                op.retained_until = self.clock() + settings.history_seconds
-            sid = value["session_id"]
-            if sid not in self.sessions:
-                self.sessions[sid] = Session(
-                    {
-                        "id": sid,
-                        "name": "recovered",
-                        "status": "invalidated",
-                        "bridge_instance_id": value["bridge_instance_id"],
-                        "connection_generation": value["connection_generation"],
-                        "created_at": value["created_at"],
-                        "expires_at": utc(),
-                        "lease_seconds": settings.lease_seconds,
-                        "renew_after_seconds": settings.lease_seconds / 3,
-                        "cleanup_operation_id": None,
-                    },
-                    op.owner,
-                    0,
-                    self.clock() + settings.history_seconds,
-                )
-            self.operations[value["id"]] = op
-            self.journal.save(value, op.owner, op.released)
 
     def spawn(self, coro: Any) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -160,7 +120,6 @@ class Core:
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
         await self.backend.close()
-        self.journal.close()
 
     def now_ms(self) -> float:
         return round((self.clock() - self.origin) * 1000, 3)
@@ -382,14 +341,12 @@ class Core:
             except TimeoutError:
                 return self.state(groups, max_age_ms)
 
-    def session(self, session_id: str | None, owner: str, active: bool = True) -> Session:
+    def session(self, session_id: str | None, active: bool = True) -> Session:
         if not session_id:
             raise BridgeError("invalid_request", "X-Session-ID is required")
         session = self.sessions.get(session_id)
         if not session:
             raise BridgeError("not_found", "Unknown session", 404)
-        if session.owner != owner:
-            raise BridgeError("forbidden", "Session belongs to another caller", 403)
         if session.public["status"] == "active" and self.clock() >= session.deadline:
             self.expire(session)
         if active and session.public["status"] != "active":
@@ -400,7 +357,7 @@ class Core:
             )
         return session
 
-    def create_session(self, owner: str, body: dict[str, Any]) -> dict[str, Any]:
+    def create_session(self, body: dict[str, Any]) -> dict[str, Any]:
         if len(self.sessions) >= self.settings.max_sessions:
             raise BridgeError("limit_exceeded", "Session capacity exhausted", 429, retryable=True)
         value = {
@@ -415,7 +372,7 @@ class Core:
             "renew_after_seconds": self.settings.lease_seconds / 3,
             "cleanup_operation_id": None,
         }
-        session = Session(value, owner, 0)
+        session = Session(value, 0)
         self.sessions[value["id"]] = session
         self.renew(session)
         return copy.deepcopy(value)
@@ -431,7 +388,6 @@ class Core:
 
     async def idempotent(
         self,
-        owner: str,
         scope: str,
         route: str,
         key: str | None,
@@ -444,7 +400,7 @@ class Core:
                 raise BridgeError("dependency_unavailable", "Bridge is shutting down", 503)
             self.sweep_keys()
             fingerprint = canonical(body)
-            identity = (owner, scope, key or "")
+            identity = (scope, key or "")
             if key:
                 if len(key) > 128 or not key.isascii() or not key.isprintable():
                     raise BridgeError("invalid_request", "Invalid Idempotency-Key")
@@ -518,8 +474,7 @@ class Core:
             "error": None,
             "child_operation_ids": [],
         }
-        op = Operation(value, session.owner)
-        self.journal.save(value, op.owner, False)
+        op = Operation(value)
         self.operations[value["id"]] = op
         for r in resources:
             self.resources[r] = value["id"]
@@ -528,7 +483,6 @@ class Core:
 
     def update(self, op: Operation, **changes: Any) -> None:
         op.public.update(changes)
-        self.journal.save(op.public, op.owner, op.released)
         self.emit("operation.changed", op.public, op.public["session_id"])
 
     def finish(
@@ -615,13 +569,11 @@ class Core:
                 error=BridgeError("native_outcome_unknown", "Native response was lost", 503),
             )
 
-    def operation(
-        self, operation_id: str, session_id: str | None, owner: str, operator: bool = False
-    ) -> Operation:
+    def operation(self, operation_id: str, session_id: str | None) -> Operation:
         op = self.operations.get(operation_id)
         if not op:
             raise BridgeError("not_found", "Unknown or expired operation", 404)
-        if not operator and (op.owner != owner or op.public["session_id"] != session_id):
+        if op.public["session_id"] != session_id:
             raise BridgeError("forbidden", "Operation belongs to another session", 403)
         return op
 
@@ -709,7 +661,6 @@ class Core:
                     for resource in op.public["resources"]:
                         if self.resources.get(resource) == op.public["id"]:
                             del self.resources[resource]
-                    self.journal.save(op.public, op.owner, True)
         return {
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
@@ -738,7 +689,7 @@ class Core:
         result = await self.cleanup_native(session, force)
         if revoke:
             LOG.warning(
-                "Operator revoke session=%s reason=%r force_release=%s fenced=%s unresolved=%s",
+                "Explicit revoke session=%s reason=%r force_release=%s fenced=%s unresolved=%s",
                 session.public["id"],
                 revoke["reason"],
                 force,
@@ -844,15 +795,15 @@ class Core:
             },
             "connected": False,
         }
-        self.subscriptions[sid] = Subscription(value, session.owner)
+        self.subscriptions[sid] = Subscription(value)
         return copy.deepcopy(value)
 
-    def subscription(self, sid: str, session_id: str | None, owner: str) -> Subscription:
-        self.session(session_id, owner)
+    def subscription(self, sid: str, session_id: str | None) -> Subscription:
+        self.session(session_id)
         sub = self.subscriptions.get(sid)
         if not sub:
             raise BridgeError("not_found", "Unknown subscription", 404)
-        if sub.owner != owner or sub.public["session_id"] != session_id:
+        if sub.public["session_id"] != session_id:
             raise BridgeError("forbidden", "Subscription belongs to another session", 403)
         return sub
 
@@ -980,7 +931,6 @@ class Core:
                 self.sessions.pop(session.public["id"], None)
         for oid, op in list(self.operations.items()):
             if op.retained_until and op.retained_until <= now and op.released:
-                self.journal.delete(oid)
                 del self.operations[oid]
         self.sweep_keys()
 

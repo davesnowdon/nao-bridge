@@ -60,7 +60,6 @@ class AsyncNao:
         self,
         url: str = "http://127.0.0.1:3000",
         *,
-        token: str | None = None,
         name: str = "python-client",
         timeout: float = 5,
         cleanup_timeout: float = 5,
@@ -76,7 +75,7 @@ class AsyncNao:
         ):
             raise ValueError("Expected an HTTP(S) bridge URL without query or fragment")
         if parsed.username or parsed.password:
-            raise ValueError("Pass credentials using token, not the URL")
+            raise ValueError("Bridge URL must not include user information")
         if timeout <= 0 or cleanup_timeout <= 0 or event_queue_size < 1:
             raise ValueError("Timeouts and queue size must be positive")
         self.url = url.rstrip("/")
@@ -86,7 +85,6 @@ class AsyncNao:
         self.timeout = timeout
         self.cleanup_timeout = cleanup_timeout
         self.event_queue_size = event_queue_size
-        self._token = token
         self._transport = transport
         self._http: httpx.AsyncClient | None = None
         self._identity: RobotInfo | None = None
@@ -113,7 +111,6 @@ class AsyncNao:
         self.cleanup_error = None
         self._http = httpx.AsyncClient(
             base_url=self.url,
-            headers={"Authorization": "Bearer " + self._token} if self._token else {},
             timeout=self.timeout,
             transport=self._transport,
             follow_redirects=False,
