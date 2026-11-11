@@ -16,6 +16,19 @@ import httpx
 from jsonschema import Draft202012Validator, FormatChecker
 
 TERMINAL = {"succeeded", "cancelled", "failed", "unknown"}
+CORE_CHECKS = [
+    "discovery, readiness and fresh state",
+    "speech defaults, settings and duplicate-request identity",
+    "cancel protocol outcome",
+    "stop protocol outcome",
+    *["two independent touch subscribers: " + sensor for sensor in ("front", "middle", "rear")],
+    "remaining subscriber after deleting the first",
+    "fresh touch after SSE reset",
+    "SSE reconnect explicitly reports reset",
+    "session renewal during guided checks",
+    "session cleanup",
+]
+FAULT_CHECKS = ["network loss", "network recovery", "bridge restart"]
 
 
 class ObservationFailed(RuntimeError):
@@ -57,8 +70,10 @@ class Evidence:
             "started_at": datetime.now(UTC).isoformat(),
             "metadata": metadata,
             "automation": "running",
-            "hardware_acceptance": "requires_manual_review",
-            "checks": [],
+            "hardware_acceptance": "incomplete",
+            "checks": [
+                {"name": name, "result": "not tested"} for name in CORE_CHECKS + FAULT_CHECKS
+            ],
             "observations": [],
         }
         self.save()
@@ -86,11 +101,68 @@ class Evidence:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(self.summary, indent=2) + "\n")
         temporary.replace(path)
+        self.write_report()
+
+    def write_report(self):
+        summary = self.summary
+        metadata = summary["metadata"]
+        robot = summary.get("robot", {})
+        lines = [
+            "# Robot test report",
+            "",
+            "Result: **" + summary.get("result", "RUNNING") + "**",
+            "",
+            "Scope: increment-1 connection, speech and touch; optional idle disconnect/restart.",
+            "",
+            "| Check | Result |",
+            "| --- | --- |",
+        ]
+        for check in summary["checks"]:
+            lines.append(f"| {check['name']} | {check['result'].upper()} |")
+        lines += ["", "## What you observed", ""]
+        for item in summary["observations"]:
+            outcome = {"y": "PASS", "n": "FAIL", "s": "NOT OBSERVED"}[item["answer"].lower()]
+            lines.append(f"- {outcome}: {item['question']}")
+        if len(summary["observations"]) < 4:
+            lines.append("- Remaining listening checks: NOT TESTED.")
+        for field in ("error", "cleanup_error"):
+            if field in summary:
+                lines += ["", "## " + field.replace("_", " ").title(), "", summary[field]]
+        lines += [
+            "",
+            "## Automatically collected details",
+            "",
+            "```json",
+            json.dumps({"started_at": summary["started_at"], "robot": robot, **metadata}, indent=2),
+            "```",
+            "",
+            "HTTP/SSE details: [evidence.jsonl](evidence.jsonl). "
+            "Machine-readable results: [summary.json](summary.json).",
+            "",
+            "No result here verifies motion, media, eight-stream load, in-flight network "
+            "faults, agent-only loss or a frozen API on this robot. Other robot/host "
+            "configurations remain untested. Physical stop latency is not measured by "
+            "HTTP polling time.",
+            "",
+        ]
+        if (self.directory / "container.log").exists():
+            lines.append("Captured container output: [container.log](container.log).")
+        report = self.directory / "report.md"
+        temporary = report.with_suffix(".tmp")
+        temporary.write_text("\n".join(lines) + "\n")
+        temporary.replace(report)
 
     def passed(self, name):
-        self.summary["checks"].append({"name": name, "result": "passed"})
-        self.save()
+        self.mark(name, "passed")
         print("PASS (protocol): " + name, flush=True)
+
+    def mark(self, name, result):
+        check = next((item for item in self.summary["checks"] if item["name"] == name), None)
+        if check is None:
+            check = {"name": name}
+            self.summary["checks"].append(check)
+        check["result"] = result
+        self.save()
 
 
 class Stream:
@@ -192,8 +264,12 @@ class Runner:
             format_checker=FormatChecker(),
         ).validate(value)
 
-    async def request(self, method, path, body=None, *, status=200, schema=None, key=None):
+    async def request(
+        self, method, path, body=None, *, status=200, schema=None, key=None, session_id=None
+    ):
         headers = self.headers()
+        if session_id:
+            headers["X-Session-ID"] = session_id
         if key:
             headers["Idempotency-Key"] = key
         started = time.monotonic()
@@ -225,13 +301,13 @@ class Runner:
     async def preflight(self):
         self.schemas = await self.request("GET", "/api/schemas.json")
         self.robot = await self.request("GET", "/api/robot", schema="Robot")
+        self.evidence.summary["robot"] = self.robot
         require(
             self.robot["backend"] == "naoqi" or self.rehearsal,
             "Hardware checks require backend=naoqi; --rehearsal labels simulated runs",
         )
         require(self.robot["contract_version"].split(".")[0] == "1", "Unsupported contract major")
         require(self.robot["connection"] == "connected", "Robot is not connected")
-        self.evidence.summary["robot"] = self.robot
         if self.robot["backend"] != "naoqi" or self.rehearsal:
             self.evidence.summary["hardware_acceptance"] = "rehearsal_not_hardware_evidence"
         await self.request("GET", "/health/live")
@@ -243,7 +319,9 @@ class Runner:
         require(state["groups"]["sensors"]["quality"] == "fresh", "Touch state is not fresh")
         await self.request("GET", "/api/robot/diagnostics")
         self.evidence.passed("discovery, readiness and fresh state")
-        print(json.dumps(self.robot, indent=2), flush=True)
+        print(
+            "Robot: {name}; model: {model}; NAOqi: {naoqi_version}".format(**self.robot), flush=True
+        )
         return capabilities
 
     async def authority(self):
@@ -284,8 +362,11 @@ class Runner:
                 await asyncio.sleep(0.2)
 
     async def observe(self, question):
-        answer = await self.ask(question + " [y=yes, n=no, s=not observed; q=quit]")
-        require(answer.lower() in {"y", "n", "s"}, "Observation must be y, n or s")
+        while True:
+            answer = await self.ask(question + " [y=yes, n=no, s=not observed; q=quit]")
+            if answer.lower() in {"y", "n", "s"}:
+                break
+            print("Please enter y, n or s.", flush=True)
         self.evidence.summary["observations"].append({"question": question, "answer": answer})
         self.evidence.save()
         if answer.lower() == "n":
@@ -459,103 +540,247 @@ class Runner:
                 self.evidence.passed("session cleanup")
             except Exception as exc:
                 errors.append(str(exc))
+        self.streams.clear()
+        self.renewal = None
+        self.session = None
         require(not errors, "Cleanup incomplete: " + "; ".join(errors))
 
-    async def watch(self, seconds):
-        print(
-            "Read-only monitor active. Perform manual fault checks in another terminal.", flush=True
-        )
-        async with asyncio.timeout(seconds):
+    async def until(self, probe, timeout=60):
+        async with asyncio.timeout(timeout):
             while True:
-                for path in (
-                    "/health/live",
-                    "/health/ready",
-                    "/api/robot",
-                    "/api/state",
-                    "/api/robot/diagnostics",
-                ):
-                    # Fault responses are observations, not an acceptance verdict.
-                    with suppress(Exception):
-                        await self.request("GET", path)
-                await asyncio.sleep(1)
+                value = await probe()
+                if value:
+                    return value
+                await asyncio.sleep(0.5)
+
+    async def faults(self, container):
+        baseline = await self.request("GET", "/api/robot", schema="Robot")
+        self.evidence.summary["active_check"] = "network loss"
+        await self.ask("Optional network check: disconnect the robot's network, then press Enter.")
+
+        async def disconnected():
+            robot = await self.request("GET", "/api/robot", schema="Robot")
+            return robot["connection"] != "connected"
+
+        await self.until(disconnected)
+        await self.request("GET", "/health/live")
+        await self.request("GET", "/health/ready", status=503)
+        state = await self.request("GET", "/api/state", schema="State")
+        require(state["groups"]["sensors"]["quality"] != "fresh", "Disconnected state looks fresh")
+        self.evidence.passed("network loss")
+        self.evidence.summary["active_check"] = "network recovery"
+        await self.ask("Reconnect the robot's network, then press Enter. I will wait for recovery.")
+
+        async def connected():
+            try:
+                robot = await self.request("GET", "/api/robot", schema="Robot")
+                return robot if robot["connection"] == "connected" else None
+            except httpx.TransportError:
+                return None
+
+        recovered = await self.until(connected)
+        require(
+            recovered["bridge_instance_id"] == baseline["bridge_instance_id"],
+            "API unexpectedly restarted during robot network loss",
+        )
+        require(
+            recovered["connection_generation"] != baseline["connection_generation"],
+            "Connection generation did not change",
+        )
+        await self.preflight()
+        self.evidence.passed("network recovery")
+        self.evidence.summary["active_check"] = "bridge restart"
+        session = await self.request(
+            "POST", "/api/sessions", {"name": "restart-check"}, status=201, schema="Session"
+        )
+        self.session = session
+        await self.cleanup()
+        if container:
+            await self.ask("Press Enter to restart the bridge container and check recovery.")
+            await capture_logs(self.evidence, container)
+            result = await asyncio.to_thread(command, ["docker", "restart", container], 30)
+            require(result["returncode"] == 0, "Container restart failed: " + result["stderr"])
+        else:
+            await self.ask(
+                "Restart the bridge, then press Enter. I will check recovery automatically."
+            )
+        restarted = await self.until(connected)
+        require(
+            restarted["bridge_instance_id"] != recovered["bridge_instance_id"],
+            "Bridge instance did not change after restart",
+        )
+        await self.request(
+            "GET", "/api/sessions/" + session["id"], status=404, session_id=session["id"]
+        )
+        await self.preflight()
+        self.session = await self.request(
+            "POST", "/api/sessions", {"name": "after-restart"}, status=201, schema="Session"
+        )
+        await self.cleanup()
+        self.evidence.passed("bridge restart")
+        self.evidence.summary.pop("active_check", None)
 
 
-async def execute(args):
-    evidence = Evidence(
-        args.output,
-        {
-            "url": args.url,
-            "mode": args.mode,
-            "image_id": args.image_id,
-            "host": platform.platform(),
-            "python": platform.python_version(),
-            "rehearsal": args.rehearsal,
-            "source_commit": subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=Path(__file__).resolve().parents[1],
-                capture_output=True,
-                text=True,
-            ).stdout.strip(),
-        },
+def command(argv, timeout=5):
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        return {"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"returncode": -1, "stdout": "", "stderr": str(exc)}
+
+
+async def collect_metadata(url, container):
+    metadata = {"url": url, "host": platform.platform(), "python": platform.python_version()}
+    root = Path(__file__).resolve().parents[1]
+    commit = await asyncio.to_thread(command, ["git", "-C", str(root), "rev-parse", "HEAD"])
+    metadata["source_commit"] = commit["stdout"].strip() or "unavailable"
+    dirty = await asyncio.to_thread(command, ["git", "-C", str(root), "status", "--porcelain"])
+    metadata["source_dirty"] = bool(dirty["stdout"]) if dirty["returncode"] == 0 else None
+    origin = httpx.URL(url)
+    if origin.host not in {"localhost", "127.0.0.1", "::1"}:
+        metadata["container_details"] = "Remote bridge: local Docker details are not applicable"
+        return metadata, None
+    result = await asyncio.to_thread(command, ["docker", "inspect", container])
+    try:
+        info = json.loads(result["stdout"])[0]
+        bindings = info["NetworkSettings"]["Ports"].get("3000/tcp") or []
+        require(
+            any(int(binding["HostPort"]) == origin.port for binding in bindings),
+            "Container's published API port does not match the URL",
+        )
+        metadata["container"] = container
+        metadata["image_id"] = info["Image"]
+        version = await asyncio.to_thread(
+            command, ["docker", "version", "--format", "{{json .Server}}"]
+        )
+        metadata["docker_server"] = (
+            json.loads(version["stdout"]) if version["returncode"] == 0 else None
+        )
+        return metadata, container
+    except (ValueError, KeyError, IndexError, TypeError, RuntimeError):
+        metadata["container_details"] = (
+            "Matching local Docker container unavailable; API checks still run"
+        )
+        return metadata, None
+
+
+async def capture_logs(evidence, container):
+    if container:
+        result = await asyncio.to_thread(
+            command,
+            [
+                "docker",
+                "logs",
+                "--timestamps",
+                "--since",
+                evidence.summary["started_at"],
+                "--tail",
+                "10000",
+                container,
+            ],
+        )
+        if result["returncode"] == 0:
+            (evidence.directory / "container.log").write_text(result["stdout"] + result["stderr"])
+            evidence.summary["metadata"]["container_logs"] = (
+                "captured (last 10,000 lines since start)"
+            )
+        else:
+            evidence.summary["metadata"]["container_logs"] = "unavailable"
+
+
+async def execute(args, *, ask=prompt):
+    directory = args.output or Path("hardware-results") / (
+        datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
     )
-    print("Evidence: " + str(args.output.resolve()), flush=True)
+    metadata, container = await collect_metadata(args.url, args.container)
+    metadata.update(inspect_only=args.inspect, fault_checks=args.faults, rehearsal=args.rehearsal)
+    evidence = Evidence(directory, metadata)
+    print("Results will be saved to " + str(directory.resolve()), flush=True)
     async with httpx.AsyncClient(base_url=args.url, timeout=5, trust_env=False) as http:
-        runner = Runner(http, evidence, rehearsal=args.rehearsal)
+        runner = Runner(http, evidence, ask=ask, rehearsal=args.rehearsal)
         try:
-            if args.mode == "watch":
-                with suppress(TimeoutError):
-                    await runner.watch(args.seconds)
-                evidence.summary["automation"] = "observation_only"
-            else:
-                capabilities = await runner.preflight()
-                if args.mode == "exercise":
-                    await runner.exercise(capabilities)
-                evidence.summary["automation"] = "passed"
+            capabilities = await runner.preflight()
+            if not args.inspect:
+                await runner.exercise(capabilities)
+                await runner.cleanup()
+                if args.faults:
+                    await runner.faults(container)
+            evidence.summary["automation"] = "passed"
         except ObservationFailed as exc:
             evidence.summary.update(automation="incomplete", error=str(exc))
         except (Exception, asyncio.CancelledError) as exc:
             evidence.summary.update(automation="failed", error=repr(exc))
         finally:
+            if "error" in evidence.summary:
+                name = evidence.summary.pop("active_check", "run stopped")
+                evidence.mark(name, "failed")
             try:
                 await runner.cleanup()
             except Exception as exc:
                 evidence.summary.update(automation="failed", cleanup_error=str(exc))
+                evidence.mark("session cleanup", "failed")
             answers = [item["answer"].lower() for item in evidence.summary["observations"]]
-            evidence.summary["physical_observations"] = (
-                "failed"
-                if "n" in answers
-                else "confirmed_for_prompted_checks"
-                if len(answers) == 4 and all(a == "y" for a in answers)
+            failed = evidence.summary["automation"] == "failed" or "n" in answers
+            complete = (
+                evidence.summary["automation"] == "passed"
+                and len(answers) == 4
+                and all(answer == "y" for answer in answers)
+            )
+            result = "FAIL" if failed else "PASS" if complete else "INCOMPLETE"
+            if args.inspect and not failed:
+                result = "PREFLIGHT PASS — speech/touch not tested"
+            if args.rehearsal:
+                result = "REHEARSAL " + result
+            evidence.summary["result"] = result
+            evidence.summary["hardware_acceptance"] = (
+                "rehearsal_not_hardware_evidence"
+                if args.rehearsal
+                else "failed"
+                if failed
+                else "passed_for_tested_scope"
+                if complete
                 else "incomplete"
             )
+            await capture_logs(evidence, container)
             evidence.summary["finished_at"] = datetime.now(UTC).isoformat()
             evidence.save()
             evidence.file.close()
-    print(json.dumps(evidence.summary, indent=2))
-    if evidence.summary["automation"] == "failed":
-        return 1
-    return 2 if evidence.summary["physical_observations"] == "failed" else 0
+    print(result + "\nReport: " + str((directory / "report.md").resolve()), flush=True)
+    return 1 if failed else 0 if complete or args.inspect else 2
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("url", help="Bridge origin, e.g. http://127.0.0.1:3000 (no /api suffix)")
-    parser.add_argument("--mode", choices=("inspect", "exercise", "watch"), default="inspect")
-    parser.add_argument("--allow-speech", action="store_true", help="Required for exercise mode")
     parser.add_argument(
-        "--rehearsal", action="store_true", help="Label this as non-acceptance evidence"
+        "url", nargs="?", default="http://127.0.0.1:3000", help="Bridge HTTP origin"
     )
-    parser.add_argument("--seconds", type=int, default=180, help="Read-only watch duration")
-    parser.add_argument("--image-id", default="not recorded", help="docker image inspect .Id")
-    parser.add_argument("--output", type=Path, required=True, help="New evidence directory")
+    parser.add_argument(
+        "--inspect", action="store_true", help="Read-only preflight instead of guided tests"
+    )
+    parser.add_argument(
+        "--faults", action="store_true", help="Also guide idle network/restart checks"
+    )
+    parser.add_argument(
+        "--container", default="nao-bridge", help="Local Docker container name for evidence/restart"
+    )
+    parser.add_argument(
+        "--rehearsal", action="store_true", help="Label this as non-hardware evidence"
+    )
+    parser.add_argument(
+        "--output", type=Path, help="Optional new results directory; default is automatic"
+    )
     args = parser.parse_args()
-    if args.mode == "exercise" and not args.allow_speech:
-        parser.error("exercise requires --allow-speech")
-    if args.seconds <= 0:
-        parser.error("--seconds must be positive")
+    if args.inspect and args.faults:
+        parser.error("--faults cannot be combined with --inspect")
     origin = httpx.URL(args.url)
-    if origin.scheme not in {"http", "https"} or not origin.host or origin.path not in {"", "/"}:
-        parser.error("url must be an HTTP(S) origin without a path")
+    if (
+        origin.scheme not in {"http", "https"}
+        or not origin.host
+        or origin.path not in {"", "/"}
+        or origin.query
+        or origin.fragment
+    ):
+        parser.error("url must be an HTTP(S) origin without a path, query or fragment")
     sys.exit(asyncio.run(execute(args)))
 
 

@@ -105,10 +105,10 @@ release remain available within that API instance.
 
 ## Remaining hardware and later-increment gates
 
-Use the [repeatable hardware acceptance procedure](hardware-acceptance.md) and
-[per-run results checklist](hardware-acceptance-checklist.md) to collect the first
-live-robot evidence. The runner is tested against a fake robot over real HTTP/SSE;
-that verifies the test tooling, not the hardware gates below.
+Use the [guided hardware test](hardware-acceptance.md) to collect live-robot
+evidence and generate its report automatically. The runner is tested against a
+fake robot over real HTTP/SSE; that verifies the test tooling, not the hardware
+gates below.
 
 1. Verify real robot connection/callback routing,
    `ALTextToSpeech.say(text, language)`, the `\vol=\` / `\rspd=\` speech controls,

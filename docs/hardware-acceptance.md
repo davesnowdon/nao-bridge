@@ -1,203 +1,85 @@
-# Increment 1 hardware acceptance
+# Test with a real robot
 
-Use this procedure on each robot/firmware and host topology you intend to support.
-It exercises the production container through public HTTP/SSE, independently of the
-Python client. The guided run speaks, cancels speech and reads head-touch sensors.
-It sends no motion, wake/rest, posture or stiffness commands. Use an otherwise idle
-bridge: the priority-stop check stops speech belonging to any session.
-
-The runner records protocol outcomes and asks what you actually heard. A successful
-operation is not proof of physical cancellation. Neither the runner nor this
-checklist changes discovery's `hardware_verified: false` flag.
-
-## Prepare the test
-
-From a clean checkout of the commit being tested, on Linux or macOS with Docker
-and uv installed:
+With the bridge running and connected to your NAO, run this from the repository root:
 
 ```bash
-make install
-make check
-make image
-export NAO_IP='192.168.1.100'  # replace with the robot's address
+uv run --project server python scripts/hardware_acceptance.py http://127.0.0.1:3000
+```
 
+The script checks the connection first, then asks you to press Enter to start
+speech testing. It runs the API checks, asks whether the speech sounded right and
+stopped, and tells you which head sensor to touch. Allow about five minutes. Use
+an otherwise idle bridge because the priority-stop test stops all speech. No
+motion, posture or stiffness commands are sent.
+
+You do not need to fill in a checklist, copy IDs or collect logs. The script creates
+a new directory under `hardware-results/` and prints the path to **report.md** at
+the end. That report contains the result of every check, your physical observations,
+and available robot/version/host/image details. Detailed HTTP/SSE evidence and
+machine-readable results are saved alongside it. If the matching local Docker
+container is accessible, its image details and logs are collected automatically;
+unavailable metadata is noted without blocking the tests.
+
+## If the bridge is not running yet
+
+Build and start it once, using your robot's IP address:
+
+```bash
+make image
+export NAO_IP='192.168.1.100'
 docker run --init --platform linux/amd64 --name nao-bridge \
   -p 127.0.0.1:3000:3000 -e NAO_IP nao-bridge-core
 ```
 
-Leave this terminal showing logs. The robot should already be powered on and
-connected; the bridge does not wake or position it. If a container called
-`nao-bridge` already exists, inspect it before choosing whether to reuse or replace
-it. Run only one bridge against the robot. The test container is deliberately kept
-after exit so its logs remain available.
+Leave that terminal running and run the test command in another terminal. If you
+already have the bridge running, use that instance. For a different container name,
+add `--container NAME` to the test command; for a remote bridge, supply its URL.
+Docker access is optional for testing through the API.
 
-In a second terminal, from the same checkout:
+## What it verifies
 
-```bash
-RUN_DIR="hardware-results/$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -p "$RUN_DIR"
-cp docs/hardware-acceptance-checklist.md "$RUN_DIR/checklist.md"
-IMAGE_ID="$(docker inspect nao-bridge --format '{{.Image}}')"
-docker version > "$RUN_DIR/docker-version.txt"
-docker image inspect "$IMAGE_ID" --format '{{.Id}} {{json .RepoDigests}}' \
-  > "$RUN_DIR/image.txt"
-git rev-parse HEAD > "$RUN_DIR/commit.txt"
-git status --short > "$RUN_DIR/working-tree.txt"
-```
+- Connection, readiness, capabilities and fresh sensor state.
+- Speech with defaults and quieter/slower settings, without executing duplicate
+  keyed requests twice.
+- Per-operation cancellation and priority stop, with your confirmation that speech
+  actually stopped early and did not resume.
+- Front/middle/rear head-touch press/release reaching two independent subscribers,
+  while subscriptions coexist with command traffic.
+- Continued delivery after one subscriber closes, explicit reset on SSE reconnect,
+  new touch delivery after reconnect, session renewal and cleanup.
 
-Fill in the checklist's robot model, NAOqi version, host and connection details.
-If discovery cannot supply a model/version, record it manually from the robot's
-management interface; do not infer it from the bundled SDK version. Keep physical
-robot recordings/notes with the run if useful. `hardware-results/` is Git-ignored;
-review and summarize relevant evidence before publishing it.
+Answer `y`, `n` or `s` (not observed) to listening questions. A negative answer or a
+protocol error stops further test actions and is recorded automatically. `q` or
+Ctrl-C ends the run and attempts session cleanup; any cleanup failure is included.
+An uncertain command is not automatically retried.
 
-## Preflight: no robot commands
+**PASS** means the selected checks passed, including the requested physical
+observations. **FAIL** includes the error or negative observation. **INCOMPLETE**
+means a required observation was skipped. Untested checks are explicitly listed.
+Exit codes are 0 for pass, 1 for failure, and 2 for incomplete. This is a result for
+the tested speech/touch scope, not a claim about motion, media, or every failure
+mode. The report does not turn an HTTP cancellation response into proof of physical
+stop; that is why the few listening questions remain.
 
-```bash
-uv run --project server python scripts/hardware_acceptance.py \
-  http://127.0.0.1:3000 --output "$RUN_DIR/preflight" --image-id "$IMAGE_ID"
-```
+## Optional disconnect/restart checks
 
-This checks discovery, live/ready health, capabilities, fresh touch state and
-diagnostics. It creates no sessions and sends no robot commands. It requires a
-connected `naoqi` backend. If the connection is still starting, inspect the logs
-and rerun into a new directory once ready. A fake/native-fixture backend is refused
-unless `--rehearsal` is supplied; those runs are explicitly marked as non-hardware
-evidence.
-
-Open `http://127.0.0.1:3000/docs` too. Verify the bundled Swagger page loads and
-executes `GET /robot` without installing a UI app.
-
-## Guided speech and touch checks
+Add `--faults` to the same command:
 
 ```bash
-uv run --project server python scripts/hardware_acceptance.py \
-  http://127.0.0.1:3000 --mode exercise --allow-speech \
-  --output "$RUN_DIR/guided" --image-id "$IMAGE_ID"
+uv run --project server python scripts/hardware_acceptance.py --faults
 ```
 
-Allow about five minutes. Follow the terminal prompts; `q` ends the run, and
-Ctrl-C attempts cleanup. Use a terminal with interactive stdin, not piped answers.
-Speech uses the discovered default language; the test phrases are English. Record
-any language limitation instead of interpreting unintelligible speech as success.
+After the ordinary tests and cleanup, the script asks you to disconnect and
+reconnect the robot's network. It checks readiness, freshness and connection
+generation itself. It then prompts before restarting a matching local bridge
+container and verifies recovery and rejection of old session IDs. For a remote
+bridge or unavailable Docker access, it asks you to restart the bridge instead.
+Results go into the same report; no separate monitor or manual result recording
+is needed. These checks run while idle; in-flight/process-freeze/load tests remain
+listed as outside this run's scope.
 
-The run:
-
-1. Creates a uniquely keyed session, renews it independently of operator prompts,
-   and opens two independent SSE subscriptions alongside command traffic.
-2. Speaks a short phrase with defaults, then a quieter/slower phrase. It submits
-   each identical keyed request twice and checks that both responses identify the
-   same operation. Confirm that each phrase was physically spoken once.
-3. Starts a long repeated phrase and cancels it after one second. Repeats with
-   priority stop. Records request latency and time to a confirmed protocol result.
-   Confirm whether speech actually stopped early and stayed stopped.
-4. Checks press/release edges from front, middle and rear head sensors in both
-   subscriptions. Release the sensors before pressing Enter, then touch only the
-   requested sensor once. Unexpected edges fail the check and remain in evidence.
-5. Deletes the first subscription and checks that the second still receives touch.
-   Reconnects the second with `Last-Event-ID`, requires an explicit reset, then
-   checks a new touch. Initial state/samples are retained in the transcript.
-6. Confirms at least one lease renewal and closes its session, checking cleanup.
-
-An error or a negative physical observation stops the sequence; uncertain mutations
-are never automatically retried.
-Cleanup only closes this run's session. If the connection is lost, cleanup can fail:
-record that failure and inspect diagnostics. Do not force-release resources merely
-to get a passing result. An `unknown` operation needs investigation; a fresh run
-must not be treated as proof that earlier native work stopped.
-
-Each output directory is new and cannot overwrite a previous run. It contains:
-
-- `evidence.jsonl`: flushed UTC/elapsed timestamps, HTTP requests/responses and
-  latencies, SSE envelopes and interruption timings.
-- `summary.json`: robot/process identities, source commit, host/Python/image
-  metadata, completed protocol checks, human observations and failures.
-
-`automation: passed` means only the protocol checks for the selected mode passed.
-Inspect mode does not certify the guided checks. `y`, `n` and `s` mean observed yes,
-observed no and not observed; missing/skipped observations are not acceptance.
-The hardware verdict deliberately remains `requires_manual_review`. Watch mode
-produces observations only. Exit code 1 means a protocol/tool/cleanup failure; 2
-means a negative physical observation with no protocol failure. Exit code 0 is
-not a hardware acceptance verdict. The reported interruption duration includes HTTP and
-polling overhead; it is not a physical stop-latency measurement.
-
-## Manual disconnect and restart checks
-
-Complete the ordinary guided run first. Save its evidence before introducing
-faults. Start a read-only monitor in the second terminal:
-
-```bash
-uv run --project server python scripts/hardware_acceptance.py \
-  http://127.0.0.1:3000 --mode watch --seconds 180 \
-  --output "$RUN_DIR/disconnect-watch" --image-id "$IMAGE_ID"
-```
-
-The monitor polls health, discovery, state and diagnostics. It tolerates HTTP and
-connection failures, records them, and does not renew sessions or dispatch work.
-Create a separate watch directory for each fault. Note the UTC fault/recovery
-instants in the checklist so they can be matched to the transcript and Docker logs.
-
-**Robot network loss:** disconnect the robot's actual network path, leaving the
-bridge and host running; for Wi-Fi, unplugging an unused Ethernet cable does not
-exercise this. Check that the API remains live, robot readiness becomes false,
-and sensor values become unavailable/stale rather than appearing fresh. Restore
-the path, wait for a connected state with a new connection generation, then rerun
-the guided checks into a new directory. Record any failure to reconnect.
-
-**Container restart:** with no intended work running, keep a watch active and run
-`docker restart nao-bridge` in a third terminal. Expect temporary HTTP failure and
-a new bridge instance after recovery. Previous session/operation IDs must not be
-reused. Run the guided checks again. This is a whole-container restart test, not
-a separate agent-only or API-only failure test.
-
-**Optional in-flight fault checks:** these need a deliberate second pass and an
-operator listening throughout. Using Swagger UI, create a session and submit a
-long utterance with `wait=False` semantics (HTTP always returns an operation).
-Save its session/operation IDs and renew the session if needed. Interrupt the
-network or restart the container while it is audibly speaking. Record separately:
-what the robot did, what the old operation reports (or 404 after API restart), and
-whether anything was replayed after reconnection. Existing speech may continue
-without the bridge; absence of an old ID does not establish a stop. Do not combine
-this with a guided run and count the resulting failure as an ordinary-run pass.
-
-Agent-only failure, frozen API/watchdog behavior and eight-stream load already
-have container-fixture coverage. They still need separate live-robot observations
-before claiming those hardware properties. Mark them untested in this first run
-unless deliberately exercised; this runner does not inject process signals or
-claim to close those gates.
-
-## Check both Python clients
-
-After finishing the guided run, run each existing event example in turn:
-
-```bash
-uv run --project clients/python python clients/python/examples/events.py
-uv run --project clients/python python clients/python/examples/async_events.py
-```
-
-Each opens two sessions/subscriptions. Press and release a head sensor and confirm
-both observers print the edge. Leave each running for at least a minute to exercise
-renewal, then end it with Ctrl-C. Save relevant terminal output in the evidence
-directory. After ordinary speech has passed, optionally add `--speak-on-touch` to
-one example: each new press should trigger one Hello, while snapshots/reset events
-must not trigger speech. This deliberately dispatches speech on physical touches;
-run it separately from the guided cancellation/stop checks.
-
-## Preserve results and decide acceptance
-
-Before removing the container:
-
-```bash
-docker logs --timestamps nao-bridge > "$RUN_DIR/container.log" 2>&1
-```
-
-Complete every checklist row as PASS, FAIL or NOT TESTED, with evidence and actual
-observations. Repeat a failed check into a new directory after any fix. Record any
-unexpected autonomous movement, speech resumption or cleanup uncertainty.
-
-The first session can close connection, speech/settings, touch routing, ordinary
-cancellation and basic reconnect evidence for the tested configuration. It cannot
-establish joint hold/stop semantics, recording throughput, another host topology,
-or real-world stop behavior for failure modes not exercised. Summarize the results
-in `docs/implementation-status.md` only after reviewing the run with those limits.
+For connection checks only, use `--inspect`. For a simulated backend, use
+`--rehearsal`; the report is prominently labelled as a rehearsal. `--output DIR`
+lets you choose a new results directory but is not required. Existing results are
+never overwritten. Raw results stay local and are excluded from Git and Docker
+build context. After testing, we can use the report to update PR #34 with findings.

@@ -199,9 +199,9 @@ Use complementary verification layers:
 | Combined-container integration | Real modern HTTP/SSE process plus Python 2 agent, IPC framing/fencing/expiry, SDK import, environment isolation, bulk transfer, and independent process termination through actual routes. |
 | Hardware acceptance | Native callbacks, physical targets and stop outcomes, autonomy effects, timing/rates, camera/audio formats, and host networking on named robot/firmware versions. |
 
-Existing client tests are not evidence for these new contracts. New server tests must invoke production handlers/adapters, not locally reimplemented validation functions. Keep a minimal hardware checklist and result record per increment; hardware tests must be deliberately invoked and must state their expected motion.
+Existing client tests are not evidence for these new contracts. New server tests must invoke production handlers/adapters, not locally reimplemented validation functions. Keep a guided hardware test and automatically generated result record per increment; hardware tests must be deliberately invoked and must state their expected motion.
 
-At the end of each increment, update capabilities and runnable docs to what actually ships. Run lint/type checks on modern API/client code, appropriate Python 2 agent checks in the container, contract/IPC/integration tests, and the hardware checklist. There is no requirement to add speculative tests for features not yet delivered.
+At the end of each increment, update capabilities and runnable docs to what actually ships. Run lint/type checks on modern API/client code, appropriate Python 2 agent checks in the container, contract/IPC/integration tests, and the guided hardware test. There is no requirement to add speculative tests for features not yet delivered.
 
 ## Decisions to resolve with experiments
 
