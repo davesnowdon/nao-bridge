@@ -1,7 +1,9 @@
 # Increment 1 software delivery evidence
 
-The replacement API implements the software slice through 1C. Physical robot and
-Apple Silicon acceptance remain open. Software progression before those tests was
+The replacement API implements the software slice through 1C. The first
+[NAO6 hardware session](hardware-results-2026-11-17.md) verified speech, touch,
+stream load and restart, but found a cancellation/completion blocker. Full robot
+and Apple Silicon acceptance remain open. Software progression before those tests was
 explicitly authorized; fake/native-loopback results do not close the hardware gate.
 Every discovery response reports `hardware_verified: false`.
 
