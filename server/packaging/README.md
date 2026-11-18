@@ -16,6 +16,13 @@
 - `os-packages.lock` pins the complete installed Ubuntu package inventory. The
   build fails if that inventory changes. Update the base digest and inventory
   together, inspect the diff, then run `make test-container`.
+- `ubuntu.sources` selects the Ubuntu archive snapshot at `20261106T180000Z`.
+  The live archive removed four locked Mesa packages, which broke a fresh CI build
+  while cached local builds still passed. The snapshot preserves the tested package
+  versions. A hash-pinned copy of the locked CA-certificate package bootstraps HTTPS
+  trust before apt runs; archive signature verification remains enabled, and any
+  index-fetch error fails the build. Refresh the snapshot, CA bootstrap pin and
+  package lock together. See [Ubuntu's snapshot documentation](https://snapshot.ubuntu.com/).
 
 Python dependencies are locked separately in `server/uv.lock` and
 `server/requirements.lock`. No experiment checkout is needed to build or test.

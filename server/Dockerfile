@@ -7,7 +7,15 @@ RUN /usr/bin/python2.7 /tmp/collect_legacy.py
 
 FROM ${MODERN_BASE} AS runtime
 COPY server/packaging/os-packages.lock /opt/nao-bridge/os-packages.lock
-RUN apt-get update \
+COPY server/packaging/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
+# Bootstrap HTTPS trust from the same locked package before apt is available over TLS.
+ADD --checksum=sha256:f9fbacd417b515450b831032cc39d18059e9874e67525679a43c16071dabf9a0 \
+    https://snapshot.ubuntu.com/ubuntu/20261106T180000Z/pool/main/c/ca-certificates/ca-certificates_20260816ubuntu0.24.04.2_all.deb /tmp/ca-certificates.deb
+RUN dpkg-deb --extract /tmp/ca-certificates.deb /tmp/ca-bootstrap \
+    && mkdir -p /etc/ssl/certs \
+    && cat /tmp/ca-bootstrap/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt \
+    && rm -rf /tmp/ca-bootstrap /tmp/ca-certificates.deb \
+    && apt-get update --error-on=any \
     && DEBIAN_FRONTEND=noninteractive xargs -a /opt/nao-bridge/os-packages.lock \
        apt-get install -y --no-install-recommends \
     && dpkg-query -W '-f=${binary:Package}=${Version}\n' | LC_ALL=C sort > /tmp/resolved-packages \
