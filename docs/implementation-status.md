@@ -97,8 +97,11 @@ Python 2 standard-library extensions (including `crypt` and `nis`) and qi with
 remains isolated. The tested image is
 `sha256:2085f5eff9148f6d99d70c3a7b5ff4673492e2a88c209cc11e2d6280a1701ad9`.
 Its uncompressed Docker image size is about 66.8 MB smaller than the pre-cleanup
-image `6e5a048f9631`. Physical smoke checks on NAOqi 2.1 and 2.8 have not been repeated
-with this image; the earlier hardware results apply to their recorded images.
+image `6e5a048f9631`. A subsequent [NAO6/NAOqi 2.8.7.4 smoke test](hardware-smoke-sdk-cleanup-2026-11-18.md)
+passed discovery, plain speech/idempotency, physically confirmed cancellation and
+priority stop, follow-on speech, front touch to two observers, renewal and cleanup
+with this image. NAOqi 2.1 smoke testing is deferred and does not block merging
+this cleanup; the broader earlier hardware results apply to their recorded images.
 
 Two bundled-SDK details were discovered by execution: `qi.Session` supplies
 connection signals but no `isConnected()` method, and numeric signal values can be
