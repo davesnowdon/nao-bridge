@@ -1,8 +1,18 @@
 # Increment 1 software delivery evidence
 
-The replacement API implements the software slice through 1C. Physical robot and
-Apple Silicon acceptance remain open. Software progression before those tests was
-explicitly authorized; fake/native-loopback results do not close the hardware gate.
+The replacement API implements the software slice through 1C. The first
+[NAO6 hardware session](hardware-results-2026-11-17.md) found a cancellation
+blocker, resolved and retested in the [18 November session](hardware-results-2026-11-18.md).
+Speech, touch, cancellation/stop, stream load, Python clients and process recovery
+passed on NAOqi 2.8.7.4. Agent death leaves robot speech running to completion;
+the API preserves an unknown outcome and quarantine. Initial
+[NAOv5/NAOqi 2.1.4.13 tests](hardware-results-naov5-2026-11-18.md) also passed
+speech, cancellation/stop and all head sensors; network delays interrupted the
+remaining checks. Full NAOqi 2.1 acceptance remains incomplete; controlled
+network-loss and Apple Silicon acceptance are explicitly deferred and do not
+block merging the increment-1 hardware findings. Software progression before those
+tests was explicitly authorized; fake/native-loopback results do not close the
+hardware gate.
 Every discovery response reports `hardware_verified: false`.
 
 ## Delivered surface
@@ -35,11 +45,12 @@ not load FluentNao.
 
 ## Reproduced verification
 
-On Linux amd64, 6 November 2026:
+Linux amd64 baseline verification on 6 November 2026, with software and container
+checks repeated on 18 November after the hardware fixes and review follow-up:
 
 | Verification | Result |
 | --- | --- |
-| Server/core/socket tests | 61 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure, agent fences, critical-thread failure, session churn and bounded renewal retries |
+| Server/core/socket tests (18 November) | 89 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure, agent fences, critical-thread failure, session churn, bounded client/runner renewal retries and hardware-runner rehearsals |
 | Client parser tests | 23 passed: UTF-8/chunk/CRLF boundaries, comments, multiline data, unknown events, malformed IDs/payloads/numbers and byte bounds |
 | Modern server/client type checks | Passed |
 | Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, robot discovery, session creation and speech submission without client setup |
@@ -65,6 +76,14 @@ Reproduce with `make check` and `make test-container`. CI runs both and exports 
 contract bundle. Build inputs are recorded in `server/Dockerfile`,
 `server/requirements.lock`, `server/uv.lock`, and
 [`server/packaging`](../server/packaging/README.md).
+
+Review follow-up verified that runner renewal survives transient transport failures
+and lost replies within its confirmed lease, but stops on expiry, invalid sessions,
+changed identity or malformed responses. Guided rehearsals include leading touch
+releases. Agent stop exceptions are logged without changing cancellation outcomes;
+the current single-worker stop timing budget is documented beside the wait.
+These follow-up checks used simulated backends and the native container fixture;
+the hardware reports retain their original test counts and image identities.
 
 Two bundled-SDK details were discovered by execution: `qi.Session` supplies
 connection signals but no `isConnected()` method, and numeric signal values can be
@@ -105,16 +124,24 @@ release remain available within that API instance.
 
 ## Remaining hardware and later-increment gates
 
-1. Verify real robot connection/callback routing,
-   `ALTextToSpeech.say(text, language)`, the `\vol=\` / `\rspd=\` speech controls,
-   plain speech defaults and native cancellation using the actual model/NAOqi
-   version. Verify touch callbacks through `ALMemory.subscriber(event).signal` on
-   `qi.Session` with NAOqi 2.1. The fixture uses a separate safety service to
-   exercise priority transport; it does not prove real
+Use the [guided hardware test](hardware-acceptance.md) to collect live-robot
+evidence and generate its report automatically. The runner is tested against a
+fake robot over real HTTP/SSE; that verifies the test tooling, not the hardware
+gates below.
+
+1. Complete the remaining NAOv5 checks when its connection allows: independent
+   subscriber cleanup, SSE reconnect/fresh delivery, load, Python clients and
+   process-fault recovery. Discovery, speech controls, native cancellation,
+   priority stop, follow-on speech and all three head callbacks already passed on
+   both NAOqi 2.8 and 2.1. These results do not prove that
    `ALTextToSpeech.stopAll` can interrupt every native blocking call.
-2. Test network unplug/reconnect, robot-side work after process loss, source update
-   age and practical sample/event rates. Confirm stop outcomes by observation.
-3. Test Docker Desktop on Apple Silicon with the amd64 image when available.
+2. Controlled network unplug/reconnect testing is deferred. NAO6 process-loss
+   observations are already recorded: the surviving agent stopped speech during
+   an API freeze, while killing the agent let speech finish naturally. The API
+   preserved uncertainty in both cases. Network-failure behavior and sustained
+   sample/event rates still require characterization.
+3. Docker Desktop on Apple Silicon with the amd64 image remains unverified;
+   acceptance is deferred until that host is available.
 4. Before advertising joint control, establish actual joint limits/couplings,
    stiffness semantics and controlled hold/stop on cancellation/expiry. Increment 2
    is the next application slice; loopback success cannot establish these physical

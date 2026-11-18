@@ -120,6 +120,7 @@ class Agent(object):
                 record = self.records[rid]
                 record["phase"] = "dispatch_started"
             self.reply(replies, request, "accepted")
+            future = None
             try:
                 future = self.driver.speak(request["payload"])
                 with self.lock:
@@ -129,12 +130,19 @@ class Agent(object):
                     result = {"cancelled": record.get("stop_requested", False), "backend": "naoqi"}
                     record.update(status="completed", result=result, finished=monotonic())
                 self.reply(replies, request, result=result)
-            except ValueError as error:
-                record.update(status="rejected", finished=monotonic())
-                self.reply(replies, request, "rejected", code="unsupported", message=str(error))
-            except Exception:
-                record.update(status="unknown", finished=monotonic())
-                self.reply(replies, request, "unknown", message="Native speech completion unconfirmed")
+            except Exception as error:
+                if future is not None and future.isCanceled():
+                    # qi reports confirmed cancellation by raising from value().
+                    result = {"cancelled": True, "backend": "naoqi"}
+                    with self.lock:
+                        record.update(status="completed", result=result, finished=monotonic())
+                    self.reply(replies, request, result=result)
+                elif future is None and isinstance(error, ValueError):
+                    record.update(status="rejected", finished=monotonic())
+                    self.reply(replies, request, "rejected", code="unsupported", message=str(error))
+                else:
+                    record.update(status="unknown", finished=monotonic())
+                    self.reply(replies, request, "unknown", message="Native speech completion unconfirmed")
 
     def stop(self, request):
         with self.lock:
@@ -151,7 +159,8 @@ class Agent(object):
             try:
                 self.driver.stop()
             except Exception:
-                return {"confirmed_ids": [], "unresolved_ids": [key for key, _ in selected]}
+                # The say future can confirm cancellation before stopAll replies.
+                logging.warning("stopAll did not confirm", exc_info=True)
         confirmed, unresolved = [], []
         for key, record in selected:
             if record["phase"] == "queued":
@@ -160,11 +169,16 @@ class Agent(object):
             future = record.get("future")
             if future is not None:
                 try:
+                    # One worker currently bounds this to one waiting future: 1 s in
+                    # native.stop + 200 ms here, within the API's 2 s backend timeout.
+                    # Concurrent native work needs a shared stop deadline, not N waits.
                     future.value(200)
                     confirmed.append(key)
                     continue
                 except Exception:
-                    pass
+                    if future.isCanceled():
+                        confirmed.append(key)
+                        continue
             if record["status"] == "completed":
                 confirmed.append(key)
             else:

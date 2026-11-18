@@ -45,6 +45,15 @@ def agent_pid():
 
 try:
     until(connected)
+    agent_maps = Path(f"/proc/{agent_pid()}/maps").read_text()
+    api_maps = Path(f"/proc/{api.pid}/maps").read_text()
+    assert "/opt/legacy/qi167/qi/linux/libqi.so" in agent_maps
+    assert "/opt/legacy/qi167/qi/linux/libqipython.so" in agent_maps
+    assert "/usr/lib/x86_64-linux-gnu/libstdc++.so" in agent_maps
+    assert "/opt/legacy/lib/libstdc++" not in agent_maps
+    assert "pynaoqi-python2.7-2.1.4.13-linux64/libqi" not in agent_maps
+    assert "/opt/legacy/" not in api_maps and "/nao-bridge/lib/" not in api_maps
+    print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")
     recovery_probe.schemas = probe.schemas
     print(json.dumps(conformance.run("http://127.0.0.1:3000")))

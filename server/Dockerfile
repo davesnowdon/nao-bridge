@@ -7,18 +7,29 @@ RUN /usr/bin/python2.7 /tmp/collect_legacy.py
 
 FROM ${MODERN_BASE} AS runtime
 COPY server/packaging/os-packages.lock /opt/nao-bridge/os-packages.lock
-RUN apt-get update \
+COPY server/packaging/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
+# Bootstrap HTTPS trust from the same locked package before apt is available over TLS.
+ADD --checksum=sha256:f9fbacd417b515450b831032cc39d18059e9874e67525679a43c16071dabf9a0 \
+    https://snapshot.ubuntu.com/ubuntu/20261106T180000Z/pool/main/c/ca-certificates/ca-certificates_20260816ubuntu0.24.04.2_all.deb /tmp/ca-certificates.deb
+RUN dpkg-deb --extract /tmp/ca-certificates.deb /tmp/ca-bootstrap \
+    && mkdir -p /etc/ssl/certs \
+    && cat /tmp/ca-bootstrap/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt \
+    && rm -rf /tmp/ca-bootstrap /tmp/ca-certificates.deb \
+    && apt-get update --error-on=any \
     && DEBIAN_FRONTEND=noninteractive xargs -a /opt/nao-bridge/os-packages.lock \
        apt-get install -y --no-install-recommends \
     && dpkg-query -W '-f=${binary:Package}=${Version}\n' | LC_ALL=C sort > /tmp/resolved-packages \
     && diff -u /opt/nao-bridge/os-packages.lock /tmp/resolved-packages \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=legacy /bundle/ /
+ADD --checksum=sha256:c298e20f34658bfc98eb9b84191d552e349b7a1e5cd7d6d9dfd46befafb1dae6 \
+    https://files.pythonhosted.org/packages/06/b3/75fe60c81b9992eda0f4dd6245c308f47cd4634b62490e50b42ebeb60bbb/qi-1.6.7-cp27-none-manylinux1_x86_64.whl /tmp/qi.whl
 ADD --checksum=sha256:126343c54daff4068efc1ac269518d0cc202d57857794948103dd1454e8881be \
     https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.13.18%2B20261026-x86_64-unknown-linux-gnu-install_only.tar.gz /tmp/python.tar.gz
 RUN mkdir -p /opt/modern \
     && tar -xzf /tmp/python.tar.gz -C /opt/modern --strip-components=1 \
-    && rm /tmp/python.tar.gz
+    && /opt/modern/bin/python3 -m zipfile -e /tmp/qi.whl /opt/legacy/qi167 \
+    && rm /tmp/python.tar.gz /tmp/qi.whl
 ENV PATH=/opt/modern/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PYTHONPATH=/opt/nao-bridge \
     PYTHONDONTWRITEBYTECODE=1 \

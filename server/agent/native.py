@@ -105,7 +105,7 @@ class NativeDriver(object):
         return self.tts.say(text, language, _async=True)
 
     def stop(self):
-        self.safety.stopAll(_async=True).value(200)
+        self.safety.stopAll(_async=True).value(1000)
 
     def close(self):
         self._connected.clear()

@@ -106,6 +106,16 @@ make check             # lint, types, server/client tests, socket conformance
 make test-container    # production image, offline SDK callbacks and agent faults
 ```
 
+For a real robot, run the guided test against your running bridge:
+
+```bash
+uv run --project server python scripts/hardware_acceptance.py
+```
+
+It asks you to listen and touch the head sensors, runs the automated checks, and
+writes one report with results and available logs/metadata. See the
+[short test guide](docs/hardware-acceptance.md); no separate checklist is needed.
+
 uv manages project runtimes and dependencies; manual Python installations are not
 required. Local server development uses Python 3.12; the image carries pinned
 Python 3.13 and a private Python 2/SDK bundle. Legacy library paths are confined to

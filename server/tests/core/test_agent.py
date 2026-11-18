@@ -147,3 +147,68 @@ def test_critical_thread_failure_fences_and_exits(agent_module, monkeypatch, cap
     assert agent.epoch == 2 and agent.heartbeat == 0
     assert agent.emergency_stop.is_set()
     assert "Critical agent thread failed: work" in caplog.text
+
+
+class InterruptedFuture:
+    def __init__(self, cancelled):
+        self.cancelled = cancelled
+
+    def value(self, timeout=None):
+        raise RuntimeError("Future canceled." if self.cancelled else "transport lost")
+
+    def isCanceled(self):
+        return self.cancelled
+
+
+@pytest.mark.parametrize("cancelled", [True, False])
+def test_native_interruption_requires_cancelled_future_for_known_outcome(agent_module, cancelled):
+    agent = bare_agent(agent_module)
+    request = {
+        "id": "operation",
+        "session_id": "session",
+        "action": "speak",
+        "payload": {},
+        "agent": "agent",
+        "api": "api",
+        "epoch": 1,
+        "deadline": agent_module.monotonic() + 1,
+    }
+    future = InterruptedFuture(cancelled)
+    agent.driver.speak = lambda payload: future
+    agent.records["operation"] = {"session_id": "session", "status": "accepted", "phase": "queued"}
+    replies = queue.Queue(8)
+    agent.work = DrainQueue((request, replies))
+    with pytest.raises(StopIteration):
+        agent.worker()
+    assert replies.get_nowait()["status"] == "accepted"
+    result = replies.get_nowait()
+    assert result["status"] == ("completed" if cancelled else "unknown")
+    if cancelled:
+        assert result["result"]["cancelled"] is True
+
+
+@pytest.mark.parametrize("cancelled", [True, False])
+@pytest.mark.parametrize("stop_times_out", [True, False])
+def test_stop_checks_native_cancellation_even_when_stop_reply_times_out(
+    agent_module, cancelled, stop_times_out, caplog
+):
+    agent = bare_agent(agent_module)
+
+    def stop():
+        if stop_times_out:
+            raise RuntimeError("Future timeout")
+
+    agent.driver.stop = stop
+    agent.records["operation"] = {
+        "session_id": "session",
+        "status": "accepted",
+        "phase": "dispatch_started",
+        "future": InterruptedFuture(cancelled),
+    }
+    assert agent.stop({"payload": {"operation_id": "operation"}, "session_id": "session"}) == {
+        "confirmed_ids": ["operation"] if cancelled else [],
+        "unresolved_ids": [] if cancelled else ["operation"],
+    }
+    assert ("stopAll did not confirm" in caplog.text) == stop_times_out
+    if stop_times_out:
+        assert caplog.records[-1].exc_info is not None
