@@ -13,7 +13,7 @@ import subprocess
 DEST = "/bundle/opt/legacy"
 # The maintained base supplies glibc and the C++/GCC runtimes.
 SYSTEM = re.compile(
-    r"^(ld-linux.*|lib(c|m|dl|pthread|rt|util|resolv|nss_.*|stdc\+\+|gcc_s)\.so\..*)$"
+    r"^(ld-linux.*|lib(c|m|dl|pthread|rt|util|resolv|nss_.*|crypt|nsl|stdc\+\+|gcc_s)\.so\..*)$"
 )
 
 

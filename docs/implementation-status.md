@@ -87,14 +87,17 @@ the hardware reports retain their original test counts and image identities.
 
 The subsequent SDK/library cleanup removes the donor SDK, its SONAME aliases,
 duplicate ICU libraries and donor C++/GCC runtimes from the production image.
-Python 2's OpenSSL dependencies now come from the donor OS package
+Donor `libcrypt` and `libnsl` are also excluded, and the dependency manifest must
+contain no donor `libc6` package. Python 2's SSL extensions and the qi wheel's
+`libqi`/`libqipython` now use OpenSSL from the donor OS package
 `libssl1.0.0` (`1.0.1f-1ubuntu2.27`), with hashes and copyright notices retained.
-The native container suite resolves all 70 remaining bundled ELF files, imports
-Python 2 standard-library extensions and qi, and verifies the agent uses the base
-C++/GCC runtimes while the API remains isolated. The rebuilt image is
-`sha256:20422dc4224fa6ef95d99cf370f126d1dbf355cdb34738c5ba5fad48324443a2`.
-Its uncompressed Docker image size is 66,612,944 bytes smaller than the image
-before cleanup. Physical smoke checks on NAOqi 2.1 and 2.8 have not been repeated
+The native container suite resolves all 68 remaining bundled ELF files, imports
+Python 2 standard-library extensions (including `crypt` and `nis`) and qi with
+`LD_BIND_NOW=1`, and verifies the agent uses the base C++/GCC runtimes while the API
+remains isolated. The tested image is
+`sha256:2085f5eff9148f6d99d70c3a7b5ff4673492e2a88c209cc11e2d6280a1701ad9`.
+Its uncompressed Docker image size is about 66.8 MB smaller than the pre-cleanup
+image `6e5a048f9631`. Physical smoke checks on NAOqi 2.1 and 2.8 have not been repeated
 with this image; the earlier hardware results apply to their recorded images.
 
 Two bundled-SDK details were discovered by execution: `qi.Session` supplies

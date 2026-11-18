@@ -48,9 +48,18 @@ def check_legacy_bundle():
     legacy = Path("/opt/legacy")
     assert not Path("/nao-bridge/lib").exists()
     assert not (legacy / "sdk-sonames").exists()
-    for pattern in ("libstdc++*", "libgcc_s*", "libicu*", "libqi*", "_qi*"):
+    for pattern in (
+        "libstdc++*",
+        "libgcc_s*",
+        "libicu*",
+        "libqi*",
+        "_qi*",
+        "libcrypt.so*",
+        "libnsl.so*",
+    ):
         assert not list((legacy / "lib").glob(pattern)), pattern
     manifest = json.loads((legacy / "dependency-manifest.json").read_text())
+    assert not any(package.split(":")[0] == "libc6" for package in manifest["source_packages"])
     for dependency in manifest["legacy_dependencies"]:
         library = legacy / "lib" / dependency["name"]
         assert hashlib.sha256(library.read_bytes()).hexdigest() == dependency["sha256"]
@@ -81,9 +90,9 @@ def check_legacy_bundle():
             str(legacy / "bin/python2.7"),
             "-c",
             "import ssl, hashlib, ctypes, sqlite3, bz2, zlib, readline, curses.panel, "
-            "pyexpat, qi; print(ssl.OPENSSL_VERSION)",
+            "pyexpat, qi, crypt, nis; print(ssl.OPENSSL_VERSION)",
         ],
-        env=agent_env,
+        env=dict(agent_env, LD_BIND_NOW="1"),
         text=True,
         timeout=10,
     )
