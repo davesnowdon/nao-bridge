@@ -85,6 +85,18 @@ the current single-worker stop timing budget is documented beside the wait.
 These follow-up checks used simulated backends and the native container fixture;
 the hardware reports retain their original test counts and image identities.
 
+The subsequent SDK/library cleanup removes the donor SDK, its SONAME aliases,
+duplicate ICU libraries and donor C++/GCC runtimes from the production image.
+Python 2's OpenSSL dependencies now come from the donor OS package
+`libssl1.0.0` (`1.0.1f-1ubuntu2.27`), with hashes and copyright notices retained.
+The native container suite resolves all 70 remaining bundled ELF files, imports
+Python 2 standard-library extensions and qi, and verifies the agent uses the base
+C++/GCC runtimes while the API remains isolated. The rebuilt image is
+`sha256:20422dc4224fa6ef95d99cf370f126d1dbf355cdb34738c5ba5fad48324443a2`.
+Its uncompressed Docker image size is 66,612,944 bytes smaller than the image
+before cleanup. Physical smoke checks on NAOqi 2.1 and 2.8 have not been repeated
+with this image; the earlier hardware results apply to their recorded images.
+
 Two bundled-SDK details were discovered by execution: `qi.Session` supplies
 connection signals but no `isConnected()` method, and numeric signal values can be
 Python 2 `long`. The adapter uses connection signals and accepts real numeric

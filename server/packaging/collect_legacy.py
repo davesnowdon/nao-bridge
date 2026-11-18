@@ -1,4 +1,4 @@
-"""Run with the pinned legacy image's Python 2 to collect its binary closure."""
+"""Collect the pinned donor's Python 2 interpreter and standard-library dependencies."""
 
 from __future__ import print_function
 
@@ -10,10 +10,11 @@ import shutil
 import struct
 import subprocess
 
-SDK = "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64"
 DEST = "/bundle/opt/legacy"
-# These must resolve from the maintained base, never a second copied glibc.
-SYSTEM = re.compile(r"^(ld-linux.*|lib(c|m|dl|pthread|rt|util|resolv|nss_.*)\.so\..*)$")
+# The maintained base supplies glibc and the C++/GCC runtimes.
+SYSTEM = re.compile(
+    r"^(ld-linux.*|lib(c|m|dl|pthread|rt|util|resolv|nss_.*|stdc\+\+|gcc_s)\.so\..*)$"
+)
 
 
 def elf_files(root):
@@ -47,28 +48,11 @@ def main():
             "*.pyc", "*.pyo", "*.a", "*.o", "dist-packages", "site-packages"
         ),
     )
-    shutil.copytree(
-        SDK, "/bundle" + SDK, ignore=shutil.ignore_patterns("*.pyc", "*.pyo")
-    )
-    # The SDK preloads unversioned filenames whose SONAMEs are versioned.
-    # Supply aliases so dependency resolution also works without import order.
-    aliases = {}
-    os.makedirs(DEST + "/sdk-sonames")
-    for path in elf_files(SDK):
-        dynamic = subprocess.check_output(["readelf", "-d", path]).decode("utf-8")
-        match = re.search(r"\(SONAME\).*\[(.*?)\]", dynamic)
-        if match:
-            name = match.group(1)
-            if name in aliases:
-                with open(path, "rb") as one, open(aliases[name], "rb") as two:
-                    if one.read() != two.read():
-                        raise RuntimeError("conflicting SDK SONAME " + name)
-                continue
-            aliases[name] = path
-            os.symlink(path, DEST + "/sdk-sonames/" + name)
-    env = dict(os.environ, LD_LIBRARY_PATH=SDK + ":" + DEST + "/sdk-sonames")
+    env = dict(os.environ)
+    # Resolve against donor OS packages, not its superseded SDK search path.
+    env.pop("LD_LIBRARY_PATH", None)
     roots = ["/usr/bin/python2.7", "/usr/lib/x86_64-linux-gnu/libpython2.7.so.1.0"]
-    roots += elf_files("/usr/lib/python2.7") + elf_files(SDK)
+    roots += elf_files("/usr/lib/python2.7")
     dependencies = {}
     for path in roots:
         output = subprocess.check_output(["ldd", path], env=env)
@@ -81,7 +65,7 @@ def main():
                 continue
             name, value = line.strip().split(" => ", 1)
             source = value.split(" ")[0]
-            if os.path.realpath(source).startswith(SDK + "/") or SYSTEM.match(name):
+            if SYSTEM.match(name):
                 continue
             if name in dependencies and os.path.realpath(
                 dependencies[name]
@@ -123,7 +107,6 @@ def main():
         json.dump(
             {
                 "legacy_dependencies": manifest,
-                "sdk_soname_aliases": aliases,
                 "source_elf_count": len(roots),
                 "source_packages": package_versions,
             },
