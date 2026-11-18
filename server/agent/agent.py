@@ -160,7 +160,7 @@ class Agent(object):
                 self.driver.stop()
             except Exception:
                 # The say future can confirm cancellation before stopAll replies.
-                pass
+                logging.warning("stopAll did not confirm", exc_info=True)
         confirmed, unresolved = [], []
         for key, record in selected:
             if record["phase"] == "queued":
@@ -169,6 +169,9 @@ class Agent(object):
             future = record.get("future")
             if future is not None:
                 try:
+                    # One worker currently bounds this to one waiting future: 1 s in
+                    # native.stop + 200 ms here, within the API's 2 s backend timeout.
+                    # Concurrent native work needs a shared stop deadline, not N waits.
                     future.value(200)
                     confirmed.append(key)
                     continue

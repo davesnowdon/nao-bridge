@@ -1,7 +1,9 @@
 import asyncio
 import importlib.util
 import json
+import time
 from argparse import Namespace
+from contextlib import suppress
 from pathlib import Path
 
 import httpx
@@ -62,6 +64,7 @@ async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, ans
                 other = "middle" if sensor == "front" else "front"
                 await backend.touch_changed("touch.head." + other, True)
                 await backend.touch_changed("touch.head." + other, False)
+                await backend.touch_changed("touch.head." + sensor, False)
                 await backend.touch_changed("touch.head." + sensor, True)
                 await backend.touch_changed("touch.head." + sensor, False)
 
@@ -132,6 +135,74 @@ async def test_failed_request_is_recorded_and_never_retried(tmp_path):
         record = json.loads((evidence.directory / "evidence.jsonl").read_text())
         assert record["kind"] == "request_error"
     finally:
+        evidence.file.close()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["once", "lost_reply", "always", "hang", "invalidated", "changed", "inactive", "malformed"],
+)
+async def test_runner_renewal_is_bounded_by_confirmed_lease(rig, tmp_path, failure):
+    evidence = hardware.Evidence(tmp_path / "run", {})
+    task = None
+    try:
+        async with rig(lease_seconds=0.6) as (client, core, backend):
+            attempts = []
+
+            async def handle(request):
+                if request.method != "PATCH":
+                    return await client._transport.handle_async_request(request)
+                attempts.append(time.monotonic())
+                if failure == "always" or (failure == "once" and len(attempts) == 1):
+                    raise httpx.ReadError("Transient renewal failure", request=request)
+                if failure == "hang":
+                    await asyncio.Event().wait()
+                if failure == "invalidated":
+                    return httpx.Response(409, json={"error": "session_invalid"})
+                response = await client._transport.handle_async_request(request)
+                await response.aread()
+                if failure == "lost_reply" and len(attempts) == 1:
+                    raise httpx.ReadError("Renewal response lost after dispatch", request=request)
+                value = response.json()
+                if failure == "changed":
+                    value["connection_generation"] += 1
+                elif failure == "inactive":
+                    value["status"] = "closed"
+                elif failure == "malformed":
+                    del value["lease_seconds"]
+                return httpx.Response(200, json=value)
+
+            async with httpx.AsyncClient(
+                base_url="http://test", transport=httpx.MockTransport(handle)
+            ) as http:
+                runner = hardware.Runner(http, evidence, rehearsal=True)
+                await runner.preflight()
+                sent = time.monotonic()
+                runner.session = await runner.request(
+                    "POST", "/api/sessions", {}, status=201, schema="Session"
+                )
+                deadline = sent + runner.session["lease_seconds"] * 0.9
+                runner.lease_deadline = deadline
+                task = runner.renewal = asyncio.create_task(runner.renew())
+                if failure in {"once", "lost_reply"}:
+                    await asyncio.wait_for(runner.renewed.wait(), 1)
+                    assert len(attempts) == 2
+                    assert runner.lease_deadline > deadline
+                    await runner.authority()
+                else:
+                    await asyncio.wait_for(asyncio.wait({task}), 1)
+                    with pytest.raises(RuntimeError, match="Session renewal stopped"):
+                        await runner.authority()
+                    assert runner.lease_deadline == deadline
+                    assert all(attempt < deadline for attempt in attempts)
+                    assert time.monotonic() < deadline + 0.2
+                    assert len(attempts) >= 2 if failure == "always" else len(attempts) == 1
+                assert len(core.sessions) == 1 and not backend.calls
+    finally:
+        if task:
+            task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await task
         evidence.file.close()
 
 

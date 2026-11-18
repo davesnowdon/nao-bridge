@@ -190,7 +190,7 @@ def test_native_interruption_requires_cancelled_future_for_known_outcome(agent_m
 @pytest.mark.parametrize("cancelled", [True, False])
 @pytest.mark.parametrize("stop_times_out", [True, False])
 def test_stop_checks_native_cancellation_even_when_stop_reply_times_out(
-    agent_module, cancelled, stop_times_out
+    agent_module, cancelled, stop_times_out, caplog
 ):
     agent = bare_agent(agent_module)
 
@@ -209,3 +209,6 @@ def test_stop_checks_native_cancellation_even_when_stop_reply_times_out(
         "confirmed_ids": ["operation"] if cancelled else [],
         "unresolved_ids": [] if cancelled else ["operation"],
     }
+    assert ("stopAll did not confirm" in caplog.text) == stop_times_out
+    if stop_times_out:
+        assert caplog.records[-1].exc_info is not None

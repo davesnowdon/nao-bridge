@@ -54,8 +54,14 @@ protocol error stops further test actions and is recorded automatically. `q` or
 Ctrl-C ends the run and attempts session cleanup; any cleanup failure is included.
 An uncertain command is not automatically retried.
 
+Session renewal retries transient transport failures only within the last confirmed
+lease. Expiry, an invalid session, or a changed identity ends the run; renewal never
+creates a replacement session or retries a speech command.
+
 Each touch step allows three minutes. Incidental touches on other sensors remain
 in the transcript while the script waits for the requested sensor's press/release.
+Releases before the first press are also retained but ignored; each step still
+requires a complete press followed by a release within the same three-minute window.
 
 **PASS** means the selected checks passed, including the requested physical
 observations. **FAIL** includes the error or negative observation. **INCOMPLETE**
@@ -86,4 +92,5 @@ For connection checks only, use `--inspect`. For a simulated backend, use
 `--rehearsal`; the report is prominently labelled as a rehearsal. `--output DIR`
 lets you choose a new results directory but is not required. Existing results are
 never overwritten. Raw results stay local and are excluded from Git and Docker
-build context. After testing, we can use the report to update PR #34 with findings.
+build context. Use the generated report to record findings, distinguishing observed
+hardware results from incomplete or deferred checks.

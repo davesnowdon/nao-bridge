@@ -251,6 +251,7 @@ class Runner:
         self.rehearsal = rehearsal
         self.schemas = None
         self.session = None
+        self.lease_deadline = 0.0
         self.renewal = None
         self.renewed = asyncio.Event()
         self.streams = []
@@ -327,8 +328,13 @@ class Runner:
 
     async def authority(self):
         if self.renewal and self.renewal.done():
-            await self.renewal
+            try:
+                await self.renewal
+            except Exception as exc:
+                raise RuntimeError("Session renewal stopped: " + str(exc)) from exc
             raise RuntimeError("Session renewal stopped")
+        if self.session:
+            require(time.monotonic() < self.lease_deadline, "Session renewal deadline elapsed")
         current = await self.request("GET", "/api/robot", schema="Robot")
         for field in ("bridge_instance_id", "agent_instance_id", "connection_generation"):
             require(
@@ -336,17 +342,43 @@ class Runner:
             )
         require(current["connection"] == "connected", "Robot connection lost")
 
+    @staticmethod
+    def confirmed_deadline(session, sent):
+        # Request dispatch is conservative and does not depend on the server's wall clock.
+        lease = session["lease_seconds"]
+        return sent + lease - min(1.0, lease * 0.1)
+
     async def renew(self):
         while True:
-            await asyncio.sleep(self.session["renew_after_seconds"])
-            renewed = await self.request(
-                "PATCH", "/api/sessions/" + self.session["id"], {}, schema="Session"
+            await asyncio.sleep(
+                min(
+                    self.session["renew_after_seconds"],
+                    max(0, self.lease_deadline - time.monotonic()),
+                )
             )
-            for field in ("id", "bridge_instance_id", "connection_generation"):
-                require(renewed[field] == self.session[field], "Renewal identity changed")
-            require(renewed["status"] == "active", "Session is no longer active")
-            self.session = renewed
-            self.renewed.set()
+            delay = 0.1
+            while True:
+                sent = time.monotonic()
+                remaining = self.lease_deadline - sent
+                require(remaining > 0, "Session renewal deadline elapsed")
+                try:
+                    async with asyncio.timeout(remaining):
+                        renewed = await self.request(
+                            "PATCH", "/api/sessions/" + self.session["id"], {}, schema="Session"
+                        )
+                except httpx.TransportError:
+                    await asyncio.sleep(min(delay, max(0, self.lease_deadline - time.monotonic())))
+                    delay = min(1.0, delay * 2)
+                    continue
+                except TimeoutError as exc:
+                    raise RuntimeError("Session renewal deadline elapsed") from exc
+                for field in ("id", "bridge_instance_id", "connection_generation"):
+                    require(renewed[field] == self.session[field], "Renewal identity changed")
+                require(renewed["status"] == "active", "Session is no longer active")
+                self.session = renewed
+                self.lease_deadline = self.confirmed_deadline(renewed, sent)
+                self.renewed.set()
+                break
 
     async def wait(self, operation, expected, timeout=30):
         async with asyncio.timeout(timeout):
@@ -417,8 +449,11 @@ class Runner:
             for pressed in (True, False):
                 while True:
                     event = await stream.event("touch.changed", timeout=180)
-                    if event["data"]["sensor"] == "touch.head." + sensor:
-                        break
+                    if event["data"]["sensor"] != "touch.head." + sensor:
+                        continue
+                    if pressed and not event["data"]["pressed"]:
+                        continue
+                    break
                 require(
                     event["data"] == {"sensor": "touch.head." + sensor, "pressed": pressed},
                     "Unexpected head press/release; see recorded events",
@@ -443,6 +478,7 @@ class Runner:
             "Use an otherwise idle bridge: priority stop affects all speech. "
             "Enter to begin; q quits."
         )
+        sent = time.monotonic()
         self.session = await self.request(
             "POST",
             "/api/sessions",
@@ -451,6 +487,7 @@ class Runner:
             schema="Session",
             key=uuid.uuid4().hex,
         )
+        self.lease_deadline = self.confirmed_deadline(self.session, sent)
         self.renewal = asyncio.create_task(self.renew())
         first_sub, second_sub = await self.subscription(), await self.subscription()
         first = await self.open_stream(first_sub)

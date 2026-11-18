@@ -45,11 +45,12 @@ not load FluentNao.
 
 ## Reproduced verification
 
-On Linux amd64, 6 November 2026:
+Linux amd64 baseline verification on 6 November 2026, with software and container
+checks repeated on 18 November after the hardware fixes and review follow-up:
 
 | Verification | Result |
 | --- | --- |
-| Server/core/socket tests | 69 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure, agent fences, critical-thread failure, session churn, bounded renewal retries and hardware-runner rehearsals |
+| Server/core/socket tests (18 November) | 89 passed: handlers, browser CORS, strict JSON, defaults, conflicts, expiry, unknown outcomes, recovery, raw HTTP/SSE, client parity, stream limits/backpressure, agent fences, critical-thread failure, session churn, bounded client/runner renewal retries and hardware-runner rehearsals |
 | Client parser tests | 23 passed: UTF-8/chunk/CRLF boundaries, comments, multiline data, unknown events, malformed IDs/payloads/numbers and byte bounds |
 | Modern server/client type checks | Passed |
 | Swagger UI in headless Chrome | Passed with external requests blocked: schema resolution, robot discovery, session creation and speech submission without client setup |
@@ -75,6 +76,14 @@ Reproduce with `make check` and `make test-container`. CI runs both and exports 
 contract bundle. Build inputs are recorded in `server/Dockerfile`,
 `server/requirements.lock`, `server/uv.lock`, and
 [`server/packaging`](../server/packaging/README.md).
+
+Review follow-up verified that runner renewal survives transient transport failures
+and lost replies within its confirmed lease, but stops on expiry, invalid sessions,
+changed identity or malformed responses. Guided rehearsals include leading touch
+releases. Agent stop exceptions are logged without changing cancellation outcomes;
+the current single-worker stop timing budget is documented beside the wait.
+These follow-up checks used simulated backends and the native container fixture;
+the hardware reports retain their original test counts and image identities.
 
 Two bundled-SDK details were discovered by execution: `qi.Session` supplies
 connection signals but no `isConnected()` method, and numeric signal values can be
