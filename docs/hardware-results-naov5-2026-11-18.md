@@ -22,7 +22,7 @@ The robot used Wi-Fi; the test host used wired Ethernet.
 | SSE reconnect and fresh touch | Deferred at user's request |
 | Final session cleanup | Returned session_invalid after connection loss; no active operation, stream, subscription or quarantine remained in diagnostics |
 | Load, Python-client and injected process-fault checks | Not run on this robot |
-| Hand-back sensors and foot bumpers | Not yet tested; initial direct SDK probe could not establish a connection |
+| Hand-back sensors and foot bumpers | Not yet tested; two direct SDK probes could not establish a connection |
 
 Cancellation and priority-stop protocol completion took **411.5 ms** and
 **417.7 ms** respectively. These HTTP-polling measurements do not establish
@@ -47,8 +47,11 @@ The current public API adapter implements head touch as the increment-1 proof.
 The [delivery plan](delivery-plan.md) and [API plan](api-plan.md) put full touch
 coverage in increment 2. Requested hand-back/bumper diagnostics use read-only
 NAOqi observations and must be reported separately from HTTP/SSE acceptance.
-An initial direct SDK connection attempt timed out after ten seconds, before
+Two direct SDK connection attempts timed out after ten seconds each, before
 any sensor subscription or physical test. That is not a failed sensor result.
+The separate [NAO6 contact probe](hardware-results-2026-11-18.md#additional-native-hand-and-bumper-observations)
+confirmed both hand backs and both foot-level events; it does not establish the
+NAOv5 results.
 
 ## Fresh-build correction
 

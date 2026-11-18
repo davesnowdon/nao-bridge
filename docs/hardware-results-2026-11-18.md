@@ -64,6 +64,37 @@ admissions including an authority GET took **2.21–6.61 ms**, and cancellation/
 protocol completion took **206.8–222.0 ms**. These are small samples using HTTP
 polling, not measurements of physical stop latency or sustained performance.
 
+## Additional native hand and bumper observations
+
+A later read-only probe used the same qi binding and image directly against
+`ALMemory` and `ALTouch`. These are native sensor observations, **not** added
+public HTTP/SSE features: the increment-1 adapter still exposes head touch only.
+
+- Both hand-back sensors produced 0/1/0 values, dedicated hand-touch events and
+  `TouchChanged` press/release entries.
+- Both feet produced their dedicated `LeftBumperPressed` / `RightBumperPressed`
+  press/release events.
+- Individual raw values and `TouchChanged` entries confirmed
+  `LFoot/Bumper/Left`, `LFoot/Bumper/Right` and `RFoot/Bumper/Left`.
+  `RFoot/Bumper/Right` remained zero and produced no observed event in these
+  attempts; it remains **unverified**, not a diagnosed failed switch.
+- The operator found responses at the front and inner bumper areas. Both
+  left-foot channels activated together on one press; independent physical
+  actuation of every internal switch was not established. The probe's early
+  instructions inferred an accessible "outer" button from the Left/Right key
+  names; that was misleading. The
+  [NAO6 hardware diagram](https://doc.aldebaran.com/2-8/family/nao_technical/contact-sensors_naov6.html)
+  shows two switches at each foot's front bumper. Use the documented key names
+  when reporting channels instead of assuming separate external buttons.
+- Incidental hand touches and repeated bumper presses were retained by sensor
+  name. No native sampling errors occurred, and the probe disconnected at the end.
+
+On this run, `TouchChanged` release entries arrived about two seconds after the
+dedicated hand/bumper release events. Press entries sometimes had a third field
+such as `[1]` or `[2]`, whereas release entries had two fields. Future full-touch
+adapters should test these payload and timing differences rather than assuming
+all native event paths are interchangeable.
+
 ## Test-run qualifications and remaining work
 
 - The first guided run completed all four listening checks and cleanup but timed

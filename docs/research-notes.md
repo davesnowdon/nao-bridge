@@ -42,6 +42,17 @@ The old [historical head handler](https://github.com/davesnowdon/nao-bridge/blob
 
 This is a software target-construction defect independent of autonomous life. It supports absolute joint targets with explicit units and regression cases for zero/omitted axes. Hardware acceptance must distinguish requested targets, measured motion, and autonomous behavior instead of inferring physical success from an HTTP acknowledgement.
 
+## Native contact observations (18 November)
+
+Additional sensor evidence from the
+[NAO6 probe](hardware-results-2026-11-18.md#additional-native-hand-and-bumper-observations)
+informs increment 2: dedicated hand/foot events and raw values are distinct from
+`TouchChanged`, whose releases lagged by about two seconds in that run and whose
+entries varied between two and three fields. Sensor key Left/Right suffixes do
+not by themselves establish independently accessible physical buttons. One raw
+right-foot channel remains unverified. These probes do not implement public
+hand/bumper support.
+
 ## FluentNao upstream
 
 Inspected [Don Najd's repository](https://github.com/dnajd/FluentNao) at commit [`55899a65ec8003c367d32387f2b7b12fdab83f3e`](https://github.com/dnajd/FluentNao/tree/55899a65ec8003c367d32387f2b7b12fdab83f3e), dated 8 April 2026. The temporary research clone is not an implementation dependency.
