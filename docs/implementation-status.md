@@ -39,9 +39,10 @@ Every discovery response reports `hardware_verified: false`.
 
 Motion, media, vocabulary activities, recordings/assets and server-side sequences
 remain unsupported. Their complete design and delivery order remain in the API
-and delivery plans. No FluentNao or v1 compatibility adapters were added. Legacy
-vendored libraries remain for the later library/provenance audit; production does
-not load FluentNao.
+and delivery plans. No FluentNao or v1 compatibility adapters were added. The
+unused `server/lib` copies of the old SDK, FluentNao and `naoutil` have been
+removed. Runtime dependencies come from the pinned qi wheel, donor interpreter
+bundle and maintained base described in the [packaging inputs](../server/packaging/README.md).
 
 ## Reproduced verification
 
