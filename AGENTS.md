@@ -12,7 +12,7 @@
 - Research evidence and unresolved hardware questions are in [docs/research-notes.md](docs/research-notes.md). Distinguish reproduced software defects from unverified hardware behavior.
 
 - Use uv for project runtimes/dependencies; do not depend on a developer’s pyenv setup. The API process must never inherit the agent’s legacy library paths.
-- Software work through 1C is authorized before physical robot and Apple Silicon acceptance. Keep `hardware_verified: false`; do not advertise motion/hold safety on the strength of fake or loopback tests.
+- Software work through increment 2 and further work possible without a robot is authorized. Track progress in [docs/increment-2-status.md](docs/increment-2-status.md). Keep `hardware_verified: false`; do not advertise motion/hold safety on the strength of fake or loopback tests.
 - Hardware compatibility targets include NAO6/NAOqi 2.8 and NAOv5/NAOqi 2.1. Verify SDK changes against both; success on one firmware generation does not establish the other.
 
 - New applications must work without bridge reconfiguration: allow browser origins by default with CORS support; do not add a per-app allowlist. The container runs without client credentials or a data volume. Sessions, operations, subscriptions, retry keys and resource ownership are process-local; API restart starts empty and never replays commands. Retain agent restart supervision. Future recording assets may require storage, but do not reintroduce persistent operation recovery.

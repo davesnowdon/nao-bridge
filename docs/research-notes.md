@@ -109,3 +109,15 @@ The bundled SDK identifies a 2.1-era runtime; later documentation shows useful c
 These are design inputs, not a promise to wrap every method on those pages. Hardware tests remain necessary for callback networking, cancellation, autonomy effects, sample rates, and media compatibility.
 
 The [runtime experiment](runtime-experiment.md) records measured Linux-container evidence. The [review follow-up](review-follow-up.md) distinguishes adopted design guidance, deferred extensions, and additional experiments from those completed tests.
+# Contact adapter mapping
+
+The contact catalog uses dedicated NAOqi events for head pads, six hand pads,
+and foot-level bumpers. Raw foot state combines the two internal switches per foot;
+public discovery does not imply separately accessible outer/inner buttons.
+Unknown readings stay unknown unless another switch proves a pressed foot.
+Sources: [NAOqi 2.1 ALTouch](https://doc.aldebaran.com/2-1/naoqi/sensors/altouch-api.html)
+and [NAO6 contacts](https://doc.aldebaran.com/2-8/family/nao_technical/contact-sensors_naov6.html).
+Prior probes establish hand-back and foot event delivery on NAO6; integration of
+the expanded public API, hand side pads, and NAOv5 contacts still needs hardware
+acceptance. The software fixture drives one contact at a time.
+

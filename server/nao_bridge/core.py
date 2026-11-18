@@ -11,7 +11,7 @@ from typing import Any
 from . import __version__
 from .backend import Backend
 from .config import Settings
-from .contract import VERSION, canonical
+from .contract import CONTACTS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
 
@@ -289,6 +289,43 @@ class Core:
             "replay_supported": False,
             "speech": self.info.get("speech", {}),
         }
+
+    def sensors(self) -> dict[str, Any]:
+        sample = self.state(["sensors"])["groups"]["sensors"]
+        value = sample["value"] or {}
+        events = self.info.get("touch_events", []) if self.connection == "connected" else []
+        items = []
+        for contact in CONTACTS:
+            sensor = contact["id"]
+            available = (
+                sample["quality"] == "fresh" and value.get("touch", {}).get(sensor) is not None
+            )
+            reason = (
+                None
+                if available
+                else value.get("touch_unavailable", {}).get(
+                    sensor, sample["reason"] or "not_sampled"
+                )
+            )
+            items.append(
+                {
+                    "id": sensor,
+                    "label": contact["label"],
+                    "unit": "boolean",
+                    "state_group": "sensors",
+                    "state_field": "touch",
+                    "state": {
+                        "status": "available" if available else "unavailable",
+                        "reason": reason,
+                    },
+                    "events": {
+                        "status": "available" if sensor in events else "unavailable",
+                        "reason": None if sensor in events else "not_connected_or_subscribed",
+                    },
+                    "event_type": "touch.changed",
+                }
+            )
+        return {"items": items, "connection_generation": self.generation}
 
     def state(self, groups: list[str] | None = None, max_age_ms: int = 250) -> dict[str, Any]:
         groups = groups or ["sensors"]

@@ -47,6 +47,22 @@ class Capabilities(WireModel):
     speech: dict[str, Any]
 
 
+class Sensor(WireModel):
+    id: str
+    label: str
+    unit: str
+    state_group: str
+    state_field: str
+    state: Capability
+    events: Capability
+    event_type: str | None
+
+
+class SensorsData(WireModel):
+    items: list[Sensor]
+    connection_generation: int
+
+
 class SessionData(WireModel):
     id: str
     name: str

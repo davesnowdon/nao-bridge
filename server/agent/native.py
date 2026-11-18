@@ -2,21 +2,35 @@
 from __future__ import print_function
 
 import numbers
+import json
+import os
 import threading
 import time
 
 import qi
 
-TOUCH = {
-    "FrontTactilTouched": "touch.head.front",
-    "MiddleTactilTouched": "touch.head.middle",
-    "RearTactilTouched": "touch.head.rear",
-}
-MEMORY_KEYS = [
-    "Device/SubDeviceList/Head/Touch/Front/Sensor/Value",
-    "Device/SubDeviceList/Head/Touch/Middle/Sensor/Value",
-    "Device/SubDeviceList/Head/Touch/Rear/Sensor/Value",
-]
+with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
+    CONTACTS = json.load(source)
+TOUCH = dict((item["event"], item["id"]) for item in CONTACTS)
+MEMORY_KEYS = [key for item in CONTACTS for key in item["memory_keys"]]
+
+
+def contact_values(values):
+    # A foot is pressed when either internal switch is pressed. Unknown switches
+    # cannot establish a released foot; never turn missing data into False.
+    raw = dict(zip(MEMORY_KEYS, values))
+    touch, unavailable = {}, {}
+    for item in CONTACTS:
+        parts = [raw.get(key) for key in item["memory_keys"]]
+        valid = [isinstance(v, numbers.Real) and v in (0, 1) for v in parts]
+        if any(ok and value == 1 for ok, value in zip(valid, parts)):
+            touch[item["id"]] = True
+        elif all(valid):
+            touch[item["id"]] = False
+        else:
+            touch[item["id"]] = None
+            unavailable[item["id"]] = "missing_or_invalid_reading"
+    return {"touch": touch, "touch_unavailable": unavailable}
 
 
 class NativeDriver(object):
@@ -49,18 +63,20 @@ class NativeDriver(object):
         voices = self.call(self.tts, "getAvailableVoices")
         language = self.call(self.tts, "getLanguage")
         voice = self.call(self.tts, "getVoice")
-        touch_available = True
+        touch_events = []
         for event, sensor in TOUCH.items():
             try:
                 subscriber = self.call(self.memory, "subscriber", event)
                 callback = self.touch_callback(sensor)
                 link = subscriber.signal.connect(callback)
                 self.subscribers.append((subscriber, link, callback))
+                touch_events.append(sensor)
             except Exception:
-                touch_available = False
+                pass
         self.description = {
             "connection": "connected", "reason": None, "name": None, "model": None,
-            "naoqi_version": None, "touch_available": touch_available,
+            "naoqi_version": None, "touch_available": bool(touch_events),
+            "touch_events": touch_events,
             "speech": {"available": language != "Japanese", "cancellable": True,
                        "languages": [item for item in languages if item != "Japanese"],
                        "voices": [voice] if voice in voices else [], "default_language": language, "default_voice": voice},
@@ -85,13 +101,7 @@ class NativeDriver(object):
 
     def sample(self):
         values = self.call(self.memory, "getListData", MEMORY_KEYS)
-        touch = {}
-        for sensor, value in zip(["touch.head.front", "touch.head.middle", "touch.head.rear"], values):
-            if value in (0, 1):
-                touch[sensor] = bool(value)
-        if len(touch) != len(MEMORY_KEYS):
-            raise RuntimeError("Touch sample incomplete")
-        return {"sensors": {"touch": touch}}
+        return {"sensors": contact_values(values)}
 
     def speak(self, payload):
         # Voice changes are a later capability; do not mutate global voice preferences silently.
@@ -162,15 +172,21 @@ class FixtureTouch(object):
 
 
 class FixtureMemory(object):
-    def __init__(self, source):
-        self.source = source
-        self.level = False
+    def __init__(self):
+        self.sources = dict((event, FixtureTouch()) for event in TOUCH)
+        self.values = dict((key, 0) for key in MEMORY_KEYS)
 
     def subscriber(self, event):
-        return self.source
+        return self.sources[event]
 
     def getListData(self, keys):
-        return [int(self.level)] * len(keys)
+        return [self.values.get(key) for key in keys]
+
+    def toggle(self, index):
+        item = CONTACTS[index % len(CONTACTS)]
+        key = item["memory_keys"][0]
+        self.values[key] = 1 - self.values[key]
+        self.sources[item["event"]].signal(self.values[key])
 
 
 class FixtureDriver(NativeDriver):
@@ -181,8 +197,8 @@ class FixtureDriver(NativeDriver):
         self.server.listenStandalone("tcp://127.0.0.1:0")
         self.work_impl = FixtureSpeech()
         self.safety_impl = FixtureSafety(self.work_impl)
-        self.source = FixtureTouch()
-        self.memory_impl = FixtureMemory(self.source)
+        self.memory_impl = FixtureMemory()
+        self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
         self.server.registerService("ALMemory", self.memory_impl)
@@ -198,6 +214,6 @@ class FixtureDriver(NativeDriver):
     def sample(self):
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
-            self.memory_impl.level = not self.memory_impl.level
-            self.source.signal(int(self.memory_impl.level))
+            self.memory_impl.toggle(self.contact_index // 2)
+            self.contact_index += 1
         return super(FixtureDriver, self).sample()

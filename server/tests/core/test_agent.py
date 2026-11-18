@@ -160,6 +160,62 @@ class InterruptedFuture:
         return self.cancelled
 
 
+def test_contact_values_distinguish_hands_feet_and_missing_switches(agent_module):
+    import native
+
+    values = [0] * len(native.MEMORY_KEYS)
+
+    def sample(path, value):
+        values[native.MEMORY_KEYS.index("Device/SubDeviceList/" + path + "/Sensor/Value")] = value
+        return native.contact_values(values)
+
+    for side in ("L", "R"):
+        public = "left" if side == "L" else "right"
+        for pad in ("Back", "Left", "Right"):
+            path = side + "Hand/Touch/" + pad
+            result = sample(path, 1)
+            assert [k for k, v in result["touch"].items() if v] == [
+                "touch.hand." + public + "." + pad.lower()
+            ]
+            assert not any(sample(path, 0)["touch"].values())
+        for switch in ("Left", "Right"):
+            path = side + "Foot/Bumper/" + switch
+            assert sample(path, 1)["touch"]["bumper." + public] is True
+            assert sample(path, 0)["touch"]["bumper." + public] is False
+
+    result = sample("RFoot/Bumper/Right", None)
+    assert result["touch"]["bumper.right"] is None
+    assert result["touch_unavailable"] == {"bumper.right": "missing_or_invalid_reading"}
+    assert result["touch"]["bumper.left"] is False
+    assert sample("RFoot/Bumper/Left", 1)["touch"]["bumper.right"] is True
+    assert native.contact_values([])["touch"]["touch.head.front"] is None
+
+
+def test_dedicated_contact_callbacks_reject_invalid_values(agent_module):
+    import native
+
+    events = []
+    driver = native.NativeDriver("unused", lambda kind, data: events.append((kind, data)))
+    expected = {
+        "HandLeftBackTouched": "touch.hand.left.back",
+        "HandRightBackTouched": "touch.hand.right.back",
+        "LeftBumperPressed": "bumper.left",
+        "RightBumperPressed": "bumper.right",
+    }
+    for event, sensor in expected.items():
+        assert native.TOUCH[event] == sensor
+        callback = driver.touch_callback(sensor)
+        for invalid in (None, "1", [], 2, -1, float("nan")):
+            callback(invalid)
+        callback(1.0)
+        callback(0.0)
+        assert events[-2:] == [
+            ("touch.changed", {"sensor": sensor, "pressed": True}),
+            ("touch.changed", {"sensor": sensor, "pressed": False}),
+        ]
+    assert len(events) == 8
+
+
 @pytest.mark.parametrize("cancelled", [True, False])
 def test_native_interruption_requires_cancelled_future_for_known_outcome(agent_module, cancelled):
     agent = bare_agent(agent_module)

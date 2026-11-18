@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Increment 1 HTTP/SSE contract. No v1 compatibility. Physical hardware acceptance is pending."
   },
   "servers": [
@@ -1056,6 +1056,34 @@
           }
         ]
       }
+    },
+    "/sensors": {
+      "get": {
+        "operationId": "listSensors",
+        "summary": "Discover sensor IDs, units, state locations and per-sensor event availability",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Sensors"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1149,6 +1177,12 @@
       },
       "StopRequest": {
         "$ref": "schemas.json#/$defs/StopRequest"
+      },
+      "Sensor": {
+        "$ref": "schemas.json#/$defs/Sensor"
+      },
+      "Sensors": {
+        "$ref": "schemas.json#/$defs/Sensors"
       }
     }
   }

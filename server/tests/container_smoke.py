@@ -180,7 +180,21 @@ try:
     until(lambda: recovery_probe.request("GET", "/api/robot/diagnostics")["streams"] == 0)
     diagnostics = recovery_probe.request("GET", "/api/robot/diagnostics")
     assert diagnostics["subscriptions"] == 0
-    assert diagnostics["backend"]["native_subscriptions"] == 3
+    assert diagnostics["backend"]["native_subscriptions"] == 11
+    contacts = probe.request("GET", "/api/sensors")["items"]
+    assert all(item["events"]["status"] == "available" for item in contacts)
+    sub = probe.request(
+        "POST",
+        "/api/events/subscriptions",
+        {"events": ["touch.changed"], "samples": [{"groups": ["sensors"], "rate_hz": 10}]},
+        status=201,
+    )
+    probe.stream(sub, contacts=[item["id"] for item in contacts])
+    probe.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+    print(
+        "All 11 native contacts: independent press/release events and sampled state passed",
+        flush=True,
+    )
     cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
     assert probe.wait(cleanup)["status"] == "succeeded"
     probe.session = None

@@ -60,7 +60,7 @@ class Probe:
             time.sleep(0.02)
         raise AssertionError("Operation did not finish within fixture deadline")
 
-    def stream(self, subscription, *, reconnect=False, touch=False):
+    def stream(self, subscription, *, reconnect=False, touch=False, contacts=()):
         conn = self.connection(timeout=3)
         headers = {
             "X-Session-ID": self.session,
@@ -77,9 +77,13 @@ class Probe:
         if touch:
             wanted.add("touch.changed")
         seen, fields, ids = set(), {}, set()
-        deadline = time.monotonic() + 5
+        expected_contacts = {(sensor, level) for sensor in contacts for level in (False, True)}
+        edges, levels = set(), set()
+        deadline = time.monotonic() + (16 if contacts else 5)
         try:
-            while wanted - seen and time.monotonic() < deadline:
+            while (
+                wanted - seen or expected_contacts - edges or expected_contacts - levels
+            ) and time.monotonic() < deadline:
                 raw = response.readline(262145)
                 assert raw and len(raw) <= 262144, "Unexpected EOF or oversized frame"
                 line = raw.decode("utf-8").rstrip("\r\n")
@@ -94,11 +98,23 @@ class Probe:
                     assert event["id"] not in ids
                     ids.add(event["id"])
                     seen.add(event["type"])
+                    if event["type"] == "touch.changed":
+                        edges.add((event["data"]["sensor"], event["data"]["pressed"]))
+                    elif event["type"] == "state.sample":
+                        group = event["data"]["state"]["groups"].get("sensors", {})
+                        value = group.get("value") or {}
+                        if group.get("quality") == "fresh":
+                            levels.update(value.get("touch", {}).items())
                     fields = {}
                 else:
                     key, _, value = line.partition(":")
                     fields[key] = value.removeprefix(" ")
             assert wanted <= seen, (wanted, seen)
+            assert expected_contacts <= edges, ("missing contact edges", expected_contacts - edges)
+            assert expected_contacts <= levels, (
+                "missing contact levels",
+                expected_contacts - levels,
+            )
         finally:
             response.close()
             conn.close()
@@ -117,6 +133,10 @@ def run(url):
         robot = probe.request("GET", "/api/robot", schema="Robot")
     probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
     probe.request("GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State")
+    sensors = probe.request("GET", "/api/sensors", schema="Sensors")
+    assert {"touch.hand.left.back", "touch.hand.right.back", "bumper.left", "bumper.right"} <= {
+        item["id"] for item in sensors["items"]
+    }
     session = probe.request(
         "POST",
         "/api/sessions",

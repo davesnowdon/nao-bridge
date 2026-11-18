@@ -1376,6 +1376,69 @@
       },
       "required": [],
       "additionalProperties": false
+    },
+    "Sensor": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "state_group": {
+          "type": "string"
+        },
+        "state_field": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/Feature"
+        },
+        "events": {
+          "$ref": "#/$defs/Feature"
+        },
+        "event_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "unit",
+        "state_group",
+        "state_field",
+        "state",
+        "events",
+        "event_type"
+      ],
+      "additionalProperties": true
+    },
+    "Sensors": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Sensor"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation"
+      ],
+      "additionalProperties": true
     }
   }
 }

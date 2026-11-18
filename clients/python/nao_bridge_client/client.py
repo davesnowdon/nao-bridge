@@ -11,6 +11,7 @@ from .models import (
     Event,
     OperationData,
     RobotInfo,
+    Sensor,
     State,
     StreamNotice,
     SubscriptionData,
@@ -27,6 +28,7 @@ class Nao:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self.robot = Robot(self)
+        self.sensors = Sensors(self)
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
@@ -131,6 +133,25 @@ class Robot:
 
     def diagnostics(self) -> dict[str, Any]:
         return self._nao._run(self._nao._async.robot.diagnostics())
+
+
+class Sensors:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def list(self) -> list[Sensor]:
+        return self._nao._run(self._nao._async.sensors.list())
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return self._nao._run(
+            self._nao._async.sensors.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
 
 
 class Speech:

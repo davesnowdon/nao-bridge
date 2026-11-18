@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
+from .contract import CONTACTS
 from .errors import BackendUnknown, BridgeError
 
 EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
@@ -39,11 +40,7 @@ class FakeBackend:
         self.revoked: set[str] = set()
         self.sink: EventSink | None = None
         self.samples_task: asyncio.Task | None = None
-        self.touch = {
-            "touch.head.front": False,
-            "touch.head.middle": False,
-            "touch.head.rear": False,
-        }
+        self.touch = {item["id"]: False for item in CONTACTS}
 
     async def start(self, sink: EventSink) -> None:
         self.sink = sink
@@ -71,6 +68,7 @@ class FakeBackend:
                         "default_voice": "default",
                     },
                     "touch_available": connected,
+                    "touch_events": list(self.touch) if connected else [],
                 },
             )
 
@@ -81,7 +79,7 @@ class FakeBackend:
                 await self.sink(
                     "sample",
                     {
-                        "groups": {"sensors": {"touch": dict(self.touch)}},
+                        "groups": {"sensors": {"touch": dict(self.touch), "touch_unavailable": {}}},
                         "started": now,
                         "finished": now,
                     },

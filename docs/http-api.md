@@ -1,4 +1,4 @@
-# Using contract 1.0.0 over HTTP
+# Using contract 1.1.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -7,7 +7,7 @@ See the [browser walkthrough](../README.md#explore-the-api-in-a-browser) for ses
 and command execution. Browser applications on other origins can use the same
 HTTP/SSE endpoints without bridge configuration.
 
-All commands below target the increment 1 surface. Motion, media and sequence routes
+The current surface includes increment 1 and contact-sensor discovery. Motion, media and sequence routes
 in the broader API plan are not implemented. The Python client is optional.
 
 Set `BRIDGE=http://127.0.0.1:3000` in your shell.
@@ -18,12 +18,29 @@ Examples use `jq` to retain opaque IDs; no Python code is involved.
 ```bash
 curl -fsS "$BRIDGE/api/robot"
 curl -fsS "$BRIDGE/api/robot/capabilities"
+curl -fsS "$BRIDGE/api/sensors"
 curl -fsS "$BRIDGE/api/state?include=sensors&max_age_ms=250&wait_for_fresh_ms=1000"
 ```
 
 Check contract major `1`, `connection`, `bridge_instance_id` and
 `connection_generation` before control. The implemented sensor state is
-`groups.sensors.value.touch`, keyed by `touch.head.front`, `.middle`, `.rear`.
+`groups.sensors.value.touch`, keyed by `touch.head.front`, `.middle`, `.rear`,
+`touch.hand.left.back`, `.left`, `.right` (and the corresponding right-hand IDs),
+and `bumper.left` / `bumper.right`. A bumper is a foot-level value: either internal
+switch being pressed makes it true. These are not separate outer/inner buttons.
+Hand pad left/right labels follow the native sensor names.
+
+`GET /sensors` lists IDs, labels, units, state locations, and separate availability
+for sampled state and dedicated `touch.changed` events. It reads the shared cache,
+without triggering extra native reads or creating a control session. The Python
+equivalents are `nao.sensors.list()` and `nao.sensors.state()` (await both with
+`AsyncNao`). A missing/invalid contact reading is `null`, with its reason in
+`groups.sensors.value.touch_unavailable`; it is never silently treated as released.
+For a foot with one unknown switch, a known pressed switch still proves a pressed
+foot; otherwise the aggregate is unknown. Group freshness describes acquisition
+age, so inspect individual nulls as well. Dedicated events and raw state are
+separate observations: an edge can arrive before the next shared sample.
+
 Each group carries `quality`, `age_ms`, acquisition timestamps and unavailable/stale
 reasons. Acquisition clocks are bridge-local monotonic milliseconds; group sampling
 is not an atomic robot snapshot. A freshness wait shares the sampler.

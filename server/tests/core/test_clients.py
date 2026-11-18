@@ -60,6 +60,8 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
             import time
 
             with Nao(url) as nao:
+                assert "bumper.left" in {sensor.id for sensor in nao.sensors.list()}
+                assert (nao.sensors.state(require_fresh=True)).groups["sensors"].quality == "fresh"
                 first = nao.speech.say("first", timeout=2)
                 sid = nao.session_id
                 time.sleep(0.65)
@@ -71,6 +73,55 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
         sid = await asyncio.to_thread(work)
         assert core.sessions[sid].public["status"] == "closed"
         assert len(backend.calls) == 2
+
+
+async def test_all_contacts_discovery_state_and_filtered_events(socket_rig):
+    async with socket_rig() as (url, core, backend), AsyncNao(url) as nao:
+        sensors = await nao.sensors.list()
+        assert len(sensors) == 11
+        assert all(item.events.status == "available" for item in sensors)
+        assert nao.session_id is None
+        async with await nao.events.subscribe(events=["touch.changed"]) as sub:
+            await event_of(sub, "stream.ready")
+            for sensor in sensors:
+                for pressed in (True, False):
+                    await backend.touch_changed(sensor.id, pressed)
+                    event = await event_of(sub, "touch.changed")
+                    assert event.data == {"sensor": sensor.id, "pressed": pressed}
+                    # Await a new shared sample, not the state before the edge.
+                    await asyncio.sleep(0.11)
+                    state = await nao.sensors.state(require_fresh=True)
+                    assert state.groups["sensors"].value["touch"][sensor.id] is pressed
+            async with await nao.events.subscribe(
+                events=["touch.changed"], filters={"sensor": "bumper.right"}
+            ) as filtered:
+                await event_of(filtered, "stream.ready")
+                await backend.touch_changed("touch.hand.left.back", True)
+                await backend.touch_changed("bumper.right", True)
+                assert (await event_of(filtered, "touch.changed")).data == {
+                    "sensor": "bumper.right",
+                    "pressed": True,
+                }
+
+
+async def test_sensor_discovery_reports_missing_readings_and_disconnection(rig):
+    async with rig() as (client, core, backend):
+        await asyncio.sleep(0.02)
+        backend.samples_task.cancel()
+        await asyncio.gather(backend.samples_task, return_exceptions=True)
+        core.samples["sensors"]["value"]["touch"]["bumper.right"] = None
+        core.samples["sensors"]["value"]["touch_unavailable"]["bumper.right"] = (
+            "missing_or_invalid_reading"
+        )
+        items = {item["id"]: item for item in (await client.get("/api/sensors")).json()["items"]}
+        assert items["bumper.right"]["state"]["status"] == "unavailable"
+        assert items["bumper.right"]["events"]["status"] == "available"
+        assert items["bumper.left"]["state"]["status"] == "available"
+        await backend.connection(False)
+        items = (await client.get("/api/sensors")).json()["items"]
+        assert all(
+            item["state"]["status"] == item["events"]["status"] == "unavailable" for item in items
+        )
 
 
 async def test_wait_timeout_does_not_cancel_and_explicit_cancel_is_typed(socket_rig):

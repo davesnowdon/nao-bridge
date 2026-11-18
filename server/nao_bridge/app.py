@@ -154,6 +154,11 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             status_code=200 if connected else 503,
         )
 
+    @app.get("/api/sensors")
+    async def sensors(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.sensors()
+
     @app.get("/api/openapi.json")
     async def openapi() -> dict[str, Any]:
         return OPENAPI
