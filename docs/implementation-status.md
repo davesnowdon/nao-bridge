@@ -5,8 +5,11 @@ The replacement API implements the software slice through 1C. The first
 blocker, resolved and retested in the [18 November session](hardware-results-2026-11-18.md).
 Speech, touch, cancellation/stop, stream load, Python clients and process recovery
 passed on NAOqi 2.8.7.4. Agent death leaves robot speech running to completion;
-the API preserves an unknown outcome and quarantine. NAOqi 2.1, controlled network
-loss and Apple Silicon acceptance remain open. Software progression before those tests was
+the API preserves an unknown outcome and quarantine. Initial
+[NAOv5/NAOqi 2.1.4.13 tests](hardware-results-naov5-2026-11-18.md) also passed
+speech, cancellation/stop and all head sensors; network delays interrupted the
+remaining checks. Full NAOqi 2.1, controlled network-loss and Apple Silicon
+acceptance remain open. Software progression before those tests was
 explicitly authorized; fake/native-loopback results do not close the hardware gate.
 Every discovery response reports `hardware_verified: false`.
 
