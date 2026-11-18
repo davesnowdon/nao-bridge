@@ -8,9 +8,11 @@ passed on NAOqi 2.8.7.4. Agent death leaves robot speech running to completion;
 the API preserves an unknown outcome and quarantine. Initial
 [NAOv5/NAOqi 2.1.4.13 tests](hardware-results-naov5-2026-11-18.md) also passed
 speech, cancellation/stop and all head sensors; network delays interrupted the
-remaining checks. Full NAOqi 2.1, controlled network-loss and Apple Silicon
-acceptance remain open. Software progression before those tests was
-explicitly authorized; fake/native-loopback results do not close the hardware gate.
+remaining checks. Full NAOqi 2.1 acceptance remains incomplete; controlled
+network-loss and Apple Silicon acceptance are explicitly deferred and do not
+block merging the increment-1 hardware findings. Software progression before those
+tests was explicitly authorized; fake/native-loopback results do not close the
+hardware gate.
 Every discovery response reports `hardware_verified: false`.
 
 ## Delivered surface
@@ -118,16 +120,19 @@ evidence and generate its report automatically. The runner is tested against a
 fake robot over real HTTP/SSE; that verifies the test tooling, not the hardware
 gates below.
 
-1. Verify real robot connection/callback routing,
-   `ALTextToSpeech.say(text, language)`, the `\vol=\` / `\rspd=\` speech controls,
-   plain speech defaults and native cancellation using the actual model/NAOqi
-   version. Verify touch callbacks through `ALMemory.subscriber(event).signal` on
-   `qi.Session` with NAOqi 2.1. The fixture uses a separate safety service to
-   exercise priority transport; it does not prove real
+1. Complete the remaining NAOv5 checks when its connection allows: independent
+   subscriber cleanup, SSE reconnect/fresh delivery, load, Python clients and
+   process-fault recovery. Discovery, speech controls, native cancellation,
+   priority stop, follow-on speech and all three head callbacks already passed on
+   both NAOqi 2.8 and 2.1. These results do not prove that
    `ALTextToSpeech.stopAll` can interrupt every native blocking call.
-2. Test network unplug/reconnect, robot-side work after process loss, source update
-   age and practical sample/event rates. Confirm stop outcomes by observation.
-3. Test Docker Desktop on Apple Silicon with the amd64 image when available.
+2. Controlled network unplug/reconnect testing is deferred. NAO6 process-loss
+   observations are already recorded: the surviving agent stopped speech during
+   an API freeze, while killing the agent let speech finish naturally. The API
+   preserved uncertainty in both cases. Network-failure behavior and sustained
+   sample/event rates still require characterization.
+3. Docker Desktop on Apple Silicon with the amd64 image remains unverified;
+   acceptance is deferred until that host is available.
 4. Before advertising joint control, establish actual joint limits/couplings,
    stiffness semantics and controlled hold/stop on cancellation/expiry. Increment 2
    is the next application slice; loopback success cannot establish these physical

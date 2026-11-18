@@ -112,8 +112,11 @@ all native event paths are interchangeable.
   helper then performed the successful freeze test recorded above.
 - Agent death cannot be advertised as a physical stop mechanism. The API watchdog
   only works while the agent survives and can communicate with the robot.
-- NAOv5/NAOqi 2.1 compatibility, physical network-disconnect behavior and Apple
-  Silicon remain unverified. Motion, hold/stiffness and media are outside this slice.
+- Subsequent [NAOv5/NAOqi 2.1 checks](hardware-results-naov5-2026-11-18.md)
+  passed speech, cancellation/stop and all three head sensors; the remaining
+  checks were interrupted by network delays. Controlled physical network-loss
+  and Apple Silicon testing are explicitly deferred. Motion, hold/stiffness and
+  media are outside this slice.
 
 `make check` passed: **81 server tests and 23 client tests**, plus lint/format/type
 checks. `make test-container` passed with the new binding, including library
