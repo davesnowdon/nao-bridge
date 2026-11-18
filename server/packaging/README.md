@@ -3,16 +3,26 @@
 `server/Dockerfile` uses these maintained build inputs:
 
 - `collect_legacy.py` runs under Python 2 in the pinned donor image. It copies the
-  SDK, interpreter and required private libraries, creates SDK SONAME aliases,
-  retains package copyright notices, and writes a dependency manifest. The base
-  image supplies glibc; never copy the donor's glibc into the runtime.
+  interpreter, standard library and their required private libraries, retains
+  package copyright notices, and writes a dependency manifest. Dependency lookup
+  excludes the donor's SDK search path. The superseded SDK, its SONAME aliases and
+  donor C++/GCC runtimes are not copied; the maintained base supplies glibc,
+  `libstdc++` and `libgcc_s`. The donor's `libcrypt` and `libnsl` are also excluded;
+  Python's `crypt` and `nis` extensions resolve against the base libraries.
 - `server/Dockerfile` adds the official **qi 1.6.7 CPython 2.7 Linux x86-64 wheel**,
   verified by SHA-256 and extracted with its license/metadata into
   `/opt/legacy/qi167`. It replaces the donor's qi binding: the older binding ignores
   NAOqi 2.8 cancellation replies and leaves speech futures pending. The donor still
   supplies Python 2 and private OpenSSL 1.0 libraries. The agent resolves the wheel's
   libraries first, then the maintained base's C++ runtime, then donor libraries.
-  The container suite checks actual process mappings and API library isolation.
+  The container suite checks actual process mappings, API library isolation,
+  removal of the superseded files, manifest hashes, dependency resolution for all
+  bundled ELF files, and Python 2 standard-library/qi imports with `LD_BIND_NOW=1`
+  to catch unresolved symbols. The manifest must contain no donor `libc6` package.
+  Both Python 2's SSL extensions and the wheel's `libqi`/`libqipython` depend on
+  private OpenSSL 1.0 libraries. These now come from the donor OS package
+  `libssl1.0.0` (`1.0.1f-1ubuntu2.27`), with its copyright notices, replacing the
+  removed SDK's OpenSSL 1.0.2 build.
 - `os-packages.lock` pins the complete installed Ubuntu package inventory. The
   build fails if that inventory changes. Update the base digest and inventory
   together, inspect the diff, then run `make test-container`.

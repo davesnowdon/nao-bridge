@@ -85,6 +85,24 @@ the current single-worker stop timing budget is documented beside the wait.
 These follow-up checks used simulated backends and the native container fixture;
 the hardware reports retain their original test counts and image identities.
 
+The subsequent SDK/library cleanup removes the donor SDK, its SONAME aliases,
+duplicate ICU libraries and donor C++/GCC runtimes from the production image.
+Donor `libcrypt` and `libnsl` are also excluded, and the dependency manifest must
+contain no donor `libc6` package. Python 2's SSL extensions and the qi wheel's
+`libqi`/`libqipython` now use OpenSSL from the donor OS package
+`libssl1.0.0` (`1.0.1f-1ubuntu2.27`), with hashes and copyright notices retained.
+The native container suite resolves all 68 remaining bundled ELF files, imports
+Python 2 standard-library extensions (including `crypt` and `nis`) and qi with
+`LD_BIND_NOW=1`, and verifies the agent uses the base C++/GCC runtimes while the API
+remains isolated. The tested image is
+`sha256:2085f5eff9148f6d99d70c3a7b5ff4673492e2a88c209cc11e2d6280a1701ad9`.
+Its uncompressed Docker image size is about 66.8 MB smaller than the pre-cleanup
+image `6e5a048f9631`. A subsequent [NAO6/NAOqi 2.8.7.4 smoke test](hardware-smoke-sdk-cleanup-2026-11-18.md)
+passed discovery, plain speech/idempotency, physically confirmed cancellation and
+priority stop, follow-on speech, front touch to two observers, renewal and cleanup
+with this image. NAOqi 2.1 smoke testing is deferred and does not block merging
+this cleanup; the broader earlier hardware results apply to their recorded images.
+
 Two bundled-SDK details were discovered by execution: `qi.Session` supplies
 connection signals but no `isConnected()` method, and numeric signal values can be
 Python 2 `long`. The adapter uses connection signals and accepts real numeric
