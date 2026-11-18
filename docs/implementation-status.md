@@ -1,9 +1,12 @@
 # Increment 1 software delivery evidence
 
 The replacement API implements the software slice through 1C. The first
-[NAO6 hardware session](hardware-results-2026-11-17.md) verified speech, touch,
-stream load and restart, but found a cancellation/completion blocker. Full robot
-and Apple Silicon acceptance remain open. Software progression before those tests was
+[NAO6 hardware session](hardware-results-2026-11-17.md) found a cancellation
+blocker, resolved and retested in the [18 November session](hardware-results-2026-11-18.md).
+Speech, touch, cancellation/stop, stream load, Python clients and process recovery
+passed on NAOqi 2.8.7.4. Agent death leaves robot speech running to completion;
+the API preserves an unknown outcome and quarantine. NAOqi 2.1, controlled network
+loss and Apple Silicon acceptance remain open. Software progression before those tests was
 explicitly authorized; fake/native-loopback results do not close the hardware gate.
 Every discovery response reports `hardware_verified: false`.
 

@@ -78,7 +78,7 @@ class AgentBackend:
         env.update(
             {
                 "PYTHONPATH": sdk,
-                "LD_LIBRARY_PATH": sdk + ":" + self.settings.legacy_library_path,
+                "LD_LIBRARY_PATH": sdk + "/qi/linux:" + self.settings.legacy_library_path,
                 "NAO_AGENT_ROOT": self.root.name,
                 "NAO_ROBOT_ADDRESS": self.settings.robot_address,
                 "NAO_ROBOT_PORT": str(self.settings.robot_port),

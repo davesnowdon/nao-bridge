@@ -59,12 +59,17 @@ async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, ans
 
             async def touch(sensor):
                 await asyncio.sleep(0.05)
+                other = "middle" if sensor == "front" else "front"
+                await backend.touch_changed("touch.head." + other, True)
+                await backend.touch_changed("touch.head." + other, False)
                 await backend.touch_changed("touch.head." + sensor, True)
                 await backend.touch_changed("touch.head." + sensor, False)
 
             async def ask(message):
                 if "start the cancel check" in message or "start the stop check" in message:
                     backend.duration = 10
+                if "physically stop speech" in message:
+                    backend.duration = 0.01
                 if "release all head sensors" in message:
                     sensor = next((s for s in ("middle", "rear") if s in message), "front")
                     touches.append(asyncio.create_task(touch(sensor)))
@@ -73,7 +78,7 @@ async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, ans
             result = await hardware.execute(options(url, output), ask=ask)
             await asyncio.gather(*touches)
             assert result == {"y": 0, "n": 1, "s": 2}[answer]
-            assert len(backend.calls) == (1 if answer == "n" else 4)
+            assert len(backend.calls) == (1 if answer == "n" else 6)
             assert not core.resources and not core.subscriptions and not core.streams
             assert all(s.public["status"] == "closed" for s in core.sessions.values())
             summary = json.loads((output / "summary.json").read_text())

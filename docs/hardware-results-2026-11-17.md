@@ -1,5 +1,9 @@
 # First NAO6 hardware session — 17 November 2026
 
+Follow-up: the cancellation blocker was fixed and retested on
+[18 November](hardware-results-2026-11-18.md). The report below preserves the
+original failing run.
+
 Increment 1 is **partially verified, with cancellation blocked**. The user paused
 the session and shut down the robot; the test container was stopped. No runtime
 implementation changes were made during testing.

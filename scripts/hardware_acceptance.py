@@ -21,6 +21,7 @@ CORE_CHECKS = [
     "speech defaults, settings and duplicate-request identity",
     "cancel protocol outcome",
     "stop protocol outcome",
+    "fresh speech after cancellation and stop",
     *["two independent touch subscribers: " + sensor for sensor in ("front", "middle", "rear")],
     "remaining subscriber after deleting the first",
     "fresh touch after SSE reset",
@@ -402,18 +403,22 @@ class Runner:
         return stream
 
     async def touch(self, streams, label, sensor="front"):
+        self.evidence.summary["active_check"] = label
         await self.ask(f"{label}: release all head sensors, then press Enter when ready.")
         for stream in streams:
             stream.discard_pending()
         print(
-            f"Now press and release the {sensor.upper()} head sensor once (within 45 seconds).",
+            f"Now press and release the {sensor.upper()} head sensor once (within 180 seconds).",
             flush=True,
         )
 
         async def edges(stream):
             result = []
             for pressed in (True, False):
-                event = await stream.event("touch.changed")
+                while True:
+                    event = await stream.event("touch.changed", timeout=180)
+                    if event["data"]["sensor"] == "touch.head." + sensor:
+                        break
                 require(
                     event["data"] == {"sensor": "touch.head." + sensor, "pressed": pressed},
                     "Unexpected head press/release; see recorded events",
@@ -421,9 +426,14 @@ class Runner:
                 result.append(event["data"])
             return result
 
-        results = await asyncio.gather(*(edges(stream) for stream in streams))
+        try:
+            async with asyncio.timeout(180):
+                results = await asyncio.gather(*(edges(stream) for stream in streams))
+        except TimeoutError as exc:
+            raise RuntimeError(f"No complete {sensor} press/release within 180 seconds") from exc
         require(all(value == results[0] for value in results), "Observers disagree on touch edges")
         self.evidence.passed(label)
+        self.evidence.summary.pop("active_check", None)
 
     async def exercise(self, capabilities):
         for name in ("speech.utterances", "touch.changed"):
@@ -492,6 +502,10 @@ class Runner:
                 f"Did {action} physically stop speech early, without later resuming?"
             )
             self.evidence.passed(action + " protocol outcome")
+            await self.wait(
+                await self.speak({"text": "Speech is working after the interruption."}), "succeeded"
+            )
+        self.evidence.passed("fresh speech after cancellation and stop")
         for sensor in ("front", "middle", "rear"):
             await self.touch(
                 [first, second], "two independent touch subscribers: " + sensor, sensor

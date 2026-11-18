@@ -13,8 +13,8 @@ class Settings:
     robot_port: int = 9559
     agent_python: str = "/opt/legacy/bin/python2.7"
     agent_script: Path = Path("/opt/nao-bridge/agent/agent.py")
-    sdk_path: str = "/nao-bridge/lib/pynaoqi-python2.7-2.1.4.13-linux64"
-    legacy_library_path: str = "/opt/legacy/sdk-sonames:/opt/legacy/lib"
+    sdk_path: str = "/opt/legacy/qi167"
+    legacy_library_path: str = "/usr/lib/x86_64-linux-gnu:/opt/legacy/sdk-sonames:/opt/legacy/lib"
     lease_seconds: float = 30.0
     history_seconds: float = 900.0
     max_sessions: int = 64

@@ -42,7 +42,8 @@ Docker access is optional for testing through the API.
 - Speech with defaults and quieter/slower settings, without executing duplicate
   keyed requests twice.
 - Per-operation cancellation and priority stop, with your confirmation that speech
-  actually stopped early and did not resume.
+  actually stopped early and did not resume, followed by fresh speech to check
+  that the worker and speech resource were released.
 - Front/middle/rear head-touch press/release reaching two independent subscribers,
   while subscriptions coexist with command traffic.
 - Continued delivery after one subscriber closes, explicit reset on SSE reconnect,
@@ -52,6 +53,9 @@ Answer `y`, `n` or `s` (not observed) to listening questions. A negative answer 
 protocol error stops further test actions and is recorded automatically. `q` or
 Ctrl-C ends the run and attempts session cleanup; any cleanup failure is included.
 An uncertain command is not automatically retried.
+
+Each touch step allows three minutes. Incidental touches on other sensors remain
+in the transcript while the script waits for the requested sensor's press/release.
 
 **PASS** means the selected checks passed, including the requested physical
 observations. **FAIL** includes the error or negative observation. **INCOMPLETE**
