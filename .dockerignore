@@ -9,4 +9,3 @@ hardware-results
 **/dist
 **/.env
 **/.nao-bridge-data
-server/lib
