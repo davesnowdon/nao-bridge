@@ -218,8 +218,9 @@ class Agent(object):
                     self.observe("connection", self.description)
                 start = monotonic()
                 groups = self.driver.sample()
-                self.observe("sample", {"groups": groups, "started": start, "finished": monotonic()})
-                time.sleep(0.1)
+                self.observe("sample", {"groups": groups, "started": start, "finished": monotonic(),
+                                        "windows": self.driver.sample_windows, "errors": self.driver.sample_errors})
+                time.sleep(max(0.001, 0.1 - (monotonic() - start)))
             except Exception:
                 logging.exception("Native discovery/sampling unavailable")
                 if self.description.get("connection") == "connected":

@@ -9,7 +9,9 @@ from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
 from .models import (
     Capabilities,
     Event,
+    JointCatalog,
     OperationData,
+    PosturesData,
     RobotInfo,
     Sensor,
     State,
@@ -29,6 +31,7 @@ class Nao:
         self._thread: threading.Thread | None = None
         self.robot = Robot(self)
         self.sensors = Sensors(self)
+        self.motion = Motion(self)
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
@@ -133,6 +136,28 @@ class Robot:
 
     def diagnostics(self) -> dict[str, Any]:
         return self._nao._run(self._nao._async.robot.diagnostics())
+
+
+class Motion:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def joints(self) -> JointCatalog:
+        return self._nao._run(self._nao._async.motion.joints())
+
+    def postures(self) -> PosturesData:
+        return self._nao._run(self._nao._async.motion.postures())
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return self._nao._run(
+            self._nao._async.motion.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
 
 
 class Sensors:

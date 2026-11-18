@@ -7,8 +7,9 @@ See the [browser walkthrough](../README.md#explore-the-api-in-a-browser) for ses
 and command execution. Browser applications on other origins can use the same
 HTTP/SSE endpoints without bridge configuration.
 
-The current surface includes increment 1 and contact-sensor discovery. Motion, media and sequence routes
-in the broader API plan are not implemented. The Python client is optional.
+The current surface includes increment 1, contact sensors, and read-only joint and
+posture discovery/state. Motion commands, media and sequence routes in the broader
+API plan are not implemented. The Python client is optional.
 
 Set `BRIDGE=http://127.0.0.1:3000` in your shell.
 Examples use `jq` to retain opaque IDs; no Python code is involved.
@@ -19,6 +20,8 @@ Examples use `jq` to retain opaque IDs; no Python code is involved.
 curl -fsS "$BRIDGE/api/robot"
 curl -fsS "$BRIDGE/api/robot/capabilities"
 curl -fsS "$BRIDGE/api/sensors"
+curl -fsS "$BRIDGE/api/motion/joints"
+curl -fsS "$BRIDGE/api/motion/postures"
 curl -fsS "$BRIDGE/api/state?include=sensors&max_age_ms=250&wait_for_fresh_ms=1000"
 ```
 
@@ -44,6 +47,24 @@ separate observations: an edge can arrive before the next shared sample.
 Each group carries `quality`, `age_ms`, acquisition timestamps and unavailable/stale
 reasons. Acquisition clocks are bridge-local monotonic milliseconds; group sampling
 is not an atomic robot snapshot. A freshness wait shares the sampler.
+
+`GET /motion/joints` returns `items` (joint names, units, limits, chains, coupling,
+read/write support) and a `chains` map. Hands use ratios; other joints use radians.
+The hip-yaw-pitch aliases report their shared motor. Discovery bounds are not a
+complete collision envelope: head/ankle restrictions also depend on other joint
+positions, and native safeguards must remain enabled. Commands are not yet enabled.
+`GET /motion/postures` lists native posture names and discovery availability.
+
+`GET /state?include=joints,motion` returns `groups.joints.value.measured`,
+`.commanded`, and `.stiffness`, each keyed by joint name. The named value schemas
+are `JointStateValue` and `MotionStateValue`; `motion` contains `awake`,
+`locomotion_active`, and `posture` (null when unrecognized). The Python methods are
+`nao.motion.joints()`, `.postures()`, and `.state(require_fresh=True)`; discovery
+methods return typed catalogs with `items` and availability. These groups also work
+in sampling subscriptions. All readers share the same producer. Freshness counts
+from the start of each group's acquisition, not the arrival of its final response;
+the snapshot acquisition window exposes skew across groups. The 10 Hz limit is a
+requested bridge cadence, not a hardware-verified source rate.
 
 Speech capabilities expose the discovered supported language/default voice. Native
 non-default voice selection and Japanese per-utterance controls are unavailable in

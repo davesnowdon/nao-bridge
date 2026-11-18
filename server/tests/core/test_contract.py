@@ -47,6 +47,8 @@ async def test_every_public_domain_route_and_response_is_documented(rig):
             ("/api/state", "State"),
             ("/api/events/types", "EventTypes"),
             ("/api/sensors", "Sensors"),
+            ("/api/motion/joints", "Joints"),
+            ("/api/motion/postures", "Postures"),
         ]:
             response = await client.get(path)
             VALIDATORS[name].validate(response.json())

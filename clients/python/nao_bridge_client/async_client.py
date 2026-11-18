@@ -32,7 +32,9 @@ from .models import (
     Capabilities,
     ErrorDetail,
     Event,
+    JointCatalog,
     OperationData,
+    PosturesData,
     RobotInfo,
     Sensor,
     SensorsData,
@@ -102,6 +104,7 @@ class AsyncNao:
         self.cleanup_error: Exception | None = None
         self.robot = AsyncRobot(self)
         self.sensors = AsyncSensors(self)
+        self.motion = AsyncMotion(self)
         self.speech = AsyncSpeech(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
@@ -480,6 +483,27 @@ class AsyncRobot:
 
     async def diagnostics(self) -> dict[str, Any]:
         return await self._nao._request("GET", "/api/robot/diagnostics")
+
+
+class AsyncMotion:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def joints(self) -> JointCatalog:
+        return decode(JointCatalog, await self._nao._request("GET", "/api/motion/joints"))
+
+    async def postures(self) -> PosturesData:
+        return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
+
+    async def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return await self._nao.robot.state(
+            ["joints", "motion"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
 
 
 class AsyncSensors:

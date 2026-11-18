@@ -63,6 +63,33 @@ class SensorsData(WireModel):
     connection_generation: int
 
 
+class Joint(WireModel):
+    name: str
+    unit: Literal["rad", "ratio"]
+    minimum: float | None
+    maximum: float | None
+    max_velocity: float | None
+    chains: list[str]
+    coupled_with: list[str]
+    readable: bool
+    writable: bool
+    stiffness_supported: bool
+    reason: str | None
+
+
+class JointCatalog(WireModel):
+    items: list[Joint]
+    chains: dict[str, list[str]]
+    availability: Capability
+    connection_generation: int
+
+
+class PosturesData(WireModel):
+    items: list[str]
+    availability: Capability
+    connection_generation: int
+
+
 class SessionData(WireModel):
     id: str
     name: str

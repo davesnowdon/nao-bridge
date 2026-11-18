@@ -159,6 +159,16 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         query(request, set())
         return core.sensors()
 
+    @app.get("/api/motion/joints")
+    async def joints(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.joint_catalog()
+
+    @app.get("/api/motion/postures")
+    async def postures(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.posture_catalog()
+
     @app.get("/api/openapi.json")
     async def openapi() -> dict[str, Any]:
         return OPENAPI

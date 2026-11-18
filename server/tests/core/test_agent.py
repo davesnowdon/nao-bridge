@@ -20,6 +20,7 @@ def agent_module(monkeypatch):
     yield module
     sys.modules.pop("native", None)
     sys.modules.pop("wire", None)
+    sys.modules.pop("motion", None)
 
 
 class DrainQueue:
@@ -214,6 +215,38 @@ def test_dedicated_contact_callbacks_reject_invalid_values(agent_module):
             ("touch.changed", {"sensor": sensor, "pressed": False}),
         ]
     assert len(events) == 8
+
+
+def test_native_joint_discovery_and_observation_preserve_units_and_sources(agent_module):
+    import motion
+
+    fixture = motion.FixtureMotion()
+    session = types.SimpleNamespace(
+        service=lambda name, **kwargs: types.SimpleNamespace(value=lambda timeout: fixture)
+    )
+    calls = []
+
+    def call(service, method, *args):
+        calls.append((method, args))
+        return getattr(service, method)(*args)
+
+    observer = motion.MotionObservation(session, call)
+    joints = {item["name"]: item for item in observer.joints}
+    assert joints["LHand"]["unit"] == "ratio"
+    assert joints["HeadYaw"]["unit"] == "rad"
+    assert joints["LHipYawPitch"]["coupled_with"] == ["RHipYawPitch"]
+    assert observer.chains["LArm"] == ["LShoulderPitch", "LHand"]
+    state = observer.sample_joints()
+    assert state["measured"]["HeadYaw"] == 0.1
+    assert state["commanded"]["HeadYaw"] == 0.2
+    assert state["stiffness"]["HeadYaw"] == 0.5
+    assert [args[1] for method, args in calls if method == "getAngles"] == [True, False]
+    fixture.getAngles = lambda names, useSensors: [float("nan")] * len(names)
+    with pytest.raises(ValueError, match="invalid native measured"):
+        observer.sample_joints()
+    fixture.getLimits = lambda group: []
+    with pytest.raises(ValueError, match="Incomplete native joint limits"):
+        motion.MotionObservation(session, call)
 
 
 @pytest.mark.parametrize("cancelled", [True, False])

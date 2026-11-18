@@ -8,6 +8,8 @@ import threading
 import time
 
 import qi
+from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture
+from wire import monotonic
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -44,6 +46,10 @@ class NativeDriver(object):
         self.memory = None
         self.subscribers = []
         self.description = {}
+        self.motion = None
+        self.posture = None
+        self.sample_windows = {}
+        self.sample_errors = {}
         self._connected = threading.Event()
 
     def call(self, service, method, *args):
@@ -87,6 +93,17 @@ class NativeDriver(object):
                 self.description[target] = self.call(proxy, method)
             except Exception:
                 pass
+        try:
+            self.motion = MotionObservation(self.session, self.call)
+            self.description["joints"] = self.motion.joints
+            self.description["chains"] = self.motion.chains
+        except Exception:
+            self.motion = None
+        try:
+            self.posture = PostureObservation(self.session, self.call)
+            self.description["postures"] = self.posture.names
+        except Exception:
+            self.posture = None
         self._connected.set()
         return self.description
 
@@ -100,8 +117,26 @@ class NativeDriver(object):
         return self._connected.is_set()
 
     def sample(self):
+        self.sample_windows, self.sample_errors = {}, {}
+        start = monotonic()
         values = self.call(self.memory, "getListData", MEMORY_KEYS)
-        return {"sensors": contact_values(values)}
+        groups = {"sensors": contact_values(values)}
+        self.sample_windows["sensors"] = [start, monotonic()]
+        for group in ("joints", "motion"):
+            start = monotonic()
+            try:
+                if not self.motion:
+                    raise ValueError("motion_service_unavailable")
+                if group == "joints":
+                    groups[group] = self.motion.sample_joints()
+                else:
+                    groups[group] = self.motion.sample_motion()
+                    groups[group]["posture"] = self.posture.sample() if self.posture else None
+            except Exception:
+                groups[group] = None
+                self.sample_errors[group] = "native_sample_unavailable"
+            self.sample_windows[group] = [start, monotonic()]
+        return groups
 
     def speak(self, payload):
         # Voice changes are a later capability; do not mutate global voice preferences silently.
@@ -198,10 +233,14 @@ class FixtureDriver(NativeDriver):
         self.work_impl = FixtureSpeech()
         self.safety_impl = FixtureSafety(self.work_impl)
         self.memory_impl = FixtureMemory()
+        self.motion_impl = FixtureMotion()
+        self.posture_impl = FixturePosture()
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
         self.server.registerService("ALMemory", self.memory_impl)
+        self.server.registerService("ALMotion", self.motion_impl)
+        self.server.registerService("ALRobotPosture", self.posture_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe)
         self.last_touch = time.time()
 

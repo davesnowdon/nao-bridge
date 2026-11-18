@@ -41,6 +41,37 @@ class FakeBackend:
         self.sink: EventSink | None = None
         self.samples_task: asyncio.Task | None = None
         self.touch = {item["id"]: False for item in CONTACTS}
+        self.chains = {
+            "Head": ["HeadYaw", "HeadPitch"],
+            "LArm": ["LShoulderPitch", "LHand"],
+            "RArm": ["RShoulderPitch", "RHand"],
+            "LLeg": ["LHipYawPitch"],
+            "RLeg": ["RHipYawPitch"],
+        }
+        self.chains["Body"] = [name for members in self.chains.values() for name in members]
+        self.joints = [
+            {
+                "name": name,
+                "unit": "ratio" if name.endswith("Hand") else "rad",
+                "minimum": 0.0 if name.endswith("Hand") else -1.0,
+                "maximum": 1.0,
+                "max_velocity": 1.0 if name.endswith("Hand") else 2.0,
+                "chains": sorted(chain for chain, names in self.chains.items() if name in names),
+                "coupled_with": ["RHipYawPitch" if name[0] == "L" else "LHipYawPitch"]
+                if name.endswith("HipYawPitch")
+                else [],
+                "readable": True,
+                "writable": False,
+                "stiffness_supported": False,
+                "reason": "commands_not_implemented",
+            }
+            for name in self.chains["Body"]
+        ]
+        self.joint_state = {
+            field: dict.fromkeys(self.chains["Body"], value)
+            for field, value in [("measured", 0.1), ("commanded", 0.2), ("stiffness", 0.5)]
+        }
+        self.motion_state = {"awake": True, "posture": "StandInit", "locomotion_active": False}
 
     async def start(self, sink: EventSink) -> None:
         self.sink = sink
@@ -69,6 +100,9 @@ class FakeBackend:
                     },
                     "touch_available": connected,
                     "touch_events": list(self.touch) if connected else [],
+                    "joints": self.joints,
+                    "chains": self.chains,
+                    "postures": ["StandInit", "Sit", "Crouch"],
                 },
             )
 
@@ -79,7 +113,11 @@ class FakeBackend:
                 await self.sink(
                     "sample",
                     {
-                        "groups": {"sensors": {"touch": dict(self.touch), "touch_unavailable": {}}},
+                        "groups": {
+                            "sensors": {"touch": dict(self.touch), "touch_unavailable": {}},
+                            "joints": {key: dict(value) for key, value in self.joint_state.items()},
+                            "motion": dict(self.motion_state),
+                        },
                         "started": now,
                         "finished": now,
                     },

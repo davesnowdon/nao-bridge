@@ -1439,6 +1439,189 @@
         "connection_generation"
       ],
       "additionalProperties": true
+    },
+    "Joint": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "rad",
+            "ratio"
+          ]
+        },
+        "minimum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "maximum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_velocity": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "chains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "coupled_with": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "readable": {
+          "type": "boolean"
+        },
+        "writable": {
+          "type": "boolean"
+        },
+        "stiffness_supported": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "unit",
+        "minimum",
+        "maximum",
+        "max_velocity",
+        "chains",
+        "coupled_with",
+        "readable",
+        "writable",
+        "stiffness_supported",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "Joints": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Joint"
+          }
+        },
+        "chains": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availability": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "items",
+        "chains",
+        "connection_generation",
+        "availability"
+      ],
+      "additionalProperties": true
+    },
+    "Postures": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availability": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation",
+        "availability"
+      ],
+      "additionalProperties": true
+    },
+    "JointStateValue": {
+      "type": "object",
+      "properties": {
+        "measured": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "commanded": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "stiffness": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "measured",
+        "commanded",
+        "stiffness"
+      ],
+      "additionalProperties": true
+    },
+    "MotionStateValue": {
+      "type": "object",
+      "properties": {
+        "awake": {
+          "type": "boolean"
+        },
+        "locomotion_active": {
+          "type": "boolean"
+        },
+        "posture": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "awake",
+        "locomotion_active",
+        "posture"
+      ],
+      "additionalProperties": true
     }
   }
 }

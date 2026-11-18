@@ -1084,6 +1084,60 @@
           }
         }
       }
+    },
+    "/motion/joints": {
+      "get": {
+        "operationId": "listJoints",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Joints"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/motion/postures": {
+      "get": {
+        "operationId": "listPostures",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Postures"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1183,6 +1237,21 @@
       },
       "Sensors": {
         "$ref": "schemas.json#/$defs/Sensors"
+      },
+      "Joint": {
+        "$ref": "schemas.json#/$defs/Joint"
+      },
+      "Joints": {
+        "$ref": "schemas.json#/$defs/Joints"
+      },
+      "Postures": {
+        "$ref": "schemas.json#/$defs/Postures"
+      },
+      "JointStateValue": {
+        "$ref": "schemas.json#/$defs/JointStateValue"
+      },
+      "MotionStateValue": {
+        "$ref": "schemas.json#/$defs/MotionStateValue"
       }
     }
   }

@@ -137,6 +137,18 @@ def run(url):
     assert {"touch.hand.left.back", "touch.hand.right.back", "bumper.left", "bumper.right"} <= {
         item["id"] for item in sensors["items"]
     }
+    joints = probe.request("GET", "/api/motion/joints", schema="Joints")
+    assert joints["availability"]["status"] == "available"
+    assert joints["chains"]["Head"] == ["HeadYaw", "HeadPitch"]
+    assert next(item for item in joints["items"] if item["name"] == "LHand")["unit"] == "ratio"
+    probe.request("GET", "/api/motion/postures", schema="Postures")
+    state = probe.request(
+        "GET", "/api/state?include=joints,motion&wait_for_fresh_ms=1000", schema="State"
+    )
+    probe.validate("JointStateValue", state["groups"]["joints"]["value"])
+    probe.validate("MotionStateValue", state["groups"]["motion"]["value"])
+    assert state["groups"]["joints"]["value"]["measured"]["HeadYaw"] == 0.1
+    assert state["groups"]["joints"]["value"]["commanded"]["HeadYaw"] == 0.2
     session = probe.request(
         "POST",
         "/api/sessions",

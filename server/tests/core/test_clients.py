@@ -62,6 +62,14 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
             with Nao(url) as nao:
                 assert "bumper.left" in {sensor.id for sensor in nao.sensors.list()}
                 assert (nao.sensors.state(require_fresh=True)).groups["sensors"].quality == "fresh"
+                assert nao.motion.joints().chains["Head"] == ["HeadYaw", "HeadPitch"]
+                assert "StandInit" in nao.motion.postures().items
+                assert (
+                    nao.motion.state(require_fresh=True)
+                    .groups["joints"]
+                    .value["measured"]["HeadYaw"]
+                    == 0.1
+                )
                 first = nao.speech.say("first", timeout=2)
                 sid = nao.session_id
                 time.sleep(0.65)
@@ -122,6 +130,53 @@ async def test_sensor_discovery_reports_missing_readings_and_disconnection(rig):
         assert all(
             item["state"]["status"] == item["events"]["status"] == "unavailable" for item in items
         )
+
+
+async def test_joint_observations_share_sampler_and_conservative_freshness(socket_rig):
+    import time
+
+    from nao_bridge_client import StaleState
+
+    async with socket_rig() as (url, core, backend), AsyncNao(url) as nao:
+        catalog = await nao.motion.joints()
+        assert catalog.availability.status == "available"
+        assert all(not joint.writable for joint in catalog.items)
+        assert nao.session_id is None
+        state = await nao.motion.state(require_fresh=True)
+        assert state.groups["joints"].value["measured"]["LHand"] == 0.1
+        assert state.groups["joints"].value["commanded"]["LHand"] == 0.2
+        async with await nao.events.subscribe(
+            samples=[{"groups": ["joints", "motion"], "rate_hz": 5}]
+        ) as sub:
+            sample = await event_of(sub, "state.sample")
+            assert sample.data["state"]["groups"]["motion"]["value"]["posture"] == "StandInit"
+        backend.samples_task.cancel()
+        await asyncio.gather(backend.samples_task, return_exceptions=True)
+        now = time.monotonic()
+        await core.backend_event(
+            "sample",
+            {
+                "groups": {"joints": backend.joint_state},
+                "started": now - 1,
+                "finished": now,
+            },
+        )
+        assert (await nao.motion.state()).groups["joints"].quality == "stale"
+        with pytest.raises(StaleState):
+            await nao.motion.state(require_fresh=True)
+        await core.backend_event(
+            "sample",
+            {
+                "groups": {"joints": None},
+                "errors": {"joints": "native_sample_unavailable"},
+                "started": now,
+                "finished": now,
+            },
+        )
+        failed = (await nao.motion.state()).groups["joints"]
+        assert failed.value is None and failed.quality == "unavailable"
+        assert failed.reason == "native_sample_unavailable"
+        assert core.connection == "connected"
 
 
 async def test_wait_timeout_does_not_cancel_and_explicit_cancel_is_typed(socket_rig):

@@ -190,12 +190,20 @@ class Core:
             for group, value in data["groups"].items():
                 if group not in GROUPS:
                     continue
+                start, end = data.get("windows", {}).get(
+                    group, [data.get("started", self.clock()), data.get("finished", self.clock())]
+                )
                 self.samples[group] = {
                     "value": value,
-                    "time": min(self.clock(), data.get("finished", self.clock())),
-                    "sampled_at": utc(),
-                    "started": data.get("started", self.clock()),
-                    "finished": data.get("finished", self.clock()),
+                    "time": min(self.clock(), start),
+                    "sampled_at": (
+                        datetime.now(UTC) - timedelta(seconds=max(0, self.clock() - start))
+                    )
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                    "started": start,
+                    "finished": end,
+                    "error": data.get("errors", {}).get(group),
                 }
             self.sample_changed.set()
             for sub in self.subscriptions.values():
@@ -261,6 +269,8 @@ class Core:
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "events": feature(True),
                 "motion": feature(False, False),
+                "motion.joints": feature(available and bool(self.info.get("joints"))),
+                "motion.postures": feature(available and bool(self.info.get("postures"))),
                 "recordings": feature(False, False),
                 "sequences": feature(False, False),
             },
@@ -285,7 +295,7 @@ class Core:
             }
             | {"session_lease_seconds": self.settings.lease_seconds},
             "event_types": list(EVENT_TYPES),
-            "state_groups": ["sensors"],
+            "state_groups": ["sensors", "joints", "motion"],
             "replay_supported": False,
             "speech": self.info.get("speech", {}),
         }
@@ -327,6 +337,30 @@ class Core:
             )
         return {"items": items, "connection_generation": self.generation}
 
+    def joint_catalog(self) -> dict[str, Any]:
+        connected = self.connection == "connected"
+        items = self.info.get("joints", []) if connected else []
+        return {
+            "items": copy.deepcopy(items),
+            "chains": copy.deepcopy(self.info.get("chains", {})) if connected else {},
+            "connection_generation": self.generation,
+            "availability": {
+                "status": "available" if items else "unavailable",
+                "reason": None if items else "not_connected_or_discovered",
+            },
+        }
+
+    def posture_catalog(self) -> dict[str, Any]:
+        items = self.info.get("postures", []) if self.connection == "connected" else []
+        return {
+            "items": list(items),
+            "connection_generation": self.generation,
+            "availability": {
+                "status": "available" if items else "unavailable",
+                "reason": None if items else "not_connected_or_discovered",
+            },
+        }
+
     def state(self, groups: list[str] | None = None, max_age_ms: int = 250) -> dict[str, Any]:
         groups = groups or ["sensors"]
         if not groups or set(groups) - GROUPS:
@@ -335,11 +369,13 @@ class Core:
         starts, ends = [], []
         for name in groups:
             sample = self.samples.get(name)
-            if not sample or self.connection != "connected":
+            if not sample or sample["value"] is None or self.connection != "connected":
                 values[name] = {
                     "value": None,
                     "quality": "unavailable",
-                    "reason": "not_connected_or_sampled",
+                    "reason": sample.get("error") or "not_connected_or_sampled"
+                    if sample
+                    else "not_connected_or_sampled",
                     "sampled_at": None,
                     "sampled_bridge_time_ms": None,
                     "source_time": None,
@@ -354,7 +390,7 @@ class Core:
                 "quality": "fresh" if age <= max_age_ms else "stale",
                 "reason": None if age <= max_age_ms else "sample_too_old",
                 "sampled_at": sample["sampled_at"],
-                "sampled_bridge_time_ms": ends[-1],
+                "sampled_bridge_time_ms": starts[-1],
                 "source_time": None,
                 "age_ms": age,
             }
@@ -844,7 +880,7 @@ class Core:
             raise BridgeError("unsupported", "Unknown or unavailable event type", 422)
         samples = []
         for request in body.get("samples", []):
-            if set(request["groups"]) - {"sensors"}:
+            if set(request["groups"]) - {"sensors", "joints", "motion"}:
                 raise BridgeError("unsupported", "Sample group not implemented", 422)
             rate = request["rate_hz"]
             if rate > self.settings.sample_rate_hz and not body.get("allow_lower_rate", False):

@@ -9,7 +9,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Deliverable | Software status | Physical acceptance |
 | --- | --- | --- |
 | Hand/foot state, dedicated events, sensor discovery | Implemented; unit/client/raw-HTTP and native container checks pass | Native hand-back and foot probes recorded; integrated API pending |
-| Joint/chain/limit/coupling/posture discovery and measured/commanded state | Pending | Pending |
+| Joint/chain/limit/coupling/posture discovery and measured/commanded state | Read-only surface implemented; unit/client/raw-HTTP and native container checks pass | Pending |
 | Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Pending | Pending |
 | Timed trajectories, validation, JSON import/export | Pending | Pending |
 | Owned latest-value setpoints, TTL, cancellation/hold | Pending | Hold must remain unadvertised until verified |
@@ -28,3 +28,10 @@ client tests, lint, and type checks. The compatibility guard passed for additive
 contract 1.1.0. `make test-container` passed all production native-fixture checks,
 including independent press/release state and events for all 11 contacts, eight
 streams, cancellation, watchdog/agent/API loss, and cleanup. No robot was contacted.
+
+Joint-observation foundation validation: `make check` passed 95 server/integration
+and 23 client tests plus lint/types. The production container suite passed with
+native joint/posture discovery, separately sampled measured/commanded angles and
+stiffness, and all previous contact/recovery checks. Slow acquisition is classified
+using its start time; optional motion sample failures do not invalidate speech or
+contacts. Joint writes and stiffness control remain unadvertised until implemented.
