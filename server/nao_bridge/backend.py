@@ -21,6 +21,9 @@ class Backend(Protocol):
     async def trajectory(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def motion_action(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]: ...
@@ -38,6 +41,7 @@ class FakeBackend:
         self.fail_next: str | None = None
         self.stop_confirmed = True
         self.fence_confirmed = True
+        self.posture_reached = True
         self.calls: list[dict[str, Any]] = []
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
         self.revoked: set[str] = set()
@@ -65,7 +69,7 @@ class FakeBackend:
                 else [],
                 "readable": True,
                 "writable": True,
-                "stiffness_supported": False,
+                "stiffness_supported": True,
                 "reason": None,
             }
             for name in self.chains["Body"]
@@ -147,6 +151,32 @@ class FakeBackend:
                 for peer in peers:
                     self.joint_state["measured"][peer] = points[-1]
                     self.joint_state["commanded"][peer] = points[-1]
+        return result
+
+    async def motion_action(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._execute(operation_id, session_id, payload, payload["kind"])
+        if result.get("cancelled"):
+            return result
+        kind = payload["kind"]
+        if kind == "stiffness":
+            for name, value in zip(payload["names"], payload["values"], strict=True):
+                for peer in [
+                    name,
+                    *next(j["coupled_with"] for j in self.joints if j["name"] == name),
+                ]:
+                    self.joint_state["stiffness"][peer] = value
+        elif kind in {"wake", "rest"}:
+            awake = kind == "wake"
+            self.motion_state["awake"] = awake
+            self.joint_state["stiffness"] = dict.fromkeys(payload["names"], 1.0 if awake else 0.0)
+            if not awake:
+                self.motion_state["posture"] = "Crouch"
+        elif kind == "posture":
+            result["reached"] = self.posture_reached
+            if self.posture_reached:
+                self.motion_state["posture"] = payload["name"]
         return result
 
     async def _execute(

@@ -83,7 +83,8 @@ window for session history under pressure, cleanup history, or stop requests.
 ## Version and change guard
 
 The additive 1.1 surface includes contact discovery, joints/postures, shared joint
-and motion state, absolute joint moves, and timed trajectory runs. The
+and motion state, wake/rest, stiffness and posture commands, absolute joint moves,
+and timed trajectory runs. The
 [`trajectory.json`](fixtures/trajectory.json) fixture is a portable three-pose
 document. `Trajectory` and `Keyframe` in the canonical schemas define its file
 shape; strict time order, discovered limits and coupled-motor consistency require

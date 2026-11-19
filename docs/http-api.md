@@ -8,8 +8,8 @@ and command execution. Browser applications on other origins can use the same
 HTTP/SSE endpoints without bridge configuration.
 
 The current surface includes increment 1, contact sensors, joint/posture discovery,
-shared motion state, and finite joint/trajectory commands. Stiffness, wake/rest,
-posture commands, interactive controls, media and sequences remain in progress.
+shared motion state, finite joint/trajectory commands, stiffness, wake/rest and
+posture commands. Interactive controls, media and sequences remain in progress.
 The Python client is optional.
 
 Set `BRIDGE=http://127.0.0.1:3000` in your shell.
@@ -67,6 +67,36 @@ in sampling subscriptions. All readers share the same producer. Freshness counts
 from the start of each group's acquisition, not the arrival of its final response;
 the snapshot acquisition window exposes skew across groups. The 10 Hz limit is a
 requested bridge cadence, not a hardware-verified source rate.
+
+## Motion preparation
+
+`POST /motion/wake` and `/motion/rest` accept `{}`. Wake enables motors and may
+move to a native initial pose; rest moves to the native rest posture and relaxes
+the motors. Both are explicit operations, never automatic prerequisites or cleanup.
+`POST /motion/stiffness_changes` accepts
+`{"targets":{"Head":0.7},"duration":1}`. Targets name discovered joints or chains;
+values are 0–1 ratios, and duration defaults to one second. Conflicting overlapping
+chains or coupled aliases are rejected before dispatch.
+
+These settings remain owned by the session after the operation finishes, including
+after its operation history expires. Wake/rest retain ownership of all discovered
+joints; stiffness retains the affected joints. The same session can subsequently
+move or reconfigure them. Other sessions receive `resource_busy`. Confirmed session
+fencing releases configuration ownership without changing the actual stiffness or
+wake state. Unconfirmed fencing retains ownership for explicit recovery. Closing,
+expiring, cancelling or revoking a session never implicitly relaxes the robot.
+
+`POST /motion/posture_changes` accepts `{"name":"StandInit","speed":0.4}`.
+Use a discovered posture name; speed is a ratio in (0,1], default 0.4. Posture
+changes require fresh state, an awake robot and stiff joints. They temporarily
+own all joints and locomotion. A native `false` result is reported as a failed
+operation, not a reached posture.
+
+Python exposes `motion.wake()`, `.rest()`, `.set_stiffness({"Head":0.7})` and
+`.posture("StandInit")`, with the same waiting/cancellation conventions as other
+finite commands. After native completion the operation waits up to one second for
+new shared joint and motion observations. `result.state_refreshed` reports whether
+they arrived; command completion alone does not prove fresh observations.
 
 ## Absolute joint moves and trajectories
 

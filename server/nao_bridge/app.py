@@ -304,6 +304,38 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    async def submit_motion_action(
+        request: Request, kind: str, schema: str, route: str
+    ) -> Response:
+        value = await body(request, schema)
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /motion/" + route,
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.motion_action(item, kind, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.post("/api/motion/wake")
+    async def wake(request: Request) -> Response:
+        return await submit_motion_action(request, "wake", "MotionTransitionCreate", "wake")
+
+    @app.post("/api/motion/rest")
+    async def rest(request: Request) -> Response:
+        return await submit_motion_action(request, "rest", "MotionTransitionCreate", "rest")
+
+    @app.post("/api/motion/stiffness_changes")
+    async def stiffness(request: Request) -> Response:
+        return await submit_motion_action(
+            request, "stiffness", "StiffnessCreate", "stiffness_changes"
+        )
+
+    @app.post("/api/motion/posture_changes")
+    async def posture(request: Request) -> Response:
+        return await submit_motion_action(request, "posture", "PostureCreate", "posture_changes")
+
     @app.post("/api/motion/trajectory_runs")
     async def trajectory(request: Request) -> Response:
         value = await body(request, "TrajectoryRunCreate")

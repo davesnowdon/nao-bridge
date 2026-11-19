@@ -210,6 +210,20 @@ def run(url):
             schema="Operation",
         )
         assert probe.wait(trajectory_run)["status"] == "succeeded"
+        for route, body in [
+            ("stiffness_changes", {"targets": {"Head": 0.7}, "duration": 0.1}),
+            ("rest", {}),
+            ("wake", {}),
+            ("posture_changes", {"name": "StandInit"}),
+            ("stiffness_changes", {"targets": {"Body": 0.5}, "duration": 0.1}),
+        ]:
+            configured = probe.request(
+                "POST", "/api/motion/" + route, body, status=202, schema="Operation"
+            )
+            result = probe.wait(configured)
+            assert result["status"] == "succeeded" and result["result"]["state_refreshed"]
+        owners = probe.request("GET", "/api/robot/diagnostics")["configuration_owners"]
+        assert owners["joint.HeadYaw"] == session["id"]
         probe.request(
             "POST",
             "/api/speech/utterances",
@@ -243,6 +257,10 @@ def run(url):
             schema="Operation",
         )
         assert probe.wait(cleanup)["status"] == "succeeded"
+        assert (
+            session["id"]
+            not in probe.request("GET", "/api/robot/diagnostics")["configuration_owners"].values()
+        )
     return {
         "backend": robot["backend"],
         "contract_version": robot["contract_version"],
@@ -253,6 +271,7 @@ def run(url):
             "idempotency",
             "speech",
             "joint_discovery_and_trajectory",
+            "motion_configuration_and_ownership",
             "validation",
             "sse",
             "reconnect_without_replay",

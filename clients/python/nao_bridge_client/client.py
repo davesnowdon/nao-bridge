@@ -149,6 +149,70 @@ class Motion:
     def postures(self) -> PosturesData:
         return self._nao._run(self._nao._async.motion.postures())
 
+    def wake(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.wake(
+                    wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                )
+            ),
+        )
+
+    def rest(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.rest(
+                    wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                )
+            ),
+        )
+
+    def set_stiffness(
+        self,
+        targets: dict[str, float],
+        *,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.set_stiffness(
+                    targets,
+                    duration=duration,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def posture(
+        self,
+        name: str,
+        *,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.posture(
+                    name, speed=speed, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                )
+            ),
+        )
+
     def move_joints(
         self,
         positions: dict[str, float],

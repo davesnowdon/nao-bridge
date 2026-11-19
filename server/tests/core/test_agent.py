@@ -289,6 +289,26 @@ def test_motion_private_payload_validation_rejects_unsafe_shapes(agent_module):
         assert not valid_trajectory(dict(valid, **patch))
 
 
+def test_private_motion_actions_are_bounded_and_cannot_call_arbitrary_methods(agent_module):
+    from motion import valid_motion_action
+
+    assert valid_motion_action(
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [0], "duration": 1}
+    )
+    assert valid_motion_action(
+        {"kind": "posture", "names": ["HeadYaw"], "name": "StandInit", "speed": 0.4}
+    )
+    for value in [
+        {"kind": "killAll", "names": ["HeadYaw"]},
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [True], "duration": 1},
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [1], "duration": 0},
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [], "duration": 1},
+        {"kind": "wake", "names": ["HeadYaw"], "extra": True},
+        {"kind": "posture", "names": ["HeadYaw"], "name": "StandInit", "speed": 1.1},
+    ]:
+        assert not valid_motion_action(value)
+
+
 def test_native_motion_stop_expands_body_and_coupled_resources(agent_module):
     import native
 

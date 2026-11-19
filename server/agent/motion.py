@@ -27,6 +27,22 @@ def valid_trajectory(payload):
     return True
 
 
+def valid_motion_action(payload):
+    if not isinstance(payload, dict):
+        return False
+    kind, names = payload.get("kind"), payload.get("names")
+    if not isinstance(names, list) or not 0 < len(names) <= 32 or not all(isinstance(n, type(u"")) and n for n in names) or len(set(names)) != len(names):
+        return False
+    fields = set(["kind", "names"])
+    if kind == "stiffness":
+        values, duration = payload.get("values"), payload.get("duration")
+        return set(payload) == fields | set(["values", "duration"]) and isinstance(values, list) and len(values) == len(names) and all(finite(v) and 0 <= v <= 1 for v in values) and finite(duration) and 0 < duration <= 600
+    if kind == "posture":
+        speed = payload.get("speed")
+        return set(payload) == fields | set(["name", "speed"]) and isinstance(payload.get("name"), type(u"")) and finite(speed) and 0 < speed <= 1
+    return kind in ("wake", "rest") and set(payload) == fields
+
+
 class MotionObservation(object):
     def __init__(self, session, call):
         self.call = call
@@ -54,7 +70,7 @@ class MotionObservation(object):
                 "max_velocity": bounds[2] if valid else None,
                 "chains": sorted(chain for chain, members in self.chains.items() if name in members),
                 "coupled_with": sorted(hips - set([name])) if name in hips else [],
-                "readable": True, "writable": valid, "stiffness_supported": False,
+                "readable": True, "writable": valid, "stiffness_supported": True,
                 "reason": None if valid else "invalid_native_limits",
             })
 
@@ -102,6 +118,9 @@ class FixtureMotion(object):
         self.names = ["HeadYaw", "HeadPitch", "LShoulderPitch", "RShoulderPitch", "LHand", "RHand", "LHipYawPitch", "RHipYawPitch"]
         self.chains = {"Head": self.names[:2], "LArm": ["LShoulderPitch", "LHand"],
                        "RArm": ["RShoulderPitch", "RHand"], "LLeg": ["LHipYawPitch"], "RLeg": ["RHipYawPitch"]}
+        self.stiffness = dict((name, 0.5) for name in self.names)
+        self.awake = True
+        self.posture = "StandInit"
 
     def getBodyNames(self, group):
         return self.names if group == "Body" else sorted(self.chains) if group == "Chains" else self.chains[group]
@@ -114,18 +133,25 @@ class FixtureMotion(object):
             return [self.commanded.get(name, 0.1 if useSensors else 0.2) for name in names]
 
     def angleInterpolation(self, names, angles, times, absolute):
+        def apply():
+            for name, values in zip(names, angles):
+                self.commanded[name] = values[-1]
+        with self.lock:
+            self.calls.append([names, angles, times, absolute])
+        self._run(names, max(points[-1] for points in times), apply)
+
+    def _run(self, names, duration, apply):
         import threading
         stop_event = threading.Event()
         record = (names, stop_event)
         with self.lock:
-            self.calls.append([names, angles, times, absolute])
             self.active.append(record)
         try:
-            interrupted = stop_event.wait(max(points[-1] for points in times))
+            interrupted = stop_event.wait(duration)
             if not interrupted:
                 with self.lock:
-                    for name, values in zip(names, angles):
-                        self.commanded[name] = values[-1]
+                    apply()
+            return not interrupted
         finally:
             with self.lock:
                 self.active.remove(record)
@@ -137,18 +163,53 @@ class FixtureMotion(object):
                     stop.set()
 
     def getStiffnesses(self, names):
-        return [0.5 for name in names]
+        with self.lock:
+            return [self.stiffness[name] for name in names]
+
+    def stiffnessInterpolation(self, names, values, times):
+        def apply():
+            for name, value in zip(names, values):
+                self.stiffness[name] = value
+                if name in ("LHipYawPitch", "RHipYawPitch"):
+                    self.stiffness["LHipYawPitch"] = self.stiffness["RHipYawPitch"] = value
+        self._run(names, max(times), apply)
+
+    def wakeUp(self):
+        def apply():
+            self.awake = True
+            self.stiffness = dict((name, 1.) for name in self.names)
+        self._run(self.names, 0.1, apply)
+
+    def rest(self):
+        def apply():
+            self.awake = False
+            self.posture = "Crouch"
+            self.stiffness = dict((name, 0.) for name in self.names)
+        self._run(self.names, 0.1, apply)
 
     def robotIsWakeUp(self):
-        return True
+        with self.lock:
+            return self.awake
 
     def moveIsActive(self):
         return False
 
 
 class FixturePosture(object):
+    def __init__(self, motion=None):
+        self.motion = motion or FixtureMotion()
+
     def getPostureList(self):
         return ["StandInit", "Sit", "Crouch"]
 
     def getPosture(self):
-        return "StandInit"
+        with self.motion.lock:
+            return self.motion.posture
+
+    def goToPosture(self, name, speed):
+        def apply():
+            self.motion.posture = name
+        return self.motion._run(self.motion.names, 0.2, apply)
+
+    def stopMove(self):
+        self.motion.killTasksUsingResources(self.motion.names)

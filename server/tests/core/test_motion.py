@@ -1,10 +1,11 @@
+import asyncio
 import copy
 
 import pytest
 from conftest import new_session, wait_operation
 from nao_bridge.backend import FakeBackend
 from nao_bridge.errors import BridgeError
-from nao_bridge.motion import compile_trajectory
+from nao_bridge.motion import compile_trajectory, stiffness_targets
 
 
 def trajectory(frames):
@@ -172,3 +173,129 @@ async def test_native_concurrency_is_bounded_without_a_stale_command_queue(rig):
         )
         assert fifth.status_code == 429
         assert len(backend.calls) == 4
+
+
+def test_stiffness_expands_chains_and_rejects_contradictions_including_coupling():
+    backend = FakeBackend()
+    names, values, resources = stiffness_targets(
+        {"Head": 0, "HeadYaw": 0}, backend.joints, backend.chains
+    )
+    assert names == ["HeadPitch", "HeadYaw"] and values == [0, 0]
+    assert resources == ["joint.HeadPitch", "joint.HeadYaw"]
+    for targets in (
+        {"Body": 0, "HeadYaw": 1},
+        {"LHipYawPitch": 0, "RHipYawPitch": 1},
+        {"WrongChain": 1},
+    ):
+        with pytest.raises(BridgeError):
+            stiffness_targets(targets, backend.joints, backend.chains)
+    names, values, resources = stiffness_targets(
+        {"RHipYawPitch": 0.3}, backend.joints, backend.chains
+    )
+    assert names == ["LHipYawPitch"] and values == [0.3]
+    assert resources == ["joint.LHipYawPitch", "joint.RHipYawPitch"]
+
+
+async def action(client, headers, route, body):
+    response = await client.post("/api/motion/" + route, json=body, headers=headers)
+    assert response.status_code == 202, response.text
+    return await wait_operation(client, response.json()["id"], headers)
+
+
+async def test_configuration_ownership_outlives_operation_history_and_close_never_relaxes(rig):
+    async with rig(history_seconds=0.15) as (client, core, backend):
+        session, owner = await new_session(client, "owner")
+        _, other = await new_session(client, "other")
+        configured = await action(client, owner, "stiffness_changes", {"targets": {"Head": 0}})
+        assert configured["status"] == "succeeded" and configured["result"]["state_refreshed"]
+        assert not core.resources
+        assert core.configuration_owners == dict.fromkeys(
+            ["joint.HeadPitch", "joint.HeadYaw"], session["id"]
+        )
+        await asyncio.sleep(0.25)
+        core.sweep()
+        assert configured["id"] not in core.operations
+        conflict = await client.post(
+            "/api/motion/stiffness_changes", json={"targets": {"HeadYaw": 1}}, headers=other
+        )
+        assert conflict.status_code == 409
+        assert (await action(client, owner, "stiffness_changes", {"targets": {"Head": 0.8}}))[
+            "status"
+        ] == "succeeded"
+        assert (await action(client, owner, "joint_moves", {"positions": {"HeadYaw": 0.2}}))[
+            "status"
+        ] == "succeeded"
+        close = await client.post(
+            "/api/sessions/" + session["id"] + "/close", json={}, headers=owner
+        )
+        assert (await wait_operation(client, close.json()["id"], owner))["status"] == "succeeded"
+        assert not core.configuration_owners
+        assert backend.joint_state["stiffness"]["HeadYaw"] == 0.8
+        assert (await action(client, other, "joint_moves", {"positions": {"HeadYaw": 0}}))[
+            "status"
+        ] == "succeeded"
+
+
+async def test_unconfirmed_fence_preserves_configuration_and_session_until_explicit_recovery(rig):
+    async with rig(history_seconds=0.15) as (client, core, backend):
+        session, owner = await new_session(client)
+        assert (await action(client, owner, "stiffness_changes", {"targets": {"LArm": 0.7}}))[
+            "status"
+        ] == "succeeded"
+        backend.fence_confirmed = False
+        close = await client.post(
+            "/api/sessions/" + session["id"] + "/close", json={}, headers=owner
+        )
+        result = await wait_operation(client, close.json()["id"], owner)
+        assert result["status"] == "unknown"
+        assert set(result["result"]["unresolved_resources"]) == {
+            "joint.LHand",
+            "joint.LShoulderPitch",
+        }
+        await asyncio.sleep(0.25)
+        core.sweep()
+        assert session["id"] in core.sessions
+        assert (await core.diagnostics())["quarantined_configurations"]
+        backend.fence_confirmed = True
+        recovery = await client.post(
+            "/api/sessions/" + session["id"] + "/revoke",
+            json={"confirm": True, "reason": "recover test"},
+        )
+        assert (await wait_operation(client, recovery.json()["id"], owner))["status"] == "succeeded"
+        assert not core.configuration_owners
+        assert backend.joint_state["stiffness"]["LHand"] == 0.7
+
+
+async def test_wake_rest_posture_results_and_immediately_following_motion(rig):
+    async with rig() as (client, core, backend):
+        _, owner = await new_session(client)
+        assert (await action(client, owner, "rest", {}))["status"] == "succeeded"
+        assert backend.motion_state["awake"] is False
+        response = await client.post(
+            "/api/motion/joint_moves", json={"positions": {"HeadYaw": 0}}, headers=owner
+        )
+        assert response.status_code == 409
+        assert (await action(client, owner, "wake", {}))["status"] == "succeeded"
+        assert (await action(client, owner, "joint_moves", {"positions": {"HeadYaw": 0}}))[
+            "status"
+        ] == "succeeded"
+        assert (await action(client, owner, "posture_changes", {"name": "StandInit"}))[
+            "status"
+        ] == "succeeded"
+        assert backend.calls[-1]["payload"]["speed"] == 0.4
+        backend.posture_reached = False
+        failed = await action(client, owner, "posture_changes", {"name": "Sit"})
+        assert failed["status"] == "failed" and failed["error"]["code"] == "native_execution_failed"
+        assert backend.motion_state["posture"] == "StandInit"
+
+
+async def test_queued_configuration_cancel_does_not_leave_ownership(rig):
+    async with rig() as (client, core, backend):
+        session, owner = await new_session(client)
+        value = core.motion_action(
+            core.sessions[session["id"]], "stiffness", {"targets": {"Head": 0}}
+        )
+        cancelled = await core.cancel(core.operations[value["id"]])
+        assert cancelled["status"] == "cancelled" and cancelled["result"]["dispatched"] is False
+        await asyncio.sleep(0)
+        assert not core.configuration_owners and not backend.calls

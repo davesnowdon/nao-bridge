@@ -10,7 +10,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | --- | --- | --- |
 | Hand/foot state, dedicated events, sensor discovery | Implemented; unit/client/raw-HTTP and native container checks pass | Native hand-back and foot probes recorded; integrated API pending |
 | Joint/chain/limit/coupling/posture discovery and measured/commanded state | Read-only surface implemented; unit/client/raw-HTTP and native container checks pass | Pending |
-| Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Absolute joint moves and head/hand helpers implemented; wake/rest, stiffness and posture commands pending | Pending |
+| Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Implemented with session ownership and explicit preparation | Pending |
 | Timed trajectories, validation, JSON import/export | Implemented; single native submission, sparse timelines and coupled-joint validation | Pending |
 | Owned latest-value setpoints, TTL, cancellation/hold | Pending | Hold must remain unadvertised until verified |
 | Same-session validated finite-motion replacement | Pending | Stop before replacement pending |
@@ -35,7 +35,7 @@ native joint/posture discovery, separately sampled measured/commanded angles and
 stiffness, and all previous contact/recovery checks. Slow acquisition is classified
 using its start time; optional motion sample failures do not invalidate speech or
 contacts. Subsequent finite commands use the discovered bounds and fresh state;
-stiffness changes and interactive controls remain pending.
+explicit preparation commands are now implemented; interactive controls remain pending.
 
 Finite motion validation: the full suite passed 114 server/integration and 30 client
 tests plus lint/types; the additional coupled-stop regression and contract tests
@@ -46,3 +46,13 @@ rejects unknown/out-of-range/coupled targets and non-increasing timelines before
 dispatch. Physical behavior, dynamic collision envelopes, and controlled hold are
 not established by this fixture. Four native workers have bounded admission and
 share the stop confirmation deadline.
+
+Motion configuration validation: `make check` passed 123 server/integration and
+30 client tests plus lint/types. The production native container suite passed,
+including raw-HTTP wake/rest, chain stiffness, posture changes and configuration
+ownership release. Tests cover contradictory chain targets, coupled-motor
+deduplication, ownership surviving operation-history expiry, failed fencing,
+cancel-before-dispatch, native posture failure, SDK parity, and cleanup leaving
+physical settings unchanged. Known native completion waits for subsequent shared
+observations and reports whether they arrived. These are software/fixture results;
+no physical robot was contacted.

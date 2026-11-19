@@ -4,7 +4,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -14,13 +14,15 @@ from .config import Settings
 from .contract import CONTACTS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
-from .motion import compile_trajectory
+from .motion import compile_trajectory, stiffness_targets
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
 KNOWN_TERMINAL = TERMINAL - {"unknown"}
 RECOVERY_KINDS = {"session.close", "session.revoke", "robot.stop"}
-NATIVE_KINDS = {"speech.utterance", "motion.joint_move", "motion.trajectory_run"}
+CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
+MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change"}
+NATIVE_KINDS = {"speech.utterance", "motion.joint_move", "motion.trajectory_run"} | MOTION_ACTIONS
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -56,6 +58,7 @@ class Operation:
     released: bool = False
     retained_until: float | None = None
     task: asyncio.Task | None = None
+    retained_resources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -86,6 +89,7 @@ class Core:
         self.subscriptions: dict[str, Subscription] = {}
         self.streams: dict[str, tuple[Subscription, EventBuffer]] = {}
         self.resources: dict[str, str] = {}
+        self.configuration_owners: dict[str, str] = {}
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -275,6 +279,12 @@ class Core:
                 ),
                 "motion.joints": feature(available and bool(self.info.get("joints"))),
                 "motion.postures": feature(available and bool(self.info.get("postures"))),
+                "motion.stiffness": feature(
+                    available
+                    and any(joint["stiffness_supported"] for joint in self.info.get("joints", []))
+                ),
+                "motion.wake_rest": feature(available and bool(self.info.get("joints"))),
+                "motion.posture_changes": feature(available and bool(self.info.get("postures"))),
                 "recordings": feature(False, False),
                 "sequences": feature(False, False),
             },
@@ -565,6 +575,19 @@ class Core:
                 "limit_exceeded", "Operation history capacity exhausted", 429, retryable=True
             )
         conflicts = {r: self.resources[r] for r in resources if r in self.resources}
+        configured = {
+            r: self.configuration_owners[r]
+            for r in resources
+            if r in self.configuration_owners
+            and self.configuration_owners[r] != session.public["id"]
+        }
+        if configured:
+            raise BridgeError(
+                "resource_busy",
+                "Resources configured by another session",
+                409,
+                {"sessions": configured},
+            )
         if conflicts:
             raise BridgeError(
                 "resource_busy", "Resources are owned or quarantined", 409, {"resources": conflicts}
@@ -616,6 +639,15 @@ class Core:
     ) -> None:
         if op.public["status"] in KNOWN_TERMINAL:
             return
+        if (
+            status in {"succeeded", "cancelled"}
+            and op.public["started_at"] is not None
+            and (result or {}).get("dispatched") is not False
+            and (owner := self.sessions.get(op.public["session_id"])) is not None
+            and owner.public["status"] == "active"
+        ):
+            for resource in op.retained_resources:
+                self.configuration_owners[resource] = op.public["session_id"]
         if status != "unknown" or not op.public["resources"]:
             op.released = True
             for resource in op.public["resources"]:
@@ -701,6 +733,73 @@ class Core:
             "motion.joint_move",
         )
 
+    def motion_action(self, session: Session, kind: str, body: dict[str, Any]) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        joints = self.info.get("joints", [])
+        if not joints:
+            raise BridgeError("unsupported", "Motion service unavailable", 422)
+        names = [joint["name"] for joint in joints]
+        resources = ["joint." + name for name in names]
+        if kind == "stiffness":
+            names, values, resources = stiffness_targets(
+                body["targets"], joints, self.info.get("chains", {})
+            )
+            payload = {
+                "kind": kind,
+                "names": names,
+                "values": values,
+                "duration": body.get("duration", 1.0),
+            }
+            operation_kind = "motion.stiffness_change"
+        else:
+            resources.append("locomotion")
+            payload = {"kind": kind, "names": names}
+            operation_kind = "motion." + kind
+            if kind == "posture":
+                if body["name"] not in self.info.get("postures", []):
+                    raise BridgeError("unsupported", "Unknown or unavailable posture", 422)
+                state = self.state(["joints", "motion"])["groups"]
+                if any(group["quality"] != "fresh" for group in state.values()):
+                    raise BridgeError(
+                        "precondition_failed", "Fresh joint and motion state required", 409
+                    )
+                if not state["motion"]["value"]["awake"] or any(
+                    state["joints"]["value"]["stiffness"].get(name, 0) <= 0 for name in names
+                ):
+                    raise BridgeError(
+                        "precondition_failed",
+                        "Posture requires an awake robot and stiff joints",
+                        409,
+                    )
+                payload.update(name=body["name"], speed=body.get("speed", 0.4))
+                operation_kind = "motion.posture_change"
+        op = self.new_operation(session, operation_kind, resources)
+        if operation_kind in CONFIGURATION_KINDS:
+            op.retained_resources = [r for r in resources if r.startswith("joint.")]
+        op.task = self.spawn(self.run_native(op, payload))
+        return copy.deepcopy(op.public)
+
+    async def refresh_motion_after(self, completed: float) -> bool:
+        deadline = asyncio.get_running_loop().time() + min(
+            1.0, self.settings.max_state_wait_ms / 1000
+        )
+        while True:
+            self.sample_changed.clear()
+            if all(
+                self.samples.get(group, {}).get("started", -1) >= completed
+                and self.samples[group]["value"] is not None
+                for group in ("joints", "motion")
+            ):
+                return True
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0 or self.connection != "connected":
+                return False
+            try:
+                await asyncio.wait_for(self.sample_changed.wait(), remaining)
+            except TimeoutError:
+                return False
+
     async def run_native(self, op: Operation, payload: dict[str, Any]) -> None:
         if op.public["status"] != "accepted":
             return
@@ -715,10 +814,24 @@ class Core:
             dispatch = (
                 self.backend.speak
                 if op.public["kind"] == "speech.utterance"
+                else self.backend.motion_action
+                if op.public["kind"] in MOTION_ACTIONS
                 else self.backend.trajectory
             )
             result = await dispatch(op.public["id"], op.public["session_id"], payload)
+            if op.public["kind"] in MOTION_ACTIONS:
+                result["state_refreshed"] = await self.refresh_motion_after(self.clock())
             if generation != self.generation or agent_instance != self.backend.instance:
+                return
+            if result.get("reached") is False and not result.get("cancelled"):
+                self.finish(
+                    op,
+                    "failed",
+                    result,
+                    BridgeError(
+                        "native_execution_failed", "Requested posture was not reached", 422
+                    ),
+                )
                 return
             self.finish(op, "cancelled" if result.get("cancelled") else "succeeded", result)
         except BridgeError as exc:
@@ -832,9 +945,15 @@ class Core:
                     for resource in op.public["resources"]:
                         if self.resources.get(resource) == op.public["id"]:
                             del self.resources[resource]
+        if fenced:
+            self.configuration_owners = {
+                r: owner for r, owner in self.configuration_owners.items() if owner != sid
+            }
+        unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
         return {
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
+            "unresolved_resources": unresolved_resources,
             "force_release": force and fenced,
         }
 
@@ -877,7 +996,9 @@ class Core:
                     "fencing_unconfirmed", "Override refused: agent fencing unavailable", 409
                 ),
             )
-        elif result["unresolved_operation_ids"] and not result["force_release"]:
+        elif (result["unresolved_operation_ids"] or result["unresolved_resources"]) and not result[
+            "force_release"
+        ]:
             self.finish(
                 op,
                 "unknown",
@@ -1076,6 +1197,12 @@ class Core:
             "agent_instance_id": self.backend.instance,
             "connection": self.connection,
             "quarantined_resources": quarantined,
+            "configuration_owners": dict(self.configuration_owners),
+            "quarantined_configurations": {
+                r: sid
+                for r, sid in self.configuration_owners.items()
+                if self.sessions[sid].public["status"] != "active"
+            },
             "active_operations": sum(
                 o.public["status"] not in TERMINAL for o in self.operations.values()
             ),
@@ -1136,8 +1263,12 @@ class Core:
             if count <= limit:
                 break
             sid = session.public["id"]
-            if any(
-                o.public["session_id"] == sid and not o.released for o in self.operations.values()
+            if (
+                any(
+                    o.public["session_id"] == sid and not o.released
+                    for o in self.operations.values()
+                )
+                or sid in self.configuration_owners.values()
             ):
                 continue
             self.forget_session(sid)
@@ -1151,6 +1282,7 @@ class Core:
             if (
                 session.retained_until
                 and session.retained_until <= now
+                and session.public["id"] not in self.configuration_owners.values()
                 and not any(
                     o.public["session_id"] == session.public["id"] and not o.released
                     for o in self.operations.values()

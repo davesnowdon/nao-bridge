@@ -17,6 +17,38 @@ class TrajectoryPlan:
     duration: float
 
 
+def stiffness_targets(
+    targets: dict[str, float], joints: list[dict[str, Any]], chains: dict[str, list[str]]
+) -> tuple[list[str], list[float], list[str]]:
+    catalog = {joint["name"]: joint for joint in joints}
+    expanded: dict[str, float] = {}
+    for target, value in targets.items():
+        members = chains.get(target, [target])
+        for name in members:
+            if name not in catalog:
+                raise BridgeError(
+                    "invalid_request", "Unknown joint or chain", details={"target": target}
+                )
+            for peer in [name, *catalog[name]["coupled_with"]]:
+                if not catalog[peer]["stiffness_supported"]:
+                    raise BridgeError(
+                        "unsupported", "Stiffness control unavailable", 422, {"joint": peer}
+                    )
+                if peer in expanded and expanded[peer] != value:
+                    raise BridgeError(
+                        "invalid_request",
+                        "Contradictory stiffness targets",
+                        details={"joint": peer},
+                    )
+                expanded[peer] = value
+    names = [
+        name
+        for name in sorted(expanded)
+        if not any(peer < name and peer in expanded for peer in catalog[name]["coupled_with"])
+    ]
+    return names, [expanded[name] for name in names], ["joint." + name for name in sorted(expanded)]
+
+
 def compile_trajectory(trajectory: dict[str, Any], joints: list[dict[str, Any]]) -> TrajectoryPlan:
     validate("Trajectory", trajectory)
     catalog = {joint["name"]: joint for joint in joints}

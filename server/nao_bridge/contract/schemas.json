@@ -1717,6 +1717,61 @@
         "trajectory"
       ],
       "additionalProperties": false
+    },
+    "MotionTransitionCreate": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "StiffnessCreate": {
+      "type": "object",
+      "properties": {
+        "targets": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600,
+          "default": 1.0
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "PostureCreate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.4
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
     }
   }
 }

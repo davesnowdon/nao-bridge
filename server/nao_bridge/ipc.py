@@ -277,6 +277,13 @@ class AgentBackend:
             "command", "trajectory", payload, session_id, operation_id, timeout=None
         )
 
+    async def motion_action(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "motion_action", payload, session_id, operation_id, timeout=None
+        )
+
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]:

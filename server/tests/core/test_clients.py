@@ -224,6 +224,41 @@ async def test_sync_motion_helpers_share_the_public_contract(socket_rig):
         ]
 
 
+async def test_async_motion_configuration_waits_for_state_and_releases_only_ownership(socket_rig):
+    async with socket_rig() as (url, core, backend):
+        async with AsyncNao(url) as nao:
+            assert (await nao.motion.rest()).status == "succeeded"
+            assert (await nao.motion.state(require_fresh=True)).groups["motion"].value[
+                "awake"
+            ] is False
+            assert (await nao.motion.wake()).status == "succeeded"
+            assert (await nao.motion.posture("StandInit")).status == "succeeded"
+            assert (
+                await nao.motion.set_stiffness({"Head": 0.8}, duration=0.1)
+            ).status == "succeeded"
+            assert (await nao.motion.head(yaw=0)).status == "succeeded"
+            assert core.configuration_owners
+        assert not core.configuration_owners
+        assert backend.joint_state["stiffness"]["HeadYaw"] == 0.8
+        assert backend.motion_state["awake"] is True
+
+
+async def test_sync_motion_configuration_uses_the_same_routes(socket_rig):
+    async with socket_rig() as (url, core, backend):
+
+        def work():
+            with Nao(url) as nao:
+                assert nao.motion.set_stiffness({"LArm": 0.25}, duration=0.2).status == "succeeded"
+                assert nao.motion.wake().status == "succeeded"
+                assert nao.motion.posture("Sit", speed=0.3).status == "succeeded"
+                assert nao.motion.rest().status == "succeeded"
+
+        await asyncio.to_thread(work)
+        assert not core.configuration_owners
+        assert backend.motion_state["awake"] is False
+        assert all(value == 0 for value in backend.joint_state["stiffness"].values())
+
+
 async def test_wait_timeout_does_not_cancel_and_explicit_cancel_is_typed(socket_rig):
     async with (
         socket_rig(duration=10) as (url, core, backend),

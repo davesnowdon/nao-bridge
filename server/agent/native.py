@@ -8,7 +8,7 @@ import threading
 import time
 
 import qi
-from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture, valid_trajectory
+from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture, valid_trajectory, valid_motion_action
 from wire import monotonic
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
@@ -49,6 +49,7 @@ class NativeDriver(object):
         self.motion = None
         self.safety_motion = None
         self.posture = None
+        self.safety_posture = None
         self.sample_windows = {}
         self.sample_errors = {}
         self._connected = threading.Event()
@@ -104,9 +105,11 @@ class NativeDriver(object):
             self.safety_motion = None
         try:
             self.posture = PostureObservation(self.session, self.call)
+            self.safety_posture = self.safety_session.service("ALRobotPosture", _async=True).value(1000)
             self.description["postures"] = self.posture.names
         except Exception:
             self.posture = None
+            self.safety_posture = None
         self._connected.set()
         return self.description
 
@@ -169,9 +172,12 @@ class NativeDriver(object):
                 bounds = catalog[peer]
                 if not bounds["writable"] or not all(bounds["minimum"] <= value <= bounds["maximum"] for value in values):
                     raise ValueError("Joint target outside limits")
+        self.require_stiff(payload["names"])
+
+    def require_stiff(self, names):
         awake = self.call(self.motion.motion, "robotIsWakeUp")
-        stiffness = self.call(self.motion.motion, "getStiffnesses", payload["names"])
-        if awake is not True or len(stiffness) != len(payload["names"]) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool) and 0 < v <= 1 for v in stiffness):
+        stiffness = self.call(self.motion.motion, "getStiffnesses", names)
+        if awake is not True or len(stiffness) != len(names) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool) and 0 < v <= 1 for v in stiffness):
             error = ValueError("Motion requires an awake robot and stiff target joints")
             error.code = "precondition_failed"
             raise error
@@ -179,13 +185,47 @@ class NativeDriver(object):
     def trajectory(self, payload):
         return self.motion.motion.angleInterpolation(payload["names"], payload["angles"], payload["times"], True, _async=True)
 
-    def stop_motion(self, names):
+    def prepare_motion_action(self, payload):
+        if not valid_motion_action(payload) or not self.motion:
+            raise ValueError("Invalid or unavailable motion action")
+        names = set(payload["names"])
+        if names - set(self.motion.names):
+            raise ValueError("Unknown joint")
+        kind = payload["kind"]
+        if kind != "stiffness" and names != set(self.motion.names):
+            raise ValueError("Whole-body action must declare all joints")
+        if kind == "stiffness":
+            for joint in self.motion.joints:
+                if joint["name"] in names and set(joint["coupled_with"]) & names:
+                    raise ValueError("Duplicate coupled motor target")
+        if kind == "posture":
+            if not self.posture or payload["name"] not in self.posture.names:
+                raise ValueError("Unknown or unavailable posture")
+            self.require_stiff(payload["names"])
+
+    def motion_action(self, payload):
+        kind = payload["kind"]
+        if kind == "stiffness":
+            return self.motion.motion.stiffnessInterpolation(payload["names"], payload["values"], [payload["duration"]] * len(payload["names"]), _async=True)
+        if kind == "posture":
+            return self.posture.posture.goToPosture(payload["name"], payload["speed"], _async=True)
+        if kind == "wake":
+            return self.motion.motion.wakeUp(_async=True)
+        return self.motion.motion.rest(_async=True)
+
+    def stop_motion(self, names, stop_posture=False):
+        futures = []
+        deadline = monotonic() + 0.5
         if self.safety_motion:
             expanded = set(self.motion.names if "Body" in names else names)
             for joint in self.motion.joints:
                 if joint["name"] in expanded:
                     expanded.update(joint["coupled_with"])
-            self.safety_motion.killTasksUsingResources(sorted(expanded), _async=True).value(500)
+            futures.append(self.safety_motion.killTasksUsingResources(sorted(expanded), _async=True))
+        if stop_posture and self.safety_posture:
+            futures.append(self.safety_posture.stopMove(_async=True))
+        for future in futures:
+            future.value(max(1, int((deadline - monotonic()) * 1000)))
 
     def close(self):
         self._connected.clear()
@@ -269,7 +309,7 @@ class FixtureDriver(NativeDriver):
         self.safety_impl = FixtureSafety(self.work_impl)
         self.memory_impl = FixtureMemory()
         self.motion_impl = qi.multiThreaded()(FixtureMotion)()
-        self.posture_impl = FixturePosture()
+        self.posture_impl = qi.multiThreaded()(FixturePosture)(self.motion_impl)
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)

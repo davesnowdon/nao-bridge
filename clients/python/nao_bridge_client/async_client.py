@@ -496,6 +496,52 @@ class AsyncMotion:
     async def postures(self) -> PosturesData:
         return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
 
+    async def wake(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> AsyncOperation:
+        return await self._submit(
+            "wake", {}, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def rest(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> AsyncOperation:
+        return await self._submit(
+            "rest", {}, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def set_stiffness(
+        self,
+        targets: dict[str, float],
+        *,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"targets": targets}
+        if duration is not None:
+            body["duration"] = duration
+        return await self._submit(
+            "stiffness_changes", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def posture(
+        self,
+        name: str,
+        *,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"name": name}
+        if speed is not None:
+            body["speed"] = speed
+        return await self._submit(
+            "posture_changes", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
     async def _submit(
         self,
         path: str,
