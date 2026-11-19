@@ -59,6 +59,14 @@ Start with versioned newline-delimited JSON over a permission-restricted local U
 
 Maintain separate bounded control/response, observation, and bulk-media paths so a camera stream or slow client cannot prevent a stop/heartbeat. A shared file or framed binary transfer can carry bounded media using validated opaque handles; do not embed large base64 frames in command JSON. Define ownership, finalization, cancellation, size limits, and cleanup for transferred buffers/files. Public assets remain managed by the modern process.
 
+The current implementation has separate priority, ordinary command, interactive
+control, and observation Unix-socket lanes. Interactive updates use a bounded
+latest-target slot and independent expiry/hold workers, not the ordinary native
+worker queue. The priority lane retains request capacity when control traffic is
+busy. Its private control path is tested in the SDK fixture; public endpoint/client
+integration is tracked in [increment-2-status.md](increment-2-status.md). Bulk media
+transfer remains later work.
+
 Protocol fixtures must cover version mismatch, partial/malformed frames, unexpected EOF, request timeout after native dispatch, duplicate request IDs, stale generations, saturated queues, and agent restart. Never retransmit uncertain side-effecting native calls merely because an IPC response was lost. Translate ambiguity into the public Operation's `unknown` state.
 
 The API grants bounded control authority tied to the current session/generation. The agent rejects old generations and expired grants before dispatch. Convert API deadlines into agent-local monotonic deadlines through a measured bounded request exchange; do not extend a TTL by a long queue delay or compare unrelated clock origins blindly. The API must retain enough request evidence to reconcile a lost reply while both process instances remain unchanged. This is not durable exactly-once execution across crashes.

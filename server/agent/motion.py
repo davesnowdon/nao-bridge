@@ -115,6 +115,7 @@ class FixtureMotion(object):
         self.active = []
         self.commanded = {}
         self.calls = []
+        self.setpoints = []
         self.names = ["HeadYaw", "HeadPitch", "LShoulderPitch", "RShoulderPitch", "LHand", "RHand", "LHipYawPitch", "RHipYawPitch"]
         self.chains = {"Head": self.names[:2], "LArm": ["LShoulderPitch", "LHand"],
                        "RArm": ["RShoulderPitch", "RHand"], "LLeg": ["LHipYawPitch"], "RLeg": ["RHipYawPitch"]}
@@ -141,6 +142,14 @@ class FixtureMotion(object):
         with self.lock:
             self.calls.append([names, angles, times, absolute])
         self._run(names, max(points[-1] for points in times), apply)
+
+    def setAngles(self, names, angles, speed):
+        with self.lock:
+            self.setpoints.append([list(names), list(angles), speed])
+            for name, value in zip(names, angles):
+                self.commanded[name] = value
+                if name in ("LHipYawPitch", "RHipYawPitch"):
+                    self.commanded["LHipYawPitch"] = self.commanded["RHipYawPitch"] = value
 
     def _run(self, names, duration, apply):
         import threading

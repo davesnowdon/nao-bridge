@@ -22,6 +22,7 @@ def agent_module(monkeypatch):
     sys.modules.pop("wire", None)
     sys.modules.pop("motion", None)
     sys.modules.pop("autonomy", None)
+    sys.modules.pop("controls", None)
 
 
 class DrainQueue:
@@ -49,6 +50,14 @@ def bare_agent(module):
     agent.driver = types.SimpleNamespace(
         speak=lambda payload: pytest.fail("Cancelled queued work reached native dispatch"),
         stop=lambda: pytest.fail("Queued-only scoped stop invoked unrelated native output"),
+    )
+    agent.controls = module.JointControls(
+        agent.driver,
+        agent.lock,
+        module.monotonic,
+        lambda *args: None,
+        lambda request: agent.valid(request, initial=False) is None,
+        lambda *args: None,
     )
     return agent
 
@@ -130,6 +139,24 @@ def test_stop_does_not_confuse_finished_autonomy_setter_with_finished_transition
     outcome = {"outcome": "cancelled", "settings": [{"setting": "life_state", "status": "applied"}]}
     agent.records["operation"].update(status="completed", result=outcome)
     assert agent.stop(request)["results"]["operation"] == outcome
+
+
+def test_finite_control_thread_can_finish_normally_without_killing_agent(agent_module, monkeypatch):
+    agent = bare_agent(agent_module)
+    monkeypatch.setattr(
+        agent_module.os, "_exit", lambda code: pytest.fail("Normal control completion killed agent")
+    )
+    agent.run_control(lambda: None)
+    assert agent.heartbeat and not agent.emergency_stop.is_set()
+
+
+def test_priority_stop_records_a_tombstone_before_command_arrival(agent_module):
+    agent = bare_agent(agent_module)
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "not-arrived"}})
+    assert result["confirmed_ids"] == ["not-arrived"]
+    record = agent.records["not-arrived"]
+    assert record["status"] == "completed"
+    assert record["result"] == {"cancelled": True, "dispatched": False}
 
 
 def test_stop_before_dispatch_confirms_cancellation_and_prevents_later_dispatch(agent_module):

@@ -37,6 +37,8 @@ def contact_values(values):
 
 
 class NativeDriver(object):
+    joint_hold_verified = False
+
     def __init__(self, endpoint, observe):
         self.endpoint = endpoint
         self.observe = observe
@@ -114,6 +116,11 @@ class NativeDriver(object):
             self.safety_posture = None
         self.autonomy = Autonomy(self.session, self.call)
         self.description["autonomy"] = self.autonomy.catalog
+        self.description["joint_controls"] = {
+            "available": self.joint_control_available(),
+            "reason": None if self.joint_control_available() else "hardware_hold_unverified",
+            "max_active": 4, "max_ttl": 1.0, "default_ttl": 0.5, "default_speed": 0.1,
+        }
         self._connected.set()
         return self.description
 
@@ -191,6 +198,45 @@ class NativeDriver(object):
 
     def trajectory(self, payload):
         return self.motion.motion.angleInterpolation(payload["names"], payload["angles"], payload["times"], True, _async=True)
+
+    def joint_control_available(self):
+        return bool(self.joint_hold_verified and self.motion and self.safety_motion)
+
+    def validate_joint_target(self, payload):
+        if not self.motion:
+            raise ValueError("Motion service unavailable")
+        catalog = dict((joint["name"], joint) for joint in self.motion.joints)
+        resources = set()
+        for name, value in zip(payload["names"], payload["angles"]):
+            joint = catalog.get(name)
+            if not joint or not joint["writable"] or set(joint["coupled_with"]) & set(payload["names"]):
+                raise ValueError("Unknown, unavailable or duplicate coupled target")
+            for peer in [name] + joint["coupled_with"]:
+                bounds = catalog[peer]
+                if not bounds["writable"] or not bounds["minimum"] <= value <= bounds["maximum"]:
+                    raise ValueError("Joint target outside limits")
+                resources.add(peer)
+        return sorted(resources)
+
+    def prepare_joint_target(self, payload):
+        self.validate_joint_target(payload)
+        self.require_stiff(payload["names"])
+
+    def set_joint_target(self, payload):
+        return self.motion.motion.setAngles(payload["names"], payload["angles"], payload["speed"], _async=True)
+
+    def hold_joints(self, names):
+        start = monotonic()
+        angles = self.safety_motion.getAngles(names, True, _async=True).value(150)
+        if (len(angles) != len(names) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool)
+                and v == v and abs(v) != float("inf") for v in angles) or monotonic() - start > 0.15):
+            raise ValueError("Fresh measured joint targets unavailable for hold")
+        payload = {"names": names, "angles": angles, "speed": 0.1}
+        self.validate_joint_target(payload)
+        self.safety_motion.setAngles(names, angles, 0.1, _async=True).value(150)
+        return {"required": True, "confirmed": bool(self.joint_hold_verified),
+                "mechanism": "fresh_measured_target", "speed": 0.1,
+                "acquisition_to_confirmation_ms": (monotonic() - start) * 1000}
 
     def prepare_motion_action(self, payload):
         if not valid_motion_action(payload) or not self.motion:
@@ -307,6 +353,8 @@ class FixtureMemory(object):
 
 
 class FixtureDriver(NativeDriver):
+    joint_hold_verified = True
+
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
     def __init__(self, observe):

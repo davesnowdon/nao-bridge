@@ -1,5 +1,6 @@
 """Run inside the production image with --network none; no physical robot is contacted."""
 
+import asyncio
 import hashlib
 import importlib.util
 import json
@@ -8,6 +9,7 @@ import signal
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("conformance", "/tests/conformance.py")
@@ -102,6 +104,155 @@ def check_legacy_bundle():
     )
 
 
+async def check_native_controls():
+    from nao_bridge.config import Settings
+    from nao_bridge.errors import BridgeError
+    from nao_bridge.ipc import AgentBackend
+
+    state = {}
+
+    async def observe(kind, value):
+        state[kind] = value
+
+    backend = AgentBackend(Settings(backend="native-fixture"))
+    await backend.start(observe)
+    blocked = []
+
+    async def poll(predicate):
+        async with asyncio.timeout(5):
+            while True:
+                value = await predicate()
+                if value:
+                    return value
+                await asyncio.sleep(0.01)
+
+    async def control_at(oid, predicate):
+        value = await backend.joint_control_status("controls", oid)
+        return value if predicate(value) else None
+
+    try:
+        async with asyncio.timeout(10):
+            while state.get("connection", {}).get("connection") != "connected":
+                await asyncio.sleep(0.05)
+        info = state["connection"]
+        assert info["joint_controls"]["available"]
+        assert (await backend.stop(operation_id="pre-cancel"))["confirmed_ids"] == ["pre-cancel"]
+        try:
+            await backend.joint_setpoint(
+                "controls",
+                {
+                    "operation_id": "pre-cancel",
+                    "control_id": "pre-cancel",
+                    "sequence": 0,
+                    "names": ["HeadYaw"],
+                    "angles": [0.1],
+                    "speed": 0.1,
+                    "expires": time.monotonic() + 0.5,
+                },
+            )
+        except BridgeError as exc:
+            assert exc.code == "control_ended"
+        else:
+            raise AssertionError("Priority cancellation allowed a late creation")
+        speech = info["speech"]
+        for number in range(4):
+            blocked.append(
+                asyncio.create_task(
+                    backend.speak(
+                        "blocked-" + str(number),
+                        "speech",
+                        {
+                            "text": "[fixture:block]",
+                            "volume": 0.5,
+                            "rate": 1,
+                            "language": speech["default_language"],
+                            "voice": speech["default_voice"],
+                        },
+                    )
+                )
+            )
+        await asyncio.sleep(0.2)
+        assert all(not task.done() for task in blocked)
+        payload = {
+            "operation_id": "control-one",
+            "control_id": "fixture-control",
+            "sequence": 0,
+            "names": ["HeadYaw"],
+            "angles": [0.2],
+            "speed": 0.1,
+            "expires": time.monotonic() + 0.8,
+        }
+        initial = await backend.joint_setpoint("controls", payload)
+        assert initial["sequence"] == 0
+        for sequence in range(1, 21):
+            payload = {
+                **payload,
+                "sequence": sequence,
+                "angles": [sequence / 100],
+                "expires": time.monotonic() + 0.8,
+            }
+            assert (await backend.joint_setpoint("controls", payload))["sequence"] == sequence
+        await poll(
+            lambda: control_at("control-one", lambda value: value["dispatched_sequence"] == 20)
+        )
+        assert (await backend.joint_setpoint("controls", payload))["expires"] == payload["expires"]
+        expired = await poll(
+            lambda: control_at("control-one", lambda value: value["status"] == "succeeded")
+        )
+        assert expired["reason"] == "joint_control_expired" and expired["hold"]["confirmed"]
+        assert all(not task.done() for task in blocked), (
+            "Ordinary native workers did not remain blocked"
+        )
+        assert state["sample"]["groups"]["joints"]["stiffness"]["HeadYaw"] == 0.5
+        try:
+            await backend.joint_setpoint(
+                "controls", {**payload, "sequence": 21, "expires": time.monotonic() + 0.5}
+            )
+        except BridgeError as exc:
+            assert exc.code == "control_ended"
+        else:
+            raise AssertionError("Expired native control reopened")
+        second = {
+            **payload,
+            "operation_id": "control-two",
+            "control_id": "fixture-two",
+            "sequence": 0,
+            "expires": time.monotonic() + 0.8,
+        }
+        await backend.joint_setpoint("controls", second)
+        await poll(
+            lambda: control_at("control-two", lambda value: value["dispatched_sequence"] == 0)
+        )
+        try:
+            await backend.release_joint_controls("controls")
+        except BridgeError as exc:
+            assert exc.code == "fencing_unconfirmed"
+        else:
+            raise AssertionError("Unfenced control release was accepted")
+        assert await backend.fence("controls")
+        fenced = await poll(
+            lambda: control_at("control-two", lambda value: value["status"] == "cancelled")
+        )
+        assert fenced["reason"] == "authority_lost" and fenced["hold"]["confirmed"]
+        assert set((await backend.release_joint_controls("controls"))["released_ids"]) == {
+            "control-one",
+            "control-two",
+        }
+        print(
+            "Native joint controls: ordered updates, expiry/hold with four blocked workers, "
+            "ended IDs and fencing passed",
+            flush=True,
+        )
+    finally:
+        with suppress(Exception):
+            await backend.stop()
+        for task in blocked:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*blocked, return_exceptions=True)
+        await backend.close()
+
+
 try:
     until(connected)
     agent_maps = Path(f"/proc/{agent_pid()}/maps").read_text()
@@ -114,6 +265,7 @@ try:
     assert "pynaoqi-python2.7-2.1.4.13-linux64/libqi" not in agent_maps
     assert "/opt/legacy/" not in api_maps and "/nao-bridge/lib/" not in api_maps
     check_legacy_bundle()
+    asyncio.run(check_native_controls())
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")
     recovery_probe.schemas = probe.schemas

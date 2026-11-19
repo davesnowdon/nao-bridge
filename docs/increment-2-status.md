@@ -12,7 +12,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Joint/chain/limit/coupling/posture discovery and measured/commanded state | Read-only surface implemented; unit/client/raw-HTTP and native container checks pass | Pending |
 | Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Implemented with session ownership and explicit preparation | Pending |
 | Timed trajectories, validation, JSON import/export | Implemented; single native submission, sparse timelines and coupled-joint validation | Pending |
-| Owned latest-value setpoints, TTL, cancellation/hold | Pending | Hold must remain unadvertised until verified |
+| Owned latest-value setpoints, TTL, cancellation/hold | Native agent scheduler, private IPC and fixture implemented; public HTTP/SDK integration pending | Hold must remain unadvertised until verified |
 | Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Joint/touch sampling and sampled posture implemented; battery and posture/fall events pending | Rate/skew and source behavior pending |
@@ -86,3 +86,25 @@ setters, safeguard races, rollback after external changes, unknown writes, and s
 responses preserving per-setting outcomes. The native fixture exercises the public
 HTTP transition and shared observations with real SDK calls. Physical effects and
 actual setting availability on NAOqi 2.1/2.8 remain unverified.
+
+Interactive-control agent foundation: four controls can use disjoint joint sets,
+with one pending target each and bounded retained IDs. Duplicate/out-of-order or
+invalid updates do not renew expiry. Preparation and target-write delays cannot
+block the independent expiry loop. If a target write is unconfirmed, a hold attempt
+does not erase the unknown outcome. Ended IDs remain closed for the native session
+lifetime; cancellation arriving before creation also prevents late dispatch.
+Explicit native reservation release requires fencing and a finished hold attempt.
+Finite control/hold threads may return normally; permanent service threads still
+trigger supervision if they exit unexpectedly.
+
+The candidate hold submits fresh measured joint angles at speed fraction 0.1,
+without a stiffness change. Native hardware availability remains false; only the
+local SDK fixture enables it. The public setpoint route, operation lifecycle,
+fake-backend parity, Python control scopes and Recorder UI remain to be wired.
+
+Agent-control validation: the full suite passed 188 server/integration and 30 client
+tests plus lint/types. After adding explicit fenced release, the 44 focused
+agent/control tests and type checks passed. The final production native container
+suite passed, including expiry and measured-target hold with all four ordinary
+workers blocked, early cancellation, ended-ID rejection and fenced release. These
+checks used the local SDK fixture; no physical robot was contacted.
