@@ -131,6 +131,40 @@ typed terminal outcomes as speech. Use `Trajectory.from_json(text)` / `.to_json(
 for portable file validation and round-tripping; runtime joint constraints are
 validated by the server. See [the example trajectory](../contracts/fixtures/trajectory.json).
 
+### Replacing a finite move
+
+Joint moves and trajectory runs accept `replace_operation_id`, naming a standalone
+joint move or trajectory from the same session. For example:
+`{"positions":{"HeadYaw":0},"duration":1,"replace_operation_id":"previous-id"}`.
+Validation and resource admission happen before any cancellation. Other resource
+conflicts remain errors; replacement does not override another session's ownership.
+
+The response is a new Operation with `replaces_operation_id`. It remains `accepted`
+while waiting for the old move and any in-flight stop request to finish. Shared
+joints remain reserved throughout the handoff. A known completed move may also be
+named, provided the requested resources remain available. An unknown outcome or
+unconfirmed stop fails the replacement with `replacement_stop_unconfirmed` without
+dispatching it. Cancelling a pending replacement prevents dispatch but does not
+undo cancellation already requested for its predecessor. Session cleanup and
+priority stop also cancel pending replacements; priority stop blocks new native
+admission until it finishes.
+
+Only one replacement may wait on a move at a time; a pending replacement cannot
+itself be replaced. This keeps admission bounded and gives each cancellation one
+successor. A replacement uses its active predecessor's native worker slot, so it
+works at the four-command limit. Both operations still count toward history limits.
+Sequence children cannot be replaced independently.
+
+Python's `move_joints`, `head`, `hand` and `play` accept the same
+`replace_operation_id` argument. For example,
+`await nao.motion.head(yaw=0, replace_operation_id=old.id)` waits for the new move;
+add `wait=False` to receive its handle immediately. The handle's
+`data.replaces_operation_id` identifies its predecessor. Interactive setpoints are
+a separate planned feature; repeated finite replacements do not provide that
+protocol's expiry or hold behavior.
+
+## Speech
+
 Speech capabilities expose the discovered supported language/default voice. Native
 non-default voice selection and Japanese per-utterance controls are unavailable in
 this slice. Animated speech is unsupported. Speech text must be plain text without

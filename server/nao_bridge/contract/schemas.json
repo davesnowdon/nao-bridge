@@ -637,6 +637,10 @@
             "maxLength": 128,
             "pattern": "^[A-Za-z0-9_-]+$"
           }
+        },
+        "replaces_operation_id": {
+          "type": "string",
+          "description": "Previous finite motion named by this replacement, when applicable."
         }
       },
       "required": [
@@ -1699,6 +1703,12 @@
           "exclusiveMinimum": 0,
           "maximum": 600,
           "default": 1.0
+        },
+        "replace_operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Same-session finite motion to cancel before dispatch. Validation and resource admission precede cancellation."
         }
       },
       "required": [
@@ -1711,6 +1721,12 @@
       "properties": {
         "trajectory": {
           "$ref": "#/$defs/Trajectory"
+        },
+        "replace_operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Same-session finite motion to cancel before dispatch. Validation and resource admission precede cancellation."
         }
       },
       "required": [

@@ -92,8 +92,12 @@ semantic validation before dispatch. Motion/hold hardware acceptance remains ope
 
 `python scripts/check_contract.py origin/main` conservatively rejects changes to an
 existing route/schema shape without a contract major bump, and additions without
-a version bump. Documentation-only annotations are ignored. This intentionally
-errs on the side of review: even an otherwise compatible edit to an existing shape
-needs the guard to be refined with a focused compatibility test before it can ship
-as a minor change. It cannot prove semantic compatibility; lifecycle tests and
-review remain required. Package/image versions are independent of contract version.
+a version bump. An exception permits new optional properties in response-only
+objects that already allow additional properties, preserving their existing
+properties and constraints. Request-reachable definitions are excluded, including
+through nested references: adding validation for a previously unconstrained input
+could reject an existing client. Focused tests cover this rule and its required
+version bump. Other shape changes still require review and guard refinement before
+shipping as a minor change. Documentation-only annotations are ignored. The guard
+cannot prove semantic compatibility; lifecycle tests and review remain required.
+Package/image versions are independent of contract version.

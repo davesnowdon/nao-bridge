@@ -53,6 +53,34 @@ async def test_async_discovery_speech_events_cleanup(socket_rig):
         assert not core.subscriptions
 
 
+async def test_async_replacement_exposes_predecessor_and_cancels_only_named_motion(socket_rig):
+    async with socket_rig(duration=0.5) as (url, core, backend), AsyncNao(url) as nao:
+        old = await nao.motion.head(yaw=0.1, wait=False)
+        new = await nao.motion.play(
+            {
+                "schema_version": "1.0",
+                "interpolation": "native",
+                "keyframes": [{"time": 0.2, "positions": {"HeadYaw": 0}}],
+            },
+            replace_operation_id=old.id,
+        )
+        assert new.data.replaces_operation_id == old.id and new.status == "succeeded"
+        assert (await nao.operations.get(old.id)).status == "cancelled"
+
+
+async def test_sync_replacement_helpers_forward_explicit_predecessor(socket_rig):
+    async with socket_rig(duration=0.5) as (url, core, backend):
+
+        def work():
+            with Nao(url) as nao:
+                old = nao.motion.move_joints({"LHand": 0.3}, wait=False)
+                new = nao.motion.hand("left", openness=0.1, replace_operation_id=old.id)
+                assert new.data.replaces_operation_id == old.id and new.status == "succeeded"
+                assert nao.operations.get(old.id).status == "cancelled"
+
+        await asyncio.to_thread(work)
+
+
 async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
     async with socket_rig(lease_seconds=0.3) as (url, core, backend):
 

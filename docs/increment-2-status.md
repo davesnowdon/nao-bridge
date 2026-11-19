@@ -13,7 +13,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Implemented with session ownership and explicit preparation | Pending |
 | Timed trajectories, validation, JSON import/export | Implemented; single native submission, sparse timelines and coupled-joint validation | Pending |
 | Owned latest-value setpoints, TTL, cancellation/hold | Pending | Hold must remain unadvertised until verified |
-| Same-session validated finite-motion replacement | Pending | Stop before replacement pending |
+| Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
 | Explicit autonomy settings for manual capture | Pending | Pending |
 | Shared joint/touch/battery sampling; posture/fall events | Joint/touch sampling and sampled posture implemented; battery and posture/fall events pending | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | Pending | Pending |
@@ -56,3 +56,13 @@ cancel-before-dispatch, native posture failure, SDK parity, and cleanup leaving
 physical settings unchanged. Known native completion waits for subsequent shared
 observations and reports whether they arrived. These are software/fixture results;
 no physical robot was contacted.
+
+Finite replacement validation: `make check` passed 143 server/integration and
+30 client tests plus lint/types; the compatibility guard and production native
+container suite passed. Tests cover invalid targets before cancellation,
+same-session ownership, coupled-joint handoff without an unowned interval, unknown
+outcomes, completed predecessors, capacity at four active commands, pending
+replacement cancellation, cleanup/priority stop, connection loss, and a late stop
+response after natural completion. Python sync/async clients expose the predecessor
+ID. The raw-HTTP and native SDK fixture verify replacement while sibling motion
+continues. Replacement is not an interactive setpoint/controlled-hold protocol.

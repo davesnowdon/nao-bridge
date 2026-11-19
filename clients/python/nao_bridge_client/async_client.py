@@ -563,6 +563,7 @@ class AsyncMotion:
         positions: dict[str, float],
         *,
         duration: float | None = None,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
         idempotency_key: str | None = None,
@@ -570,6 +571,8 @@ class AsyncMotion:
         body: dict[str, Any] = {"positions": positions}
         if duration is not None:
             body["duration"] = duration
+        if replace_operation_id is not None:
+            body["replace_operation_id"] = replace_operation_id
         return await self._submit(
             "joint_moves", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
         )
@@ -578,6 +581,7 @@ class AsyncMotion:
         self,
         trajectory: Trajectory | dict[str, Any],
         *,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
         idempotency_key: str | None = None,
@@ -587,9 +591,12 @@ class AsyncMotion:
             if isinstance(trajectory, Trajectory)
             else trajectory
         )
+        body: dict[str, Any] = {"trajectory": value}
+        if replace_operation_id is not None:
+            body["replace_operation_id"] = replace_operation_id
         return await self._submit(
             "trajectory_runs",
-            {"trajectory": value},
+            body,
             wait=wait,
             timeout=timeout,
             idempotency_key=idempotency_key,
@@ -601,6 +608,7 @@ class AsyncMotion:
         yaw: float | None = None,
         pitch: float | None = None,
         duration: float | None = None,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
     ) -> AsyncOperation:
@@ -609,7 +617,13 @@ class AsyncMotion:
             for name, value in [("HeadYaw", yaw), ("HeadPitch", pitch)]
             if value is not None
         }
-        return await self.move_joints(positions, duration=duration, wait=wait, timeout=timeout)
+        return await self.move_joints(
+            positions,
+            duration=duration,
+            replace_operation_id=replace_operation_id,
+            wait=wait,
+            timeout=timeout,
+        )
 
     async def hand(
         self,
@@ -617,6 +631,7 @@ class AsyncMotion:
         *,
         openness: float,
         duration: float | None = None,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
     ) -> AsyncOperation:
@@ -625,6 +640,7 @@ class AsyncMotion:
         return await self.move_joints(
             {"LHand" if side == "left" else "RHand": openness},
             duration=duration,
+            replace_operation_id=replace_operation_id,
             wait=wait,
             timeout=timeout,
         )

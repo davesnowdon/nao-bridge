@@ -218,6 +218,7 @@ class Motion:
         positions: dict[str, float],
         *,
         duration: float | None = None,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
         idempotency_key: str | None = None,
@@ -228,6 +229,7 @@ class Motion:
                 self._nao._async.motion.move_joints(
                     positions,
                     duration=duration,
+                    replace_operation_id=replace_operation_id,
                     wait=wait,
                     timeout=timeout,
                     idempotency_key=idempotency_key,
@@ -239,6 +241,7 @@ class Motion:
         self,
         trajectory: Trajectory | dict[str, Any],
         *,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
         idempotency_key: str | None = None,
@@ -247,7 +250,11 @@ class Motion:
             self._nao,
             self._nao._run(
                 self._nao._async.motion.play(
-                    trajectory, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                    trajectory,
+                    replace_operation_id=replace_operation_id,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
                 )
             ),
         )
@@ -258,6 +265,7 @@ class Motion:
         yaw: float | None = None,
         pitch: float | None = None,
         duration: float | None = None,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
     ) -> Operation:
@@ -265,7 +273,12 @@ class Motion:
             self._nao,
             self._nao._run(
                 self._nao._async.motion.head(
-                    yaw=yaw, pitch=pitch, duration=duration, wait=wait, timeout=timeout
+                    yaw=yaw,
+                    pitch=pitch,
+                    duration=duration,
+                    replace_operation_id=replace_operation_id,
+                    wait=wait,
+                    timeout=timeout,
                 )
             ),
         )
@@ -276,6 +289,7 @@ class Motion:
         *,
         openness: float,
         duration: float | None = None,
+        replace_operation_id: str | None = None,
         wait: bool = True,
         timeout: float | None = None,
     ) -> Operation:
@@ -283,7 +297,12 @@ class Motion:
             self._nao,
             self._nao._run(
                 self._nao._async.motion.hand(
-                    side, openness=openness, duration=duration, wait=wait, timeout=timeout
+                    side,
+                    openness=openness,
+                    duration=duration,
+                    replace_operation_id=replace_operation_id,
+                    wait=wait,
+                    timeout=timeout,
                 )
             ),
         )

@@ -120,6 +120,7 @@ class OperationData(WireModel):
     result: dict[str, Any] | None
     error: ErrorDetail | None
     child_operation_ids: list[str]
+    replaces_operation_id: str | None = None
 
 
 class StateGroup(WireModel):

@@ -192,6 +192,23 @@ def run(url):
             headers={"Idempotency-Key": "speech"},
         )
         assert probe.wait(operation)["status"] == "succeeded"
+        previous = probe.request(
+            "POST",
+            "/api/motion/joint_moves",
+            {"positions": {"HeadYaw": 0.1}, "duration": 2},
+            status=202,
+            schema="Operation",
+        )
+        replacement = probe.request(
+            "POST",
+            "/api/motion/joint_moves",
+            {"positions": {"HeadYaw": 0}, "duration": 0.1, "replace_operation_id": previous["id"]},
+            status=202,
+            schema="Operation",
+        )
+        assert replacement["replaces_operation_id"] == previous["id"]
+        assert probe.wait(replacement)["status"] == "succeeded"
+        assert probe.wait(previous)["status"] in {"cancelled", "succeeded"}
         trajectory_run = probe.request(
             "POST",
             "/api/motion/trajectory_runs",

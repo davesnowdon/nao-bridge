@@ -232,7 +232,15 @@ try:
         ]["quality"]
         == "fresh"
     )
-    probe.request("POST", "/api/operations/" + first_motion["id"] + "/cancel", {}, status=202)
+    replacement = probe.request(
+        "POST",
+        "/api/motion/joint_moves",
+        {"positions": {"HeadYaw": 0}, "duration": 0.1, "replace_operation_id": first_motion["id"]},
+        status=202,
+        schema="Operation",
+    )
+    assert replacement["replaces_operation_id"] == first_motion["id"]
+    assert probe.wait(replacement)["status"] == "succeeded"
     assert probe.wait(first_motion)["status"] == "cancelled"
     assert probe.request("GET", "/api/operations/" + second_motion["id"])["status"] == "running"
     stopped = probe.request("POST", "/api/robot/stop", {}, status=202)
@@ -243,7 +251,7 @@ try:
     cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
     assert probe.wait(cleanup)["status"] == "succeeded"
     print(
-        "Native trajectories: concurrent speech/state, scoped cancel and priority stop passed",
+        "Native trajectories: concurrent speech/state, scoped replacement and priority stop passed",
         flush=True,
     )
     probe.session = probe.request("POST", "/api/sessions", {"name": "native-cancel"}, status=201)[

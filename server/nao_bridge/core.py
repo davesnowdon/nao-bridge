@@ -59,6 +59,8 @@ class Operation:
     retained_until: float | None = None
     task: asyncio.Task | None = None
     retained_resources: list[str] = field(default_factory=list)
+    done: asyncio.Event = field(default_factory=asyncio.Event)
+    cancel_task: asyncio.Task | None = None
 
 
 @dataclass
@@ -90,6 +92,7 @@ class Core:
         self.streams: dict[str, tuple[Subscription, EventBuffer]] = {}
         self.resources: dict[str, str] = {}
         self.configuration_owners: dict[str, str] = {}
+        self.pending_replacements: dict[str, str] = {}
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -182,6 +185,16 @@ class Core:
                 if session.public["status"] == "active":
                     self.invalidate(session, "invalidated")
             for op in list(self.operations.values()):
+                if op.public["status"] == "accepted" and op.public.get("replaces_operation_id"):
+                    self.finish(
+                        op,
+                        "failed",
+                        {"dispatched": False},
+                        BridgeError(
+                            "replacement_stop_unconfirmed", "Connection lost during handoff", 503
+                        ),
+                    )
+                    continue
                 if op.public["status"] not in TERMINAL:
                     self.finish(
                         op,
@@ -554,8 +567,15 @@ class Core:
             return copy.deepcopy(result)
 
     def new_operation(
-        self, session: Session, kind: str, resources: list[str], cancellable: bool = True
+        self,
+        session: Session,
+        kind: str,
+        resources: list[str],
+        cancellable: bool = True,
+        replacing: Operation | None = None,
     ) -> Operation:
+        if kind in NATIVE_KINDS and self.stop_pending():
+            raise BridgeError("resource_busy", "Robot stop is in progress", 409)
         recovery = kind in RECOVERY_KINDS
         if recovery and kind != "robot.stop":
             self.trim_recovery_history(self.settings.max_recovery_operations - 1)
@@ -574,7 +594,12 @@ class Core:
             raise BridgeError(
                 "limit_exceeded", "Operation history capacity exhausted", 429, retryable=True
             )
-        conflicts = {r: self.resources[r] for r in resources if r in self.resources}
+        previous_id = replacing.public["id"] if replacing else None
+        conflicts = {
+            r: self.resources[r]
+            for r in resources
+            if r in self.resources and self.resources[r] != previous_id
+        }
         configured = {
             r: self.configuration_owners[r]
             for r in resources
@@ -592,12 +617,20 @@ class Core:
             raise BridgeError(
                 "resource_busy", "Resources are owned or quarantined", 409, {"resources": conflicts}
             )
+        waiting = {
+            new_id
+            for old_id, new_id in self.pending_replacements.items()
+            if (old := self.operations.get(old_id)) is not None and not old.released
+        }
         if (
             kind in NATIVE_KINDS
             and sum(
-                op.public["kind"] in NATIVE_KINDS and not op.released
+                op.public["kind"] in NATIVE_KINDS
+                and not op.released
+                and op.public["id"] not in waiting
                 for op in self.operations.values()
             )
+            - int(replacing is not None and not replacing.released)
             >= 4
         ):
             raise BridgeError(
@@ -620,9 +653,13 @@ class Core:
             "child_operation_ids": [],
         }
         op = Operation(value)
+        if previous_id:
+            value["replaces_operation_id"] = previous_id
+            self.pending_replacements[previous_id] = value["id"]
         self.operations[value["id"]] = op
         for r in resources:
-            self.resources[r] = value["id"]
+            if r not in self.resources:
+                self.resources[r] = value["id"]
         self.emit("operation.changed", value, value["session_id"])
         return op
 
@@ -639,6 +676,9 @@ class Core:
     ) -> None:
         if op.public["status"] in KNOWN_TERMINAL:
             return
+        predecessor = op.public.get("replaces_operation_id")
+        if predecessor and self.pending_replacements.get(predecessor) == op.public["id"]:
+            del self.pending_replacements[predecessor]
         if (
             status in {"succeeded", "cancelled"}
             and op.public["started_at"] is not None
@@ -652,7 +692,17 @@ class Core:
             op.released = True
             for resource in op.public["resources"]:
                 if self.resources.get(resource) == op.public["id"]:
-                    del self.resources[resource]
+                    successor = self.operations.get(
+                        self.pending_replacements.get(op.public["id"], "")
+                    )
+                    if (
+                        successor is not None
+                        and successor.public["status"] == "accepted"
+                        and resource in successor.public["resources"]
+                    ):
+                        self.resources[resource] = successor.public["id"]
+                    else:
+                        del self.resources[resource]
             op.retained_until = self.clock() + self.settings.history_seconds
         self.update(
             op,
@@ -661,6 +711,7 @@ class Core:
             error=error.payload() if error else None,
             finished_at=utc(),
         )
+        op.done.set()
 
     def utterance(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         if self.connection != "connected":
@@ -713,9 +764,25 @@ class Core:
             raise BridgeError(
                 "precondition_failed", "Motion requires an awake robot and stiff target joints", 409
             )
-        op = self.new_operation(session, kind, plan.resources)
+        replacing = None
+        if previous_id := body.get("replace_operation_id"):
+            replacing = self.operation(previous_id, session.public["id"])
+            if replacing.public["kind"] not in {"motion.joint_move", "motion.trajectory_run"}:
+                raise BridgeError("invalid_replacement", "Only finite joint motion can be replaced")
+            if replacing.public.get("parent_id"):
+                raise BridgeError("invalid_replacement", "Sequence children cannot be replaced")
+            if (
+                previous_id in self.pending_replacements
+                or previous_id in self.pending_replacements.values()
+            ):
+                raise BridgeError("resource_busy", "A replacement is already pending", 409)
+        op = self.new_operation(session, kind, plan.resources, replacing=replacing)
         payload = {"names": plan.names, "angles": plan.angles, "times": plan.times}
-        op.task = self.spawn(self.run_native(op, payload))
+        op.task = self.spawn(
+            self.run_replacement(op, replacing, payload)
+            if replacing
+            else self.run_native(op, payload)
+        )
         return copy.deepcopy(op.public)
 
     def move_joints(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
@@ -728,10 +795,45 @@ class Core:
                     "keyframes": [
                         {"time": body.get("duration", 1.0), "positions": body["positions"]}
                     ],
-                }
+                },
+                "replace_operation_id": body.get("replace_operation_id"),
             },
             "motion.joint_move",
         )
+
+    async def run_replacement(
+        self, op: Operation, previous: Operation, payload: dict[str, Any]
+    ) -> None:
+        if op.public["status"] != "accepted":
+            return
+        stopped = True
+        try:
+            await self.cancel(previous)
+            if previous.cancel_task is not None:
+                # A late resource-scoped stop must not interrupt the new motion.
+                stopped = await asyncio.wait_for(
+                    asyncio.shield(previous.cancel_task),
+                    self.settings.backend_timeout_seconds + 0.5,
+                )
+            await asyncio.wait_for(
+                previous.done.wait(), self.settings.backend_timeout_seconds + 0.5
+            )
+        except TimeoutError:
+            stopped = False
+        if op.public["status"] != "accepted":
+            return
+        if not stopped or previous.public["status"] not in KNOWN_TERMINAL or not previous.released:
+            self.finish(
+                op,
+                "failed",
+                {"dispatched": False},
+                BridgeError(
+                    "replacement_stop_unconfirmed", "Previous motion has no known end", 409
+                ),
+            )
+            return
+        self.pending_replacements.pop(previous.public["id"], None)
+        await self.run_native(op, payload)
 
     def motion_action(self, session: Session, kind: str, body: dict[str, Any]) -> dict[str, Any]:
         if self.connection != "connected":
@@ -804,7 +906,11 @@ class Core:
         if op.public["status"] != "accepted":
             return
         session = self.sessions[op.public["session_id"]]
-        if session.public["status"] != "active" or session.deadline <= self.clock():
+        if (
+            session.public["status"] != "active"
+            or session.deadline <= self.clock()
+            or self.stop_pending()
+        ):
             self.finish(op, "cancelled", {"dispatched": False})
             return
         agent_instance = self.backend.instance
@@ -870,15 +976,16 @@ class Core:
             self.finish(op, "cancelled", {"dispatched": False})
         elif op.public["status"] != "cancelling":
             self.update(op, status="cancelling")
-            self.spawn(self.cancel_native(op))
+            op.cancel_task = self.spawn(self.cancel_native(op))
         return copy.deepcopy(op.public)
 
-    async def cancel_native(self, op: Operation) -> None:
+    async def cancel_native(self, op: Operation) -> bool:
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 result = await self.backend.stop(operation_id=op.public["id"])
             if op.public["id"] in result["confirmed_ids"]:
                 self.finish(op, "cancelled", {"stop_confirmed": True})
+                return True
             else:
                 self.finish(
                     op,
@@ -891,6 +998,7 @@ class Core:
                 "unknown",
                 error=BridgeError("stop_unconfirmed", "Cancellation response unavailable", 503),
             )
+        return False
 
     def invalidate(self, session: Session, status: str) -> None:
         session.public["status"] = status
@@ -1008,7 +1116,16 @@ class Core:
         else:
             self.finish(op, "succeeded", result)
 
+    def stop_pending(self) -> bool:
+        return self.closing or any(
+            op.public["kind"] == "robot.stop" and op.public["status"] not in TERMINAL
+            for op in self.operations.values()
+        )
+
     async def stop_all(self) -> dict[str, Any]:
+        for op in list(self.operations.values()):
+            if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
+                self.finish(op, "cancelled", {"dispatched": False})
         async with asyncio.timeout(self.settings.backend_timeout_seconds):
             stopped = await self.backend.stop()
         for op in list(self.operations.values()):
