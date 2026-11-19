@@ -284,6 +284,13 @@ class AgentBackend:
             "command", "motion_action", payload, session_id, operation_id, timeout=None
         )
 
+    async def configure_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "autonomy", payload, session_id, operation_id, timeout=None
+        )
+
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]:

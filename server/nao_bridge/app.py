@@ -349,6 +349,19 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.post("/api/autonomy/transitions")
+    async def configure_autonomy(request: Request) -> Response:
+        value = await body(request, "AutonomyTransitionCreate")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /autonomy/transitions",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.configure_autonomy(item, value),
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/operations/{operation_id}")
     async def get_operation(request: Request, operation_id: str) -> dict[str, Any]:
         return copy.deepcopy(

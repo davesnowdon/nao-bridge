@@ -24,6 +24,9 @@ class Backend(Protocol):
     async def motion_action(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def configure_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]: ...
@@ -43,6 +46,7 @@ class FakeBackend:
         self.fence_confirmed = True
         self.posture_reached = True
         self.calls: list[dict[str, Any]] = []
+        self.autonomy_results: dict[str, dict[str, Any]] = {}
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
         self.revoked: set[str] = set()
         self.sink: EventSink | None = None
@@ -79,6 +83,32 @@ class FakeBackend:
             for field, value in [("measured", 0.1), ("commanded", 0.2), ("stiffness", 0.5)]
         }
         self.motion_state = {"awake": True, "posture": "StandInit", "locomotion_active": False}
+        self.autonomy_state: dict[str, bool | str | None] = {
+            "life_state": "solitary",
+            **dict.fromkeys(
+                [
+                    "basic_awareness",
+                    "background_movement",
+                    "listening_movement",
+                    "speaking_movement",
+                    "autonomous_blinking",
+                    "breathing",
+                    "idle_posture",
+                ],
+                True,
+            ),
+            "awareness_running": None,
+        }
+        self.autonomy_catalog = {
+            name: {
+                "type": "string" if name == "life_state" else "boolean",
+                "values": ["disabled", "solitary"] if name == "life_state" else [False, True],
+                "status": "unavailable" if value is None else "available",
+                "reason": "native_control_unavailable" if value is None else None,
+                "mechanism": "fake" if value is not None else None,
+            }
+            for name, value in self.autonomy_state.items()
+        }
 
     async def start(self, sink: EventSink) -> None:
         self.sink = sink
@@ -110,6 +140,7 @@ class FakeBackend:
                     "joints": self.joints,
                     "chains": self.chains,
                     "postures": ["StandInit", "Sit", "Crouch"],
+                    "autonomy": self.autonomy_catalog,
                 },
             )
 
@@ -124,6 +155,14 @@ class FakeBackend:
                             "sensors": {"touch": dict(self.touch), "touch_unavailable": {}},
                             "joints": {key: dict(value) for key, value in self.joint_state.items()},
                             "motion": dict(self.motion_state),
+                            "autonomy": {
+                                "settings": dict(self.autonomy_state),
+                                "unavailable": {
+                                    name: "unsupported"
+                                    for name, value in self.autonomy_state.items()
+                                    if value is None
+                                },
+                            },
                         },
                         "started": now,
                         "finished": now,
@@ -179,6 +218,43 @@ class FakeBackend:
                 self.motion_state["posture"] = payload["name"]
         return result
 
+    async def configure_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._execute(operation_id, session_id, payload, "autonomy")
+        settings = []
+        for name, value in payload["settings"].items():
+            before = self.autonomy_state[name]
+            supported = self.autonomy_catalog[name]["status"] == "available"
+            skipped = not supported or result.get("cancelled")
+            if not skipped:
+                self.autonomy_state[name] = value
+            settings.append(
+                {
+                    "setting": name,
+                    "requested": value,
+                    "before": before,
+                    "observed": self.autonomy_state[name],
+                    "status": "skipped"
+                    if skipped
+                    else "unchanged"
+                    if value == before
+                    else "applied",
+                    "reason": "unsupported"
+                    if not supported
+                    else "transition_stopped"
+                    if skipped
+                    else None,
+                }
+            )
+        result = {
+            **result,
+            "settings": settings,
+            "outcome": "cancelled" if result.get("cancelled") else "succeeded",
+        }
+        self.autonomy_results[operation_id] = result
+        return result
+
     async def _execute(
         self, operation_id: str, session_id: str, payload: dict[str, Any], action: str
     ) -> dict[str, Any]:
@@ -229,9 +305,23 @@ class FakeBackend:
             }
         for key in matched:
             self.active[key][1].set()
+        completed = [
+            key
+            for key in self.autonomy_results
+            if (operation_id is None or key == operation_id)
+            and (
+                session_id is None
+                or any(
+                    call["id"] == key and call["session_id"] == session_id for call in self.calls
+                )
+            )
+        ]
         return {
-            "confirmed_ids": matched or ([operation_id] if operation_id else []),
+            "confirmed_ids": list(
+                set(matched + completed + ([operation_id] if operation_id else []))
+            ),
             "unresolved_ids": [],
+            "results": {key: self.autonomy_results[key] for key in completed},
         }
 
     async def fence(self, session_id: str) -> bool:

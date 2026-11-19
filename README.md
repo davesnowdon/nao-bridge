@@ -8,7 +8,7 @@ events. Both run in one Ubuntu 24.04 container.
 The replacement delivers the increment 1 foundation plus the first increment-2
 features: head/hand/foot state and events, joint/posture discovery, measured and
 commanded joint state, explicit wake/rest and stiffness, posture changes, absolute
-joint moves and timed trajectories. Plain speech,
+joint moves, timed trajectories and explicit autonomy settings. Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
 remain available. Contract 1.1.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered

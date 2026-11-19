@@ -53,6 +53,26 @@ not by themselves establish independently accessible physical buttons. One raw
 right-foot channel remains unverified. These probes do not implement public
 hand/bumper support.
 
+## Autonomy implementation evidence (19 November)
+
+The [2.8 life API](https://doc.aldebaran.com/2-8/naoqi/interaction/autonomouslife-api.html)
+has named ability enable/read-back methods; the
+[2.1 API](https://doc.aldebaran.com/2-1/naoqi/core/autonomouslife-api.html)
+does not list them. Both document stopping focused activities on a transition to
+disabled. Probe methods and values instead of inferring support from robot model.
+Keep life and ability controls separate, and reserve affected actuators during
+transitions. Native state transitions are not evidence that physical pose/stiffness
+remained unchanged.
+
+The older [awareness API](https://doc.aldebaran.com/2-1/naoqi/peopleperception/albasicawareness-api.html)
+reports running state, not the newer ability's enabled preference. The bridge
+therefore exposes the legacy fallback as `awareness_running`. Body breathing and
+idle posture have explicit enable/read-back methods in the
+[2.1 idle-motion API](https://doc.aldebaran.com/2-1/naoqi/motion/idle-api.html).
+The bridge does not expose safety-reflex toggles. Discovery, read-back, partial
+failure and session-fencing behavior are covered by software/native fixtures;
+physical transition effects on both supported firmware generations remain open.
+
 ## FluentNao upstream
 
 Inspected [Don Najd's repository](https://github.com/dnajd/FluentNao) at commit [`55899a65ec8003c367d32387f2b7b12fdab83f3e`](https://github.com/dnajd/FluentNao/tree/55899a65ec8003c367d32387f2b7b12fdab83f3e), dated 8 April 2026. The temporary research clone is not an implementation dependency.

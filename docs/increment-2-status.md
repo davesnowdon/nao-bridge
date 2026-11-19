@@ -14,7 +14,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Timed trajectories, validation, JSON import/export | Implemented; single native submission, sparse timelines and coupled-joint validation | Pending |
 | Owned latest-value setpoints, TTL, cancellation/hold | Pending | Hold must remain unadvertised until verified |
 | Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
-| Explicit autonomy settings for manual capture | Pending | Pending |
+| Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Joint/touch sampling and sampled posture implemented; battery and posture/fall events pending | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | Pending | Pending |
 | Bounded sample recordings and finalized assets/checksums/ranges | Pending | Real acquisition pending |
@@ -66,3 +66,23 @@ replacement cancellation, cleanup/priority stop, connection loss, and a late sto
 response after natural completion. Python sync/async clients expose the predecessor
 ID. The raw-HTTP and native SDK fixture verify replacement while sibling motion
 continues. Replacement is not an interactive setpoint/controlled-hold protocol.
+
+Minimal autonomy provides setting discovery, shared observed state and explicit
+transitions through HTTP and both Python clients. Native before-values and all
+required settings are checked before mutation; per-setting read-back, skipped
+settings, partial failure and guarded rollback are reported. The transition checks
+authority between setters, refuses observed native safeguard-state overrides, and
+retains uncertainty rather than dispatching later settings after an unconfirmed
+write. Persistent configuration ownership is separate from temporary actuator
+reservations. Cleanup leaves settings applied. Named profiles and explicit guarded
+`restore_on_close` remain increment-4 work; true is rejected until implemented.
+Legacy awareness-running state is not represented as a modern ability preference.
+
+Autonomy validation: `make check` passed 165 server/integration and 30 client tests
+plus lint/types; the compatibility guard and production native container suite
+passed. Coverage includes legacy/modern discovery, strict and partial requests,
+observed results, ownership and unchanged cleanup settings, fencing between native
+setters, safeguard races, rollback after external changes, unknown writes, and stop
+responses preserving per-setting outcomes. The native fixture exercises the public
+HTTP transition and shared observations with real SDK calls. Physical effects and
+actual setting availability on NAOqi 2.1/2.8 remain unverified.

@@ -36,6 +36,12 @@ class Capability(WireModel):
     reason: str | None
 
 
+class AutonomySetting(Capability):
+    type: Literal["string", "boolean"]
+    values: list[str | bool]
+    mechanism: str | None
+
+
 class Capabilities(WireModel):
     contract_version: str
     connection_generation: int
@@ -45,6 +51,7 @@ class Capabilities(WireModel):
     state_groups: list[str]
     replay_supported: Literal[False]
     speech: dict[str, Any]
+    autonomy: dict[str, AutonomySetting] = Field(default_factory=dict)
 
 
 class Sensor(WireModel):

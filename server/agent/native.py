@@ -10,6 +10,7 @@ import time
 import qi
 from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture, valid_trajectory, valid_motion_action
 from wire import monotonic
+from autonomy import Autonomy, FixtureAutonomy
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -50,6 +51,7 @@ class NativeDriver(object):
         self.safety_motion = None
         self.posture = None
         self.safety_posture = None
+        self.autonomy = None
         self.sample_windows = {}
         self.sample_errors = {}
         self._connected = threading.Event()
@@ -110,6 +112,8 @@ class NativeDriver(object):
         except Exception:
             self.posture = None
             self.safety_posture = None
+        self.autonomy = Autonomy(self.session, self.call)
+        self.description["autonomy"] = self.autonomy.catalog
         self._connected.set()
         return self.description
 
@@ -142,6 +146,9 @@ class NativeDriver(object):
                 groups[group] = None
                 self.sample_errors[group] = "native_sample_unavailable"
             self.sample_windows[group] = [start, monotonic()]
+        start = monotonic()
+        groups["autonomy"] = self.autonomy.sample()
+        self.sample_windows["autonomy"] = [start, monotonic()]
         return groups
 
     def speak(self, payload):
@@ -310,12 +317,14 @@ class FixtureDriver(NativeDriver):
         self.memory_impl = FixtureMemory()
         self.motion_impl = qi.multiThreaded()(FixtureMotion)()
         self.posture_impl = qi.multiThreaded()(FixturePosture)(self.motion_impl)
+        self.autonomy_impl = qi.multiThreaded()(FixtureAutonomy)()
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
         self.server.registerService("ALMemory", self.memory_impl)
         self.server.registerService("ALMotion", self.motion_impl)
         self.server.registerService("ALRobotPosture", self.posture_impl)
+        self.server.registerService("ALAutonomousLife", self.autonomy_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe)
         self.last_touch = time.time()
 

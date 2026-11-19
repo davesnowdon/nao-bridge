@@ -21,6 +21,7 @@ def agent_module(monkeypatch):
     sys.modules.pop("native", None)
     sys.modules.pop("wire", None)
     sys.modules.pop("motion", None)
+    sys.modules.pop("autonomy", None)
 
 
 class DrainQueue:
@@ -50,6 +51,85 @@ def bare_agent(module):
         stop=lambda: pytest.fail("Queued-only scoped stop invoked unrelated native output"),
     )
     return agent
+
+
+def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
+    import autonomy
+
+    agent = bare_agent(agent_module)
+    values = {"life_state": "solitary", "basic_awareness": True}
+    writes = []
+
+    class Life:
+        def getState(self):
+            return values["life_state"]
+
+        def getAutonomousAbilityEnabled(self, name):
+            if name != "BasicAwareness":
+                raise ValueError("absent")
+            return values["basic_awareness"]
+
+        def setState(self, value, **kwargs):
+            def complete(timeout):
+                values["life_state"] = value
+                writes.append("life_state")
+                agent.revoked["session"] = agent_module.monotonic()
+
+            return types.SimpleNamespace(value=complete)
+
+        def setAutonomousAbilityEnabled(self, *args, **kwargs):
+            pytest.fail("Fenced transition dispatched a later setter")
+
+    life = Life()
+    services = {"ALAutonomousLife": life}
+    session = types.SimpleNamespace(
+        service=lambda name, **kwargs: types.SimpleNamespace(value=lambda timeout: services[name])
+    )
+    control = autonomy.Autonomy(
+        session, lambda service, method, *args: getattr(service, method)(*args)
+    )
+    agent.driver.autonomy = control
+    request = {
+        "id": "operation",
+        "session_id": "session",
+        "api": "api",
+        "agent": "agent",
+        "epoch": 1,
+        "deadline": agent_module.monotonic() + 1,
+        "action": "autonomy",
+        "payload": {
+            "settings": {"life_state": "disabled", "basic_awareness": False},
+            "allow_partial": False,
+        },
+    }
+    record = {
+        "phase": "queued",
+        "action": "autonomy",
+        "session_id": "session",
+        "status": "accepted",
+    }
+    agent.records["operation"] = record
+    replies = queue.Queue()
+    agent.run_autonomy(request, record, replies)
+    assert writes == ["life_state"] and values["basic_awareness"] is True
+    assert record["result"]["outcome"] == "cancelled"
+    assert [item["status"] for item in record["result"]["settings"]] == ["applied", "skipped"]
+
+
+def test_stop_does_not_confuse_finished_autonomy_setter_with_finished_transition(agent_module):
+    agent = bare_agent(agent_module)
+    agent.records["operation"] = {
+        "session_id": "session",
+        "action": "autonomy",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "future": types.SimpleNamespace(value=lambda timeout: None),
+    }
+    request = {"session_id": "session", "payload": {"operation_id": "operation"}}
+    assert agent.stop(request)["unresolved_ids"] == ["operation"]
+    outcome = {"outcome": "cancelled", "settings": [{"setting": "life_state", "status": "applied"}]}
+    agent.records["operation"].update(status="completed", result=outcome)
+    assert agent.stop(request)["results"]["operation"] == outcome
 
 
 def test_stop_before_dispatch_confirms_cancellation_and_prevents_later_dispatch(agent_module):

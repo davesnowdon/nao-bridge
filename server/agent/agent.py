@@ -17,6 +17,7 @@ except ImportError:
 
 from native import FixtureDriver, NativeDriver
 from motion import valid_trajectory, valid_motion_action
+from autonomy import valid_autonomy, TransitionStopped
 from wire import VERSION, encode, frames, monotonic
 
 
@@ -73,7 +74,7 @@ class Agent(object):
             if expired:
                 self.lose_authority("heartbeat_lost")
 
-    def valid(self, request):
+    def valid(self, request, initial=True):
         if request.get("agent") != self.instance or request.get("api") != self.api or request.get("epoch") != self.epoch:
             return "stale_generation"
         if not self.heartbeat:
@@ -81,9 +82,9 @@ class Agent(object):
         deadline = request.get("deadline")
         if isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or math.isnan(deadline) or math.isinf(deadline):
             return "invalid_deadline"
-        if not monotonic() < deadline <= monotonic() + 1.5:
+        if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action") and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy") and request.get("session_id") in self.revoked:
             return "fenced_session"
         return None
 
@@ -121,6 +122,9 @@ class Agent(object):
             self.reply(replies, request, "accepted")
             future = None
             try:
+                if request["action"] == "autonomy":
+                    self.run_autonomy(request, record, replies)
+                    continue
                 if request["action"] == "trajectory":
                     self.driver.prepare_trajectory(request["payload"])
                 elif request["action"] == "motion_action":
@@ -162,6 +166,27 @@ class Agent(object):
                     record.update(status="unknown", finished=monotonic())
                     self.reply(replies, request, "unknown", message="Native completion unconfirmed")
 
+    def run_autonomy(self, request, record, replies):
+        before = self.driver.autonomy.prepare(request["payload"])
+
+        def dispatch(service, method, args):
+            with self.lock:
+                if record.get("stop_requested") or self.valid(request, initial=record["phase"] == "queued"):
+                    raise TransitionStopped()
+                record["phase"] = "dispatch_started"
+                future = getattr(service, method)(*args, **{"_async": True})
+                record["future"] = future
+            future.value(1000)
+
+        result = self.driver.autonomy.transition(request["payload"], before, dispatch)
+        with self.lock:
+            if record.get("stop_requested") and result["outcome"] != "unknown":
+                result["outcome"] = "cancelled"
+            result["dispatched"] = record["phase"] != "queued"
+            record.update(status="unknown" if result["outcome"] == "unknown" else "completed",
+                          result=result, finished=monotonic())
+        self.reply(replies, request, result=result)
+
     def stop(self, request):
         with self.lock:
             payload = request.get("payload", {}) if request else {}
@@ -189,6 +214,10 @@ class Agent(object):
         confirmed, unresolved = [], []
         deadline = monotonic() + 0.2
         for key, record in selected:
+            if record.get("action") == "autonomy" and record["phase"] != "queued":
+                # A completed individual setter does not finish a multi-setting transition.
+                (confirmed if record["status"] == "completed" else unresolved).append(key)
+                continue
             if record["phase"] == "queued":
                 confirmed.append(key)
                 continue
@@ -208,7 +237,12 @@ class Agent(object):
                 unresolved.append(key)
         if oid and oid in self.records and self.records[oid]["status"] == "completed" and oid not in confirmed:
             confirmed.append(oid)
-        return {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
+        result = {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
+        outcomes = dict((key, self.records[key]["result"]) for key in confirmed
+                        if self.records[key].get("action") == "autonomy" and "result" in self.records[key])
+        if outcomes:
+            result["results"] = outcomes
+        return result
 
     def safety_worker(self):
         while True:
@@ -338,12 +372,12 @@ class Agent(object):
                                 self.priority.put_nowait((request, replies))
                             except queue.Full:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
-                        elif lane == "command" and action in ("speak", "trajectory", "motion_action"):
+                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy"):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not (self.validate_speech(request) if action == "speak" else (valid_trajectory if action == "trajectory" else valid_motion_action)(request.get("payload")) and bool(request.get("session_id"))):
+                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy}[action](request.get("payload")) and bool(request.get("session_id"))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")

@@ -192,6 +192,24 @@ def run(url):
             headers={"Idempotency-Key": "speech"},
         )
         assert probe.wait(operation)["status"] == "succeeded"
+        autonomy = probe.request(
+            "POST",
+            "/api/autonomy/transitions",
+            {"settings": {"life_state": "disabled", "basic_awareness": False, "breathing": False}},
+            status=202,
+            schema="Operation",
+        )
+        autonomy_result = probe.wait(autonomy)
+        assert autonomy_result["status"] == "succeeded", autonomy_result
+        assert all(
+            item["status"] in {"applied", "unchanged"}
+            for item in autonomy_result["result"]["settings"]
+        )
+        state = probe.request(
+            "GET", "/api/state?include=autonomy&wait_for_fresh_ms=1000", schema="State"
+        )
+        probe.validate("AutonomyStateValue", state["groups"]["autonomy"]["value"])
+        assert state["groups"]["autonomy"]["value"]["settings"]["life_state"] == "disabled"
         previous = probe.request(
             "POST",
             "/api/motion/joint_moves",

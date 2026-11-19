@@ -121,6 +121,8 @@ class FixtureMotion(object):
         self.stiffness = dict((name, 0.5) for name in self.names)
         self.awake = True
         self.posture = "StandInit"
+        self.breathing = True
+        self.idle = True
 
     def getBodyNames(self, group):
         return self.names if group == "Body" else sorted(self.chains) if group == "Chains" else self.chains[group]
@@ -193,6 +195,18 @@ class FixtureMotion(object):
 
     def moveIsActive(self):
         return False
+
+    def getBreathEnabled(self, chain):
+        return self.breathing
+
+    def setBreathEnabled(self, chain, enabled):
+        self.breathing = enabled
+
+    def getIdlePostureEnabled(self, chain):
+        return self.idle
+
+    def setIdlePostureEnabled(self, chain, enabled):
+        self.idle = enabled
 
 
 class FixturePosture(object):

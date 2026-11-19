@@ -106,6 +106,7 @@ class AsyncNao:
         self.robot = AsyncRobot(self)
         self.sensors = AsyncSensors(self)
         self.motion = AsyncMotion(self)
+        self.autonomy = AsyncAutonomy(self)
         self.speech = AsyncSpeech(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
@@ -672,6 +673,45 @@ class AsyncSensors:
             wait_for_fresh_ms=wait_for_fresh_ms,
             require_fresh=require_fresh,
         )
+
+
+class AsyncAutonomy:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return await self._nao.robot.state(
+            include=["autonomy"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+
+    async def configure(
+        self,
+        settings: dict[str, bool | str],
+        *,
+        allow_partial: bool = False,
+        restore_on_close: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST",
+            "/api/autonomy/transitions",
+            body={
+                "settings": settings,
+                "allow_partial": allow_partial,
+                "restore_on_close": restore_on_close,
+            },
+            key=idempotency_key or uuid.uuid4().hex,
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, data))
+        return await op.wait(timeout=timeout) if wait else op
 
 
 class AsyncSpeech:

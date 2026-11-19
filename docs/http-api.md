@@ -9,7 +9,8 @@ HTTP/SSE endpoints without bridge configuration.
 
 The current surface includes increment 1, contact sensors, joint/posture discovery,
 shared motion state, finite joint/trajectory commands, stiffness, wake/rest and
-posture commands. Interactive controls, media and sequences remain in progress.
+posture commands, and explicit autonomy settings. Interactive controls, media and
+sequences remain in progress.
 The Python client is optional.
 
 Set `BRIDGE=http://127.0.0.1:3000` in your shell.
@@ -162,6 +163,62 @@ add `wait=False` to receive its handle immediately. The handle's
 `data.replaces_operation_id` identifies its predecessor. Interactive setpoints are
 a separate planned feature; repeated finite replacements do not provide that
 protocol's expiry or hold behavior.
+
+## Explicit autonomy settings
+
+`GET /robot/capabilities` includes an `autonomy` map. Each named setting declares
+its type, allowed values, availability/reason and native mechanism. Observed values
+come from `GET /state?include=autonomy`, in `groups.autonomy.value.settings`.
+Unavailable readings are null with reasons in `unavailable`; an enabled ability
+does not necessarily mean it is currently running. Autonomy samples also work in
+SSE sampling subscriptions and use the shared producer.
+
+`POST /autonomy/transitions` accepts, for example:
+
+```json
+{"settings":{"life_state":"disabled","basic_awareness":false,"breathing":false}}
+```
+
+The allowed life targets are `disabled` and `solitary`; observed states also include
+`interactive` and `safeguard`. A native safeguard state cannot be overridden.
+Discovered ability settings are `basic_awareness`, `background_movement`,
+`listening_movement`, `speaking_movement` and `autonomous_blinking`. `breathing` and
+`idle_posture` control Body animations. On older firmware without ability controls,
+`awareness_running` starts/stops the awareness service; it is deliberately distinct
+from an ability's enabled preference. Select available settings from discovery;
+unsupported settings never count as successfully applied.
+
+All requested settings are validated and their before-values read before mutation.
+By default an unavailable setting rejects the request. Explicit `allow_partial:true`
+permits supported settings to proceed and reports unsupported settings as skipped;
+at least one requested setting must be available. The returned Operation reports
+each setting's requested, before and observed values, status and reason. Life state
+is applied first, followed by the other settings in name order. `result.state_refreshed`
+reports whether a subsequent shared autonomy sample arrived.
+
+Transitions temporarily reserve all discovered joints, locomotion and speech output,
+as well as autonomy configuration. Completed settings keep autonomy configuration
+owned by the session. Other commands can then use released actuator resources;
+another session cannot change autonomy until ownership ends. Native external
+activities are outside bridge ownership. Life transitions can stop those activities
+or enable new behavior; this is not a promise that a life toggle leaves physical
+pose or stiffness unchanged. The bridge itself adds no wake, rest or posture call
+and exposes no controls for disabling fall/collision/thermal safeguards.
+
+A read-back mismatch fails the operation. The adapter attempts rollback only for
+known applied settings whose current values still match its request and while it
+still has authority. External changes, un-restorable life states, or an unknown
+native write prevent blind restoration. Per-setting rollback results are reported;
+unknown outcomes retain resource quarantine. This is not an atomic transaction.
+Cancellation prevents later setters, but cannot undo a setting already applied or
+guarantee interruption of a native life transition.
+
+Session close releases confirmed ownership and leaves the settings in place.
+`restore_on_close` defaults to false; true currently returns `unsupported`.
+Guarded automatic restoration and named profiles belong to increment 4.
+Python provides `nao.autonomy.state(...)` and
+`nao.autonomy.configure({"life_state":"disabled","basic_awareness":False})`, with
+matching sync/async methods and the usual `wait`, timeout and operation handles.
 
 ## Speech
 

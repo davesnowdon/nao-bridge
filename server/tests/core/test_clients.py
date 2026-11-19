@@ -81,6 +81,45 @@ async def test_sync_replacement_helpers_forward_explicit_predecessor(socket_rig)
         await asyncio.to_thread(work)
 
 
+async def test_async_autonomy_capabilities_observed_state_and_configuration(socket_rig):
+    async with socket_rig() as (url, core, backend):
+        async with AsyncNao(url) as nao:
+            capabilities = await nao.robot.capabilities()
+            assert capabilities.autonomy["basic_awareness"].status == "available"
+            assert capabilities.autonomy["basic_awareness"].type == "boolean"
+            assert (await nao.autonomy.state(require_fresh=True)).groups[
+                "autonomy"
+            ].quality == "fresh"
+            assert nao.session_id is None
+            op = await nao.autonomy.configure({"life_state": "disabled", "basic_awareness": False})
+            assert op.status == "succeeded"
+            state = await nao.autonomy.state(require_fresh=True)
+            assert state.groups["autonomy"].value["settings"]["life_state"] == "disabled"
+        assert backend.autonomy_state["life_state"] == "disabled"
+        assert not core.configuration_owners
+
+
+async def test_sync_autonomy_partial_configuration_reports_skipped_settings(socket_rig):
+    async with socket_rig() as (url, core, backend):
+
+        def work():
+            with Nao(url) as nao:
+                op = nao.autonomy.configure(
+                    {"breathing": False, "awareness_running": False}, allow_partial=True
+                )
+                assert op.status == "succeeded"
+                statuses = {item["setting"]: item["status"] for item in op.data.result["settings"]}
+                assert statuses == {"breathing": "applied", "awareness_running": "skipped"}
+                assert (
+                    nao.autonomy.state(require_fresh=True)
+                    .groups["autonomy"]
+                    .value["settings"]["breathing"]
+                    is False
+                )
+
+        await asyncio.to_thread(work)
+
+
 async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
     async with socket_rig(lease_seconds=0.3) as (url, core, backend):
 

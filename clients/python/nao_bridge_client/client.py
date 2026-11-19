@@ -33,6 +33,7 @@ class Nao:
         self.robot = Robot(self)
         self.sensors = Sensors(self)
         self.motion = Motion(self)
+        self.autonomy = Autonomy(self)
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
@@ -335,6 +336,46 @@ class Sensors:
                 wait_for_fresh_ms=wait_for_fresh_ms,
                 require_fresh=require_fresh,
             )
+        )
+
+
+class Autonomy:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return self._nao._run(
+            self._nao._async.autonomy.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
+
+    def configure(
+        self,
+        settings: dict[str, bool | str],
+        *,
+        allow_partial: bool = False,
+        restore_on_close: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.autonomy.configure(
+                    settings,
+                    allow_partial=allow_partial,
+                    restore_on_close=restore_on_close,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
         )
 
 

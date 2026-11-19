@@ -442,6 +442,12 @@
         "speech": {
           "type": "object",
           "additionalProperties": true
+        },
+        "autonomy": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/AutonomySetting"
+          }
         }
       },
       "required": [
@@ -1788,6 +1794,139 @@
         "name"
       ],
       "additionalProperties": false
+    },
+    "AutonomySettings": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "life_state": {
+          "type": "string",
+          "enum": [
+            "disabled",
+            "solitary"
+          ]
+        },
+        "basic_awareness": {
+          "type": "boolean"
+        },
+        "background_movement": {
+          "type": "boolean"
+        },
+        "listening_movement": {
+          "type": "boolean"
+        },
+        "speaking_movement": {
+          "type": "boolean"
+        },
+        "autonomous_blinking": {
+          "type": "boolean"
+        },
+        "breathing": {
+          "type": "boolean"
+        },
+        "idle_posture": {
+          "type": "boolean"
+        },
+        "awareness_running": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AutonomyTransitionCreate": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/AutonomySettings"
+        },
+        "allow_partial": {
+          "type": "boolean",
+          "default": false
+        },
+        "restore_on_close": {
+          "type": "boolean",
+          "default": false,
+          "description": "True is currently unsupported; settings remain applied on session close."
+        }
+      },
+      "required": [
+        "settings"
+      ],
+      "additionalProperties": false
+    },
+    "AutonomySetting": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "boolean"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "boolean"
+            ]
+          }
+        },
+        "status": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mechanism": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "values",
+        "status",
+        "reason",
+        "mechanism"
+      ],
+      "additionalProperties": true
+    },
+    "AutonomyStateValue": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "string",
+              "null"
+            ]
+          }
+        },
+        "unavailable": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "settings",
+        "unavailable"
+      ],
+      "additionalProperties": true
     }
   }
 }

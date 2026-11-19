@@ -22,7 +22,12 @@ KNOWN_TERMINAL = TERMINAL - {"unknown"}
 RECOVERY_KINDS = {"session.close", "session.revoke", "robot.stop"}
 CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
 MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change"}
-NATIVE_KINDS = {"speech.utterance", "motion.joint_move", "motion.trajectory_run"} | MOTION_ACTIONS
+NATIVE_KINDS = {
+    "speech.utterance",
+    "motion.joint_move",
+    "motion.trajectory_run",
+    "autonomy.transition",
+} | MOTION_ACTIONS
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -298,6 +303,13 @@ class Core:
                 ),
                 "motion.wake_rest": feature(available and bool(self.info.get("joints"))),
                 "motion.posture_changes": feature(available and bool(self.info.get("postures"))),
+                "autonomy.transitions": feature(
+                    available
+                    and any(
+                        item["status"] == "available"
+                        for item in self.info.get("autonomy", {}).values()
+                    )
+                ),
                 "recordings": feature(False, False),
                 "sequences": feature(False, False),
             },
@@ -322,7 +334,8 @@ class Core:
             }
             | {"session_lease_seconds": self.settings.lease_seconds, "max_native_operations": 4},
             "event_types": list(EVENT_TYPES),
-            "state_groups": ["sensors", "joints", "motion"],
+            "state_groups": ["sensors", "joints", "motion", "autonomy"],
+            "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
             "replay_supported": False,
             "speech": self.info.get("speech", {}),
         }
@@ -679,10 +692,18 @@ class Core:
         predecessor = op.public.get("replaces_operation_id")
         if predecessor and self.pending_replacements.get(predecessor) == op.public["id"]:
             del self.pending_replacements[predecessor]
+        configured = (
+            op.public["kind"] == "autonomy.transition"
+            and bool(result)
+            and any(
+                item["status"] in {"applied", "unchanged", "failed"}
+                for item in (result or {}).get("settings", [])
+            )
+        )
         if (
-            status in {"succeeded", "cancelled"}
+            (status in {"succeeded", "cancelled"} or status == "failed" and configured)
             and op.public["started_at"] is not None
-            and (result or {}).get("dispatched") is not False
+            and ((result or {}).get("dispatched") is not False or configured)
             and (owner := self.sessions.get(op.public["session_id"])) is not None
             and owner.public["status"] == "active"
         ):
@@ -882,7 +903,42 @@ class Core:
         op.task = self.spawn(self.run_native(op, payload))
         return copy.deepcopy(op.public)
 
-    async def refresh_motion_after(self, completed: float) -> bool:
+    def configure_autonomy(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        if body.get("restore_on_close", False):
+            raise BridgeError("unsupported", "Autonomy restoration is not implemented yet", 422)
+        catalog = self.info.get("autonomy", {})
+        supported = {name for name, item in catalog.items() if item["status"] == "available"}
+        requested = set(body["settings"])
+        if (
+            requested - supported and not body.get("allow_partial", False)
+        ) or not requested & supported:
+            raise BridgeError(
+                "unsupported",
+                "Requested autonomy settings are unavailable",
+                422,
+                {"settings": sorted(requested - supported)},
+            )
+        resources = [
+            "autonomy.configuration",
+            "locomotion",
+            "speech.output",
+            *["joint." + joint["name"] for joint in self.info.get("joints", [])],
+        ]
+        op = self.new_operation(session, "autonomy.transition", resources)
+        op.retained_resources = ["autonomy.configuration"]
+        op.task = self.spawn(
+            self.run_native(
+                op,
+                {"settings": body["settings"], "allow_partial": body.get("allow_partial", False)},
+            )
+        )
+        return copy.deepcopy(op.public)
+
+    async def refresh_motion_after(
+        self, completed: float, groups: tuple[str, ...] = ("joints", "motion")
+    ) -> bool:
         deadline = asyncio.get_running_loop().time() + min(
             1.0, self.settings.max_state_wait_ms / 1000
         )
@@ -891,7 +947,7 @@ class Core:
             if all(
                 self.samples.get(group, {}).get("started", -1) >= completed
                 and self.samples[group]["value"] is not None
-                for group in ("joints", "motion")
+                for group in groups
             ):
                 return True
             remaining = deadline - asyncio.get_running_loop().time()
@@ -920,6 +976,8 @@ class Core:
             dispatch = (
                 self.backend.speak
                 if op.public["kind"] == "speech.utterance"
+                else self.backend.configure_autonomy
+                if op.public["kind"] == "autonomy.transition"
                 else self.backend.motion_action
                 if op.public["kind"] in MOTION_ACTIONS
                 else self.backend.trajectory
@@ -927,7 +985,28 @@ class Core:
             result = await dispatch(op.public["id"], op.public["session_id"], payload)
             if op.public["kind"] in MOTION_ACTIONS:
                 result["state_refreshed"] = await self.refresh_motion_after(self.clock())
+            if op.public["kind"] == "autonomy.transition":
+                result["state_refreshed"] = await self.refresh_motion_after(
+                    self.clock(), ("autonomy",)
+                )
             if generation != self.generation or agent_instance != self.backend.instance:
+                return
+            if op.public["kind"] == "autonomy.transition":
+                outcome = result["outcome"]
+                if outcome not in TERMINAL:
+                    raise BackendUnknown("Invalid autonomy outcome")
+                self.finish(
+                    op,
+                    outcome,
+                    result,
+                    BridgeError(
+                        "autonomy_transition_" + outcome,
+                        "Autonomy settings did not all reach their targets",
+                        503,
+                    )
+                    if outcome in {"failed", "unknown"}
+                    else None,
+                )
                 return
             if result.get("reached") is False and not result.get("cancelled"):
                 self.finish(
@@ -984,7 +1063,7 @@ class Core:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 result = await self.backend.stop(operation_id=op.public["id"])
             if op.public["id"] in result["confirmed_ids"]:
-                self.finish(op, "cancelled", {"stop_confirmed": True})
+                self.finish_stopped(op, result)
                 return True
             else:
                 self.finish(
@@ -999,6 +1078,25 @@ class Core:
                 error=BridgeError("stop_unconfirmed", "Cancellation response unavailable", 503),
             )
         return False
+
+    def finish_stopped(self, op: Operation, stopped: dict[str, Any]) -> None:
+        result = stopped.get("results", {}).get(op.public["id"])
+        if op.public["kind"] == "autonomy.transition" and isinstance(result, dict):
+            outcome = result.get("outcome", "unknown")
+            self.finish(
+                op,
+                outcome if outcome in TERMINAL else "unknown",
+                result,
+                BridgeError(
+                    "autonomy_transition_" + str(outcome),
+                    "Autonomy transition did not fully succeed",
+                    503,
+                )
+                if outcome in {"failed", "unknown"}
+                else None,
+            )
+        else:
+            self.finish(op, "cancelled", {"stop_confirmed": True})
 
     def invalidate(self, session: Session, status: str) -> None:
         session.public["status"] = status
@@ -1039,7 +1137,7 @@ class Core:
             if op.released or op.public["kind"] in ("session.close", "session.revoke"):
                 continue
             if op.public["id"] in stopped["confirmed_ids"]:
-                self.finish(op, "cancelled", {"stop_confirmed": True})
+                self.finish_stopped(op, stopped)
             else:
                 unresolved.append(op.public["id"])
                 self.finish(
@@ -1132,7 +1230,7 @@ class Core:
             if op.public["kind"] not in NATIVE_KINDS or op.released:
                 continue
             if op.public["status"] == "accepted" or op.public["id"] in stopped["confirmed_ids"]:
-                self.finish(op, "cancelled", {"stop_confirmed": True})
+                self.finish_stopped(op, stopped)
             else:
                 self.finish(
                     op,
@@ -1180,7 +1278,7 @@ class Core:
             raise BridgeError("unsupported", "Unknown or unavailable event type", 422)
         samples = []
         for request in body.get("samples", []):
-            if set(request["groups"]) - {"sensors", "joints", "motion"}:
+            if set(request["groups"]) - {"sensors", "joints", "motion", "autonomy"}:
                 raise BridgeError("unsupported", "Sample group not implemented", 422)
             rate = request["rate_hz"]
             if rate > self.settings.sample_rate_hz and not body.get("allow_lower_rate", False):
