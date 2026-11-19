@@ -5,14 +5,16 @@ modern synchronous/asynchronous Python clients. A thin Python 2 process loads th
 NAOqi SDK; a separate modern Python process handles HTTP, sessions, operations and
 events. Both run in one Ubuntu 24.04 container.
 
-The replacement currently delivers the increment 1 software foundation: discovery,
-head touch state/events, plain speech, leased sessions, operation cancellation,
-priority stop, resource conflicts and recovery. Contract 1.0.0 and package 0.2.0
-replace the old API without compatibility adapters. Motion, recordings and sequences
-remain planned in [increments 2–4](docs/delivery-plan.md).
+The replacement delivers the increment 1 foundation plus the first increment-2
+features: head/hand/foot state and events, joint/posture discovery, measured and
+commanded joint state, absolute joint moves and timed trajectories. Plain speech,
+leased sessions, cancellation, priority stop, resource conflicts and recovery
+remain available. Contract 1.1.0 replaces the old API without compatibility
+adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
+software from the remaining Recorder, recording and control work.
 
 Robot-free tests cover real SDK loopback services and injected process failures.
-Physical robot behavior and Apple Silicon remain unverified; see the
+Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the
 [delivery evidence and limitations](docs/implementation-status.md).
 
 ## Run without a robot
@@ -25,7 +27,7 @@ uv run --project server nao-bridge --backend fake
 ```
 
 The fake backend serves the API on `127.0.0.1:3000`. It simulates speech and sampled
-head touch state. Tests inject touch edges; the standalone fake backend does not
+contact and joint state and finite joint commands. Tests inject touch edges; the standalone fake backend does not
 invent user touches. Browse `http://127.0.0.1:3000/` for interactive Swagger UI.
 
 ```bash
@@ -59,7 +61,7 @@ submitted robot work may still be running; restarting the bridge does not
 establish its outcome. No data volume is needed for the current implementation.
 
 To exercise the actual SDK without a robot, use `--backend native-fixture`. This
-registers local fixture services and produces synthetic head touches through the
+registers local fixture services and produces synthetic head/hand/foot contacts through the
 real SDK callback path. It is explicitly identified as a fixture in discovery.
 
 ## Explore the API in a browser

@@ -7,9 +7,10 @@ See the [browser walkthrough](../README.md#explore-the-api-in-a-browser) for ses
 and command execution. Browser applications on other origins can use the same
 HTTP/SSE endpoints without bridge configuration.
 
-The current surface includes increment 1, contact sensors, and read-only joint and
-posture discovery/state. Motion commands, media and sequence routes in the broader
-API plan are not implemented. The Python client is optional.
+The current surface includes increment 1, contact sensors, joint/posture discovery,
+shared motion state, and finite joint/trajectory commands. Stiffness, wake/rest,
+posture commands, interactive controls, media and sequences remain in progress.
+The Python client is optional.
 
 Set `BRIDGE=http://127.0.0.1:3000` in your shell.
 Examples use `jq` to retain opaque IDs; no Python code is involved.
@@ -52,7 +53,8 @@ is not an atomic robot snapshot. A freshness wait shares the sampler.
 read/write support) and a `chains` map. Hands use ratios; other joints use radians.
 The hip-yaw-pitch aliases report their shared motor. Discovery bounds are not a
 complete collision envelope: head/ankle restrictions also depend on other joint
-positions, and native safeguards must remain enabled. Commands are not yet enabled.
+positions, and native safeguards remain enabled. Finite joint/trajectory commands
+are implemented; physical motion and stop behavior still need robot acceptance.
 `GET /motion/postures` lists native posture names and discovery availability.
 
 `GET /state?include=joints,motion` returns `groups.joints.value.measured`,
@@ -65,6 +67,39 @@ in sampling subscriptions. All readers share the same producer. Freshness counts
 from the start of each group's acquisition, not the arrival of its final response;
 the snapshot acquisition window exposes skew across groups. The 10 Hz limit is a
 requested bridge cadence, not a hardware-verified source rate.
+
+## Absolute joint moves and trajectories
+
+With an active session, `POST /motion/joint_moves` accepts
+`{"positions":{"HeadYaw":0},"duration":1}`. Duration defaults to one second;
+omitted joints receive no target. The robot must already be awake and the selected
+joints stiff, with fresh state; otherwise admission returns `precondition_failed`.
+No command in this surface implicitly wakes the robot or changes stiffness.
+
+`POST /motion/trajectory_runs` accepts `{"trajectory":{...}}`, using the named
+`Trajectory` schema. Keyframes have positive, strictly increasing times in seconds,
+absolute `positions`, and optional names. The limits are 1,000 keyframes, 32 joints
+per frame, 600 seconds total, and the advertised request-byte bound. Each joint has
+its own timeline: omitted intermediate points are not filled in; after its last
+point it holds its target until the end. The adapter submits one native
+`angleInterpolation` call. It does not promise a particular interpolation curve or
+physical timing under native constraints. Coupled aliases must have identical
+timelines if both are present; both names reserve the same motor.
+
+Four ordinary native operations can be active at once, including unknown outcomes
+that still own resources. Admission rejects excess work instead of accumulating
+stale commands. Disjoint motion and speech can run concurrently. Targeted cancel,
+session cleanup, and priority stop attempt native interruption; uncertainty retains
+quarantine. None of these paths removes stiffness. This is not a verified
+controlled-hold implementation; interactive setpoints remain unavailable.
+
+Python supplies `motion.move_joints(...)`, `.head(yaw=..., pitch=...)`,
+`.hand("left", openness=...)`, and `.play(trajectory)`. Head angles are radians and
+hand openness is a 0–1 ratio; zero stays zero and an omitted head axis stays omitted.
+Finite calls default to waiting, with the same `wait=False`, operation handles and
+typed terminal outcomes as speech. Use `Trajectory.from_json(text)` / `.to_json()`
+for portable file validation and round-tripping; runtime joint constraints are
+validated by the server. See [the example trajectory](../contracts/fixtures/trajectory.json).
 
 Speech capabilities expose the discovered supported language/default voice. Native
 non-default voice selection and Japanese per-utterance controls are unavailable in

@@ -199,6 +199,53 @@ try:
     assert probe.wait(cleanup)["status"] == "succeeded"
     probe.session = None
     print("20 native subscribe/attach/delete cycles: no retained streams/subscriptions", flush=True)
+    probe.session = probe.request("POST", "/api/sessions", {"name": "native-motion"}, status=201)[
+        "id"
+    ]
+    first_motion = probe.request(
+        "POST",
+        "/api/motion/joint_moves",
+        {
+            "positions": {"HeadYaw": 0.1},
+            "duration": 10,
+        },
+        status=202,
+    )
+    second_motion = probe.request(
+        "POST",
+        "/api/motion/joint_moves",
+        {
+            "positions": {"LHand": 0.5},
+            "duration": 10,
+        },
+        status=202,
+    )
+    start = time.monotonic()
+    spoken = probe.request(
+        "POST", "/api/speech/utterances", {"text": "speech alongside motion"}, status=202
+    )
+    assert probe.wait(spoken)["status"] == "succeeded"
+    assert time.monotonic() - start < 1
+    assert (
+        probe.request("GET", "/api/state?include=joints&wait_for_fresh_ms=1000")["groups"][
+            "joints"
+        ]["quality"]
+        == "fresh"
+    )
+    probe.request("POST", "/api/operations/" + first_motion["id"] + "/cancel", {}, status=202)
+    assert probe.wait(first_motion)["status"] == "cancelled"
+    assert probe.request("GET", "/api/operations/" + second_motion["id"])["status"] == "running"
+    stopped = probe.request("POST", "/api/robot/stop", {}, status=202)
+    assert probe.wait(stopped)["status"] == "succeeded"
+    assert probe.wait(second_motion)["status"] == "cancelled"
+    state = probe.request("GET", "/api/state?include=joints&wait_for_fresh_ms=1000")
+    assert state["groups"]["joints"]["value"]["stiffness"]["HeadYaw"] == 0.5
+    cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
+    assert probe.wait(cleanup)["status"] == "succeeded"
+    print(
+        "Native trajectories: concurrent speech/state, scoped cancel and priority stop passed",
+        flush=True,
+    )
     probe.session = probe.request("POST", "/api/sessions", {"name": "native-cancel"}, status=201)[
         "id"
     ]

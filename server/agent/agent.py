@@ -16,6 +16,7 @@ except ImportError:
     import queue
 
 from native import FixtureDriver, NativeDriver
+from motion import valid_trajectory
 from wire import VERSION, encode, frames, monotonic
 
 
@@ -82,7 +83,7 @@ class Agent(object):
             return "invalid_deadline"
         if not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") == "speak" and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory") and request.get("session_id") in self.revoked:
             return "fenced_session"
         return None
 
@@ -117,13 +118,24 @@ class Agent(object):
                     self.records[rid].update(status="rejected", finished=monotonic())
                     self.reply(replies, request, "rejected", code="session_invalid", message=problem)
                     continue
-                record = self.records[rid]
-                record["phase"] = "dispatch_started"
             self.reply(replies, request, "accepted")
             future = None
             try:
-                future = self.driver.speak(request["payload"])
+                if request["action"] == "trajectory":
+                    self.driver.prepare_trajectory(request["payload"])
                 with self.lock:
+                    if record.get("stop_requested"):
+                        result = {"cancelled": True, "dispatched": False}
+                        record.update(status="completed", result=result, finished=monotonic())
+                        self.reply(replies, request, result=result)
+                        continue
+                    problem = self.valid(request)
+                    if problem:
+                        record.update(status="rejected", finished=monotonic())
+                        self.reply(replies, request, "rejected", code="session_invalid", message=problem)
+                        continue
+                    record["phase"] = "dispatch_started"
+                    future = self.driver.trajectory(request["payload"]) if request["action"] == "trajectory" else self.driver.speak(request["payload"])
                     record["future"] = future
                 future.value()
                 with self.lock:
@@ -139,10 +151,10 @@ class Agent(object):
                     self.reply(replies, request, result=result)
                 elif future is None and isinstance(error, ValueError):
                     record.update(status="rejected", finished=monotonic())
-                    self.reply(replies, request, "rejected", code="unsupported", message=str(error))
+                    self.reply(replies, request, "rejected", code=getattr(error, "code", "unsupported"), message=str(error))
                 else:
                     record.update(status="unknown", finished=monotonic())
-                    self.reply(replies, request, "unknown", message="Native speech completion unconfirmed")
+                    self.reply(replies, request, "unknown", message="Native completion unconfirmed")
 
     def stop(self, request):
         with self.lock:
@@ -155,13 +167,21 @@ class Agent(object):
             for _, record in selected:
                 record["stop_requested"] = True
         # Do not stop a different session's native output when the selected set is empty.
-        if any(record["phase"] != "queued" for _, record in selected) or (not oid and not sid):
+        active = [record for _, record in selected if record["phase"] != "queued"]
+        if any(record.get("action", "speak") == "speak" for record in active) or (not oid and not sid):
             try:
                 self.driver.stop()
             except Exception:
                 # The say future can confirm cancellation before stopAll replies.
                 logging.warning("stopAll did not confirm", exc_info=True)
+        motion_names = sorted(set(name for record in active if record.get("action") == "trajectory" for name in record["names"]))
+        if motion_names or (not oid and not sid):
+            try:
+                self.driver.stop_motion(motion_names or ["Body"])
+            except Exception:
+                logging.warning("Native motion stop did not confirm", exc_info=True)
         confirmed, unresolved = [], []
+        deadline = monotonic() + 0.2
         for key, record in selected:
             if record["phase"] == "queued":
                 confirmed.append(key)
@@ -169,10 +189,7 @@ class Agent(object):
             future = record.get("future")
             if future is not None:
                 try:
-                    # One worker currently bounds this to one waiting future: 1 s in
-                    # native.stop + 200 ms here, within the API's 2 s backend timeout.
-                    # Concurrent native work needs a shared stop deadline, not N waits.
-                    future.value(200)
+                    future.value(max(1, int((deadline - monotonic()) * 1000)))
                     confirmed.append(key)
                     continue
                 except Exception:
@@ -315,18 +332,18 @@ class Agent(object):
                                 self.priority.put_nowait((request, replies))
                             except queue.Full:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
-                        elif lane == "command" and action == "speak":
+                        elif lane == "command" and action in ("speak", "trajectory"):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not self.validate_speech(request):
-                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid speech payload")
+                            elif not (self.validate_speech(request) if action == "speak" else valid_trajectory(request.get("payload")) and bool(request.get("session_id"))):
+                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
                                 self.work.put_nowait((request, replies))
-                                self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued"}
+                                self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", [])}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
             except (socket.error, ValueError, StopIteration, queue.Full):
@@ -352,7 +369,7 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
-        for worker in (self.worker, self.safety_worker, self.watchdog, self.sampling):
+        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling):
             background(self.run_critical, worker)
         for lane in ("priority", "command", "events"):
             background(self.run_critical, self.serve, lane)

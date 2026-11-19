@@ -249,6 +249,69 @@ def test_native_joint_discovery_and_observation_preserve_units_and_sources(agent
         motion.MotionObservation(session, call)
 
 
+def test_stop_during_motion_preparation_never_dispatches(agent_module):
+    agent = bare_agent(agent_module)
+    request = {
+        "id": "operation",
+        "session_id": "session",
+        "action": "trajectory",
+        "payload": {"names": ["HeadYaw"], "angles": [[0.1]], "times": [[1.0]]},
+        "agent": "agent",
+        "api": "api",
+        "epoch": 1,
+        "deadline": agent_module.monotonic() + 1,
+    }
+    agent.records["operation"] = {"session_id": "session", "status": "accepted", "phase": "queued"}
+    agent.driver.prepare_trajectory = lambda payload: agent.stop(
+        {"payload": {"operation_id": "operation"}, "session_id": "session"}
+    )
+    agent.driver.trajectory = lambda payload: pytest.fail("Stopped preparation dispatched motion")
+    replies = queue.Queue(8)
+    agent.work = DrainQueue((request, replies))
+    with pytest.raises(StopIteration):
+        agent.worker()
+    assert replies.get_nowait()["status"] == "accepted"
+    assert replies.get_nowait()["result"] == {"cancelled": True, "dispatched": False}
+
+
+def test_motion_private_payload_validation_rejects_unsafe_shapes(agent_module):
+    from motion import valid_trajectory
+
+    valid = {"names": ["HeadYaw"], "angles": [[0.1]], "times": [[1.0]]}
+    assert valid_trajectory(valid)
+    for patch in [
+        {"angles": [[True]]},
+        {"times": [[float("nan")]]},
+        {"times": [[0]]},
+        {"names": []},
+        {"times": [[1, 0.5]], "angles": [[0, 0.1]]},
+    ]:
+        assert not valid_trajectory(dict(valid, **patch))
+
+
+def test_native_motion_stop_expands_body_and_coupled_resources(agent_module):
+    import native
+
+    calls = []
+    driver = native.NativeDriver("unused", lambda *args: None)
+    driver.motion = types.SimpleNamespace(
+        names=["HeadYaw", "LHipYawPitch", "RHipYawPitch"],
+        joints=[
+            {"name": "LHipYawPitch", "coupled_with": ["RHipYawPitch"]},
+            {"name": "RHipYawPitch", "coupled_with": ["LHipYawPitch"]},
+        ],
+    )
+
+    def stop(names, **kwargs):
+        calls.append(names)
+        return types.SimpleNamespace(value=lambda timeout: None)
+
+    driver.safety_motion = types.SimpleNamespace(killTasksUsingResources=stop)
+    driver.stop_motion(["RHipYawPitch"])
+    driver.stop_motion(["Body"])
+    assert calls == [["LHipYawPitch", "RHipYawPitch"], ["HeadYaw", "LHipYawPitch", "RHipYawPitch"]]
+
+
 @pytest.mark.parametrize("cancelled", [True, False])
 def test_native_interruption_requires_cancelled_future_for_known_outcome(agent_module, cancelled):
     agent = bare_agent(agent_module)

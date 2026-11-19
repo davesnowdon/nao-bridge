@@ -45,6 +45,7 @@ from .models import (
     WireModel,
 )
 from .sse import SSEParser
+from .trajectory import Trajectory
 
 T = TypeVar("T", bound=WireModel)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -494,6 +495,93 @@ class AsyncMotion:
 
     async def postures(self) -> PosturesData:
         return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
+
+    async def _submit(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        wait: bool,
+        timeout: float | None,
+        idempotency_key: str | None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST", "/api/motion/" + path, body=body, key=idempotency_key or uuid.uuid4().hex
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, data))
+        return await op.wait(timeout=timeout) if wait else op
+
+    async def move_joints(
+        self,
+        positions: dict[str, float],
+        *,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"positions": positions}
+        if duration is not None:
+            body["duration"] = duration
+        return await self._submit(
+            "joint_moves", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def play(
+        self,
+        trajectory: Trajectory | dict[str, Any],
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        value = (
+            trajectory.model_dump(exclude_none=True)
+            if isinstance(trajectory, Trajectory)
+            else trajectory
+        )
+        return await self._submit(
+            "trajectory_runs",
+            {"trajectory": value},
+            wait=wait,
+            timeout=timeout,
+            idempotency_key=idempotency_key,
+        )
+
+    async def head(
+        self,
+        *,
+        yaw: float | None = None,
+        pitch: float | None = None,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> AsyncOperation:
+        positions = {
+            name: value
+            for name, value in [("HeadYaw", yaw), ("HeadPitch", pitch)]
+            if value is not None
+        }
+        return await self.move_joints(positions, duration=duration, wait=wait, timeout=timeout)
+
+    async def hand(
+        self,
+        side: str,
+        *,
+        openness: float,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> AsyncOperation:
+        if side not in {"left", "right"}:
+            raise ValueError("Hand side must be left or right")
+        return await self.move_joints(
+            {"LHand" if side == "left" else "RHand": openness},
+            duration=duration,
+            wait=wait,
+            timeout=timeout,
+        )
 
     async def state(
         self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False

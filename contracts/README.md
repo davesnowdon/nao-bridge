@@ -1,4 +1,4 @@
-# HTTP/SSE contract 1.0.0
+# HTTP/SSE contract 1.1.0
 
 The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
 and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
@@ -81,6 +81,13 @@ physical outcome. Clients must not rely on the ordinary 15-minute retention
 window for session history under pressure, cleanup history, or stop requests.
 
 ## Version and change guard
+
+The additive 1.1 surface includes contact discovery, joints/postures, shared joint
+and motion state, absolute joint moves, and timed trajectory runs. The
+[`trajectory.json`](fixtures/trajectory.json) fixture is a portable three-pose
+document. `Trajectory` and `Keyframe` in the canonical schemas define its file
+shape; strict time order, discovered limits and coupled-motor consistency require
+semantic validation before dispatch. Motion/hold hardware acceptance remains open.
 
 `python scripts/check_contract.py origin/main` conservatively rejects changes to an
 existing route/schema shape without a contract major bump, and additions without

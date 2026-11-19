@@ -19,6 +19,7 @@ def test_openapi_resolves_all_canonical_schema_references():
 
 
 def test_portable_canonicalization_and_request_fixtures():
+    VALIDATORS["Trajectory"].validate(json.loads((FIXTURES / "trajectory.json").read_text()))
     for case in json.loads((FIXTURES / "canonicalization.json").read_text())["cases"]:
         a, b = canonical(json.loads(case["a"])), canonical(json.loads(case["b"]))
         assert a == case["fingerprint_a"] and b == case["fingerprint_b"]

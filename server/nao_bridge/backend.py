@@ -18,6 +18,9 @@ class Backend(Protocol):
     async def speak(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def trajectory(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]: ...
@@ -61,9 +64,9 @@ class FakeBackend:
                 if name.endswith("HipYawPitch")
                 else [],
                 "readable": True,
-                "writable": False,
+                "writable": True,
                 "stiffness_supported": False,
-                "reason": "commands_not_implemented",
+                "reason": None,
             }
             for name in self.chains["Body"]
         ]
@@ -132,11 +135,35 @@ class FakeBackend:
     async def speak(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
+        return await self._execute(operation_id, session_id, payload, "speech")
+
+    async def trajectory(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._execute(operation_id, session_id, payload, "trajectory")
+        if not result.get("cancelled"):
+            for name, points in zip(payload["names"], payload["angles"], strict=True):
+                peers = [name, *next(j["coupled_with"] for j in self.joints if j["name"] == name)]
+                for peer in peers:
+                    self.joint_state["measured"][peer] = points[-1]
+                    self.joint_state["commanded"][peer] = points[-1]
+        return result
+
+    async def _execute(
+        self, operation_id: str, session_id: str, payload: dict[str, Any], action: str
+    ) -> dict[str, Any]:
         if not self.connected:
             raise BackendUnknown("Robot disconnected before dispatch could be established")
         if session_id in self.revoked:
             raise BridgeError("session_invalid", "Agent rejected fenced session", 409)
-        self.calls.append({"id": operation_id, "session_id": session_id, "payload": payload.copy()})
+        self.calls.append(
+            {
+                "id": operation_id,
+                "session_id": session_id,
+                "payload": payload.copy(),
+                "action": action,
+            }
+        )
         failure, self.fail_next = self.fail_next, None
         if failure == "unknown":
             self.active[operation_id] = (session_id, asyncio.Event())
@@ -151,8 +178,8 @@ class FakeBackend:
                 return {"cancelled": True}
             except TimeoutError:
                 if not self.connected:
-                    raise BackendUnknown("Robot disconnected during speech") from None
-                return {"spoken": True, "backend": "fake"}
+                    raise BackendUnknown("Robot disconnected during command") from None
+                return {"backend": "fake", **({"spoken": True} if action == "speech" else {})}
         finally:
             self.active.pop(operation_id, None)
 

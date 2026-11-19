@@ -8,7 +8,7 @@ import threading
 import time
 
 import qi
-from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture
+from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture, valid_trajectory
 from wire import monotonic
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
@@ -47,6 +47,7 @@ class NativeDriver(object):
         self.subscribers = []
         self.description = {}
         self.motion = None
+        self.safety_motion = None
         self.posture = None
         self.sample_windows = {}
         self.sample_errors = {}
@@ -95,10 +96,12 @@ class NativeDriver(object):
                 pass
         try:
             self.motion = MotionObservation(self.session, self.call)
+            self.safety_motion = self.safety_session.service("ALMotion", _async=True).value(1000)
             self.description["joints"] = self.motion.joints
             self.description["chains"] = self.motion.chains
         except Exception:
             self.motion = None
+            self.safety_motion = None
         try:
             self.posture = PostureObservation(self.session, self.call)
             self.description["postures"] = self.posture.names
@@ -151,6 +154,38 @@ class NativeDriver(object):
 
     def stop(self):
         self.safety.stopAll(_async=True).value(1000)
+
+    def prepare_trajectory(self, payload):
+        if not valid_trajectory(payload) or not self.motion:
+            raise ValueError("Invalid or unavailable trajectory")
+        catalog = dict((joint["name"], joint) for joint in self.motion.joints)
+        for name, values in zip(payload["names"], payload["angles"]):
+            joint = catalog.get(name)
+            if not joint or not joint["writable"]:
+                raise ValueError("Unknown or unavailable joint")
+            if set(joint["coupled_with"]) & set(payload["names"]):
+                raise ValueError("Duplicate coupled motor target")
+            for peer in [name] + joint["coupled_with"]:
+                bounds = catalog[peer]
+                if not bounds["writable"] or not all(bounds["minimum"] <= value <= bounds["maximum"] for value in values):
+                    raise ValueError("Joint target outside limits")
+        awake = self.call(self.motion.motion, "robotIsWakeUp")
+        stiffness = self.call(self.motion.motion, "getStiffnesses", payload["names"])
+        if awake is not True or len(stiffness) != len(payload["names"]) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool) and 0 < v <= 1 for v in stiffness):
+            error = ValueError("Motion requires an awake robot and stiff target joints")
+            error.code = "precondition_failed"
+            raise error
+
+    def trajectory(self, payload):
+        return self.motion.motion.angleInterpolation(payload["names"], payload["angles"], payload["times"], True, _async=True)
+
+    def stop_motion(self, names):
+        if self.safety_motion:
+            expanded = set(self.motion.names if "Body" in names else names)
+            for joint in self.motion.joints:
+                if joint["name"] in expanded:
+                    expanded.update(joint["coupled_with"])
+            self.safety_motion.killTasksUsingResources(sorted(expanded), _async=True).value(500)
 
     def close(self):
         self._connected.clear()
@@ -233,7 +268,7 @@ class FixtureDriver(NativeDriver):
         self.work_impl = FixtureSpeech()
         self.safety_impl = FixtureSafety(self.work_impl)
         self.memory_impl = FixtureMemory()
-        self.motion_impl = FixtureMotion()
+        self.motion_impl = qi.multiThreaded()(FixtureMotion)()
         self.posture_impl = FixturePosture()
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)

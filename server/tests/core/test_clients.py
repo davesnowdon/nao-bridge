@@ -140,7 +140,7 @@ async def test_joint_observations_share_sampler_and_conservative_freshness(socke
     async with socket_rig() as (url, core, backend), AsyncNao(url) as nao:
         catalog = await nao.motion.joints()
         assert catalog.availability.status == "available"
-        assert all(not joint.writable for joint in catalog.items)
+        assert all(joint.writable for joint in catalog.items)
         assert nao.session_id is None
         state = await nao.motion.state(require_fresh=True)
         assert state.groups["joints"].value["measured"]["LHand"] == 0.1
@@ -177,6 +177,51 @@ async def test_joint_observations_share_sampler_and_conservative_freshness(socke
         assert failed.value is None and failed.quality == "unavailable"
         assert failed.reason == "native_sample_unavailable"
         assert core.connection == "connected"
+
+
+async def test_async_motion_helpers_are_absolute_and_play_portable_files(socket_rig):
+    from nao_bridge_client import Trajectory
+
+    async with socket_rig() as (url, core, backend), AsyncNao(url) as nao:
+        assert (await nao.motion.head(yaw=0)).status == "succeeded"
+        assert backend.calls[-1]["payload"] == {
+            "names": ["HeadYaw"],
+            "angles": [[0]],
+            "times": [[1.0]],
+        }
+        assert (await nao.motion.hand("right", openness=0.75, duration=0.2)).status == "succeeded"
+        assert backend.calls[-1]["payload"]["names"] == ["RHand"]
+        doc = Trajectory.from_json(
+            '{"schema_version":"1.0","interpolation":"native","keyframes":[{"time":1,"positions":{"HeadYaw":0.1}},{"time":2,"positions":{"HeadYaw":0}}]}'
+        )
+        assert (await nao.motion.play(doc)).status == "succeeded"
+        assert backend.calls[-1]["payload"]["angles"] == [[0.1, 0.0]]
+
+
+async def test_sync_motion_helpers_share_the_public_contract(socket_rig):
+    async with socket_rig() as (url, core, backend):
+
+        def work():
+            with Nao(url) as nao:
+                assert nao.motion.head(pitch=0).status == "succeeded"
+                assert nao.motion.hand("left", openness=0).status == "succeeded"
+                assert (
+                    nao.motion.play(
+                        {
+                            "schema_version": "1.0",
+                            "interpolation": "native",
+                            "keyframes": [{"time": 1, "positions": {"HeadYaw": 0}}],
+                        }
+                    ).status
+                    == "succeeded"
+                )
+
+        await asyncio.to_thread(work)
+        assert [call["payload"]["names"] for call in backend.calls] == [
+            ["HeadPitch"],
+            ["LHand"],
+            ["HeadYaw"],
+        ]
 
 
 async def test_wait_timeout_does_not_cancel_and_explicit_cancel_is_typed(socket_rig):

@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "name": "three head poses",
+  "interpolation": "native",
+  "keyframes": [
+    {"time": 1.0, "name": "left", "positions": {"HeadYaw": 0.15}},
+    {"time": 2.0, "name": "right", "positions": {"HeadYaw": -0.15}},
+    {"time": 3.0, "name": "center", "positions": {"HeadYaw": 0.0}}
+  ]
+}

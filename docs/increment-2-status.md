@@ -10,12 +10,12 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | --- | --- | --- |
 | Hand/foot state, dedicated events, sensor discovery | Implemented; unit/client/raw-HTTP and native container checks pass | Native hand-back and foot probes recorded; integrated API pending |
 | Joint/chain/limit/coupling/posture discovery and measured/commanded state | Read-only surface implemented; unit/client/raw-HTTP and native container checks pass | Pending |
-| Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Pending | Pending |
-| Timed trajectories, validation, JSON import/export | Pending | Pending |
+| Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Absolute joint moves and head/hand helpers implemented; wake/rest, stiffness and posture commands pending | Pending |
+| Timed trajectories, validation, JSON import/export | Implemented; single native submission, sparse timelines and coupled-joint validation | Pending |
 | Owned latest-value setpoints, TTL, cancellation/hold | Pending | Hold must remain unadvertised until verified |
 | Same-session validated finite-motion replacement | Pending | Stop before replacement pending |
 | Explicit autonomy settings for manual capture | Pending | Pending |
-| Shared joint/touch/battery sampling; posture/fall events | Pending | Rate/skew and source behavior pending |
+| Shared joint/touch/battery sampling; posture/fall events | Joint/touch sampling and sampled posture implemented; battery and posture/fall events pending | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | Pending | Pending |
 | Bounded sample recordings and finalized assets/checksums/ranges | Pending | Real acquisition pending |
 | Public-API Recorder example and raw-HTTP acceptance scenario | Pending | Three-pose replay pending |
@@ -34,4 +34,15 @@ and 23 client tests plus lint/types. The production container suite passed with
 native joint/posture discovery, separately sampled measured/commanded angles and
 stiffness, and all previous contact/recovery checks. Slow acquisition is classified
 using its start time; optional motion sample failures do not invalidate speech or
-contacts. Joint writes and stiffness control remain unadvertised until implemented.
+contacts. Subsequent finite commands use the discovered bounds and fresh state;
+stiffness changes and interactive controls remain pending.
+
+Finite motion validation: the full suite passed 114 server/integration and 30 client
+tests plus lint/types; the additional coupled-stop regression and contract tests
+passed (21 targeted tests). Native container checks cover three timed poses,
+concurrent speech and fresh state during two motions, cancellation of one motion
+without stopping its sibling, priority stop, and unchanged stiffness. Validation
+rejects unknown/out-of-range/coupled targets and non-increasing timelines before
+dispatch. Physical behavior, dynamic collision envelopes, and controlled hold are
+not established by this fixture. Four native workers have bounded admission and
+share the stop confirmation deadline.

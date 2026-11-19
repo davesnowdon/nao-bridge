@@ -14,11 +14,13 @@ from .config import Settings
 from .contract import CONTACTS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
+from .motion import compile_trajectory
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
 KNOWN_TERMINAL = TERMINAL - {"unknown"}
 RECOVERY_KINDS = {"session.close", "session.revoke", "robot.stop"}
+NATIVE_KINDS = {"speech.utterance", "motion.joint_move", "motion.trajectory_run"}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -268,7 +270,9 @@ class Core:
                 ),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "events": feature(True),
-                "motion": feature(False, False),
+                "motion": feature(
+                    available and any(joint["writable"] for joint in self.info.get("joints", []))
+                ),
                 "motion.joints": feature(available and bool(self.info.get("joints"))),
                 "motion.postures": feature(available and bool(self.info.get("postures"))),
                 "recordings": feature(False, False),
@@ -293,7 +297,7 @@ class Core:
                     "sample_rate_hz",
                 )
             }
-            | {"session_lease_seconds": self.settings.lease_seconds},
+            | {"session_lease_seconds": self.settings.lease_seconds, "max_native_operations": 4},
             "event_types": list(EVENT_TYPES),
             "state_groups": ["sensors", "joints", "motion"],
             "replay_supported": False,
@@ -565,6 +569,17 @@ class Core:
             raise BridgeError(
                 "resource_busy", "Resources are owned or quarantined", 409, {"resources": conflicts}
             )
+        if (
+            kind in NATIVE_KINDS
+            and sum(
+                op.public["kind"] in NATIVE_KINDS and not op.released
+                for op in self.operations.values()
+            )
+            >= 4
+        ):
+            raise BridgeError(
+                "limit_exceeded", "Native command capacity exhausted", 429, retryable=True
+            )
         value = {
             "id": identifier(),
             "kind": kind,
@@ -641,10 +656,52 @@ class Core:
         op = self.new_operation(
             session, "speech.utterance", ["speech.output"], speech.get("cancellable", False)
         )
-        op.task = self.spawn(self.run_speech(op, payload))
+        op.task = self.spawn(self.run_native(op, payload))
         return copy.deepcopy(op.public)
 
-    async def run_speech(self, op: Operation, payload: dict[str, Any]) -> None:
+    def trajectory(
+        self, session: Session, body: dict[str, Any], kind: str = "motion.trajectory_run"
+    ) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        plan = compile_trajectory(body["trajectory"], self.info.get("joints", []))
+        targets = {resource.removeprefix("joint.") for resource in plan.resources}
+        if any(
+            not joint["writable"]
+            for joint in self.info.get("joints", [])
+            if joint["name"] in targets
+        ):
+            raise BridgeError("unsupported", "Joint control unavailable", 422)
+        state = self.state(["joints", "motion"])["groups"]
+        if any(group["quality"] != "fresh" for group in state.values()):
+            raise BridgeError("precondition_failed", "Fresh joint and motion state required", 409)
+        if not state["motion"]["value"]["awake"] or any(
+            state["joints"]["value"]["stiffness"].get(name, 0) <= 0 for name in targets
+        ):
+            raise BridgeError(
+                "precondition_failed", "Motion requires an awake robot and stiff target joints", 409
+            )
+        op = self.new_operation(session, kind, plan.resources)
+        payload = {"names": plan.names, "angles": plan.angles, "times": plan.times}
+        op.task = self.spawn(self.run_native(op, payload))
+        return copy.deepcopy(op.public)
+
+    def move_joints(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        return self.trajectory(
+            session,
+            {
+                "trajectory": {
+                    "schema_version": "1.0",
+                    "interpolation": "native",
+                    "keyframes": [
+                        {"time": body.get("duration", 1.0), "positions": body["positions"]}
+                    ],
+                }
+            },
+            "motion.joint_move",
+        )
+
+    async def run_native(self, op: Operation, payload: dict[str, Any]) -> None:
         if op.public["status"] != "accepted":
             return
         session = self.sessions[op.public["session_id"]]
@@ -655,7 +712,12 @@ class Core:
         generation = self.generation
         self.update(op, status="running", started_at=utc())
         try:
-            result = await self.backend.speak(op.public["id"], op.public["session_id"], payload)
+            dispatch = (
+                self.backend.speak
+                if op.public["kind"] == "speech.utterance"
+                else self.backend.trajectory
+            )
+            result = await dispatch(op.public["id"], op.public["session_id"], payload)
             if generation != self.generation or agent_instance != self.backend.instance:
                 return
             self.finish(op, "cancelled" if result.get("cancelled") else "succeeded", result)
@@ -671,7 +733,7 @@ class Core:
                 )
             raise
         except Exception:
-            LOG.exception("Speech dispatch failed: %s", op.public["id"])
+            LOG.exception("Native dispatch failed: %s", op.public["id"])
             self.finish(
                 op,
                 "unknown",
@@ -829,7 +891,7 @@ class Core:
         async with asyncio.timeout(self.settings.backend_timeout_seconds):
             stopped = await self.backend.stop()
         for op in list(self.operations.values()):
-            if op.public["kind"] != "speech.utterance" or op.released:
+            if op.public["kind"] not in NATIVE_KINDS or op.released:
                 continue
             if op.public["status"] == "accepted" or op.public["id"] in stopped["confirmed_ids"]:
                 self.finish(op, "cancelled", {"stop_confirmed": True})
@@ -844,7 +906,7 @@ class Core:
             | {
                 op.public["id"]
                 for op in self.operations.values()
-                if op.public["kind"] == "speech.utterance" and not op.released
+                if op.public["kind"] in NATIVE_KINDS and not op.released
             }
         )
         return stopped

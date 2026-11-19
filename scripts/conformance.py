@@ -192,6 +192,24 @@ def run(url):
             headers={"Idempotency-Key": "speech"},
         )
         assert probe.wait(operation)["status"] == "succeeded"
+        trajectory_run = probe.request(
+            "POST",
+            "/api/motion/trajectory_runs",
+            {
+                "trajectory": {
+                    "schema_version": "1.0",
+                    "interpolation": "native",
+                    "keyframes": [
+                        {"time": 0.1, "positions": {"HeadYaw": 0.2}},
+                        {"time": 0.2, "positions": {"HeadYaw": -0.2}},
+                        {"time": 0.3, "positions": {"HeadYaw": 0}},
+                    ],
+                }
+            },
+            status=202,
+            schema="Operation",
+        )
+        assert probe.wait(trajectory_run)["status"] == "succeeded"
         probe.request(
             "POST",
             "/api/speech/utterances",
@@ -234,6 +252,7 @@ def run(url):
             "session",
             "idempotency",
             "speech",
+            "joint_discovery_and_trajectory",
             "validation",
             "sse",
             "reconnect_without_replay",

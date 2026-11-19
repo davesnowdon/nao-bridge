@@ -18,6 +18,7 @@ from .models import (
     StreamNotice,
     SubscriptionData,
 )
+from .trajectory import Trajectory
 
 T = TypeVar("T")
 
@@ -147,6 +148,81 @@ class Motion:
 
     def postures(self) -> PosturesData:
         return self._nao._run(self._nao._async.motion.postures())
+
+    def move_joints(
+        self,
+        positions: dict[str, float],
+        *,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.move_joints(
+                    positions,
+                    duration=duration,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def play(
+        self,
+        trajectory: Trajectory | dict[str, Any],
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.play(
+                    trajectory, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                )
+            ),
+        )
+
+    def head(
+        self,
+        *,
+        yaw: float | None = None,
+        pitch: float | None = None,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.head(
+                    yaw=yaw, pitch=pitch, duration=duration, wait=wait, timeout=timeout
+                )
+            ),
+        )
+
+    def hand(
+        self,
+        side: str,
+        *,
+        openness: float,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.hand(
+                    side, openness=openness, duration=duration, wait=wait, timeout=timeout
+                )
+            ),
+        )
 
     def state(
         self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False

@@ -109,7 +109,7 @@ The bundled SDK identifies a 2.1-era runtime; later documentation shows useful c
 These are design inputs, not a promise to wrap every method on those pages. Hardware tests remain necessary for callback networking, cancellation, autonomy effects, sample rates, and media compatibility.
 
 The [runtime experiment](runtime-experiment.md) records measured Linux-container evidence. The [review follow-up](review-follow-up.md) distinguishes adopted design guidance, deferred extensions, and additional experiments from those completed tests.
-# Contact adapter mapping
+## Contact adapter mapping
 
 The contact catalog uses dedicated NAOqi events for head pads, six hand pads,
 and foot-level bumpers. Raw foot state combines the two internal switches per foot;
@@ -120,4 +120,21 @@ and [NAO6 contacts](https://doc.aldebaran.com/2-8/family/nao_technical/contact-s
 Prior probes establish hand-back and foot event delivery on NAO6; integration of
 the expanded public API, hand side pads, and NAOv5 contacts still needs hardware
 acceptance. The software fixture drives one contact at a time.
+
+## Increment-2 adapter details
+
+Joint discovery uses `getBodyNames` and `getLimits`; measured and commanded state
+use separate `getAngles(..., true/false)` calls. Hands retain native normalized
+ratios. `LHipYawPitch` and `RHipYawPitch` share one motor; validation reserves both,
+rejects different timelines, and submits a single alias. Stop expands coupled
+names and `Body` into actual joint resources before `killTasksUsingResources`.
+Future completion is checked separately from the stop call. This software protocol
+evidence does not verify physical stopping or controlled hold.
+
+Sources: [joint control](https://doc.aldebaran.com/2-1/naoqi/motion/control-joint-api.html),
+[general motion tools](https://doc.aldebaran.com/2-1/naoqi/motion/tools-general-api.html),
+[joint constraints](https://doc.aldebaran.com/2-1/family/robots/joints_robot.html),
+and [motion task interruption](https://doc.aldebaran.com/2-1/naoqi/motion/tools-motion-task-api.html).
+Individual min/max bounds are not full configuration-dependent collision envelopes;
+native safeguards remain active, and this limitation is documented in the HTTP guide.
 

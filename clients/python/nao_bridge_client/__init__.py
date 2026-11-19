@@ -16,6 +16,7 @@ from .errors import (
     StaleState,
 )
 from .models import Capabilities, Event, OperationData, RobotInfo, SessionData, State, StreamNotice
+from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
@@ -43,4 +44,6 @@ __all__ = [
     "SessionData",
     "State",
     "StreamNotice",
+    "Keyframe",
+    "Trajectory",
 ]

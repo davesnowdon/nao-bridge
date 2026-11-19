@@ -270,6 +270,13 @@ class AgentBackend:
     ) -> dict[str, Any]:
         return await self._rpc("command", "speak", payload, session_id, operation_id, timeout=None)
 
+    async def trajectory(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "trajectory", payload, session_id, operation_id, timeout=None
+        )
+
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]:
