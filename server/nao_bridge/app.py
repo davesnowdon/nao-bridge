@@ -318,6 +318,13 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.put("/api/motion/joint_setpoints")
+    async def joint_setpoint(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "JointSetpoint")
+        result = core.joint_controls.submit(session(request), value)
+        return created(result, "operations", 202)
+
     @app.post("/api/motion/wake")
     async def wake(request: Request) -> Response:
         return await submit_motion_action(request, "wake", "MotionTransitionCreate", "wake")

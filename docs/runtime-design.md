@@ -63,9 +63,9 @@ The current implementation has separate priority, ordinary command, interactive
 control, and observation Unix-socket lanes. Interactive updates use a bounded
 latest-target slot and independent expiry/hold workers, not the ordinary native
 worker queue. The priority lane retains request capacity when control traffic is
-busy. Its private control path is tested in the SDK fixture; public endpoint/client
-integration is tracked in [increment-2-status.md](increment-2-status.md). Bulk media
-transfer remains later work.
+busy. Both the private control path and HTTP operation lifecycle are tested in the
+SDK fixture. Python control helpers remain pending; progress is tracked in
+[increment-2-status.md](increment-2-status.md). Bulk media transfer remains later work.
 
 Protocol fixtures must cover version mismatch, partial/malformed frames, unexpected EOF, request timeout after native dispatch, duplicate request IDs, stale generations, saturated queues, and agent restart. Never retransmit uncertain side-effecting native calls merely because an IPC response was lost. Translate ambiguity into the public Operation's `unknown` state.
 

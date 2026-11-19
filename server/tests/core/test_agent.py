@@ -62,6 +62,22 @@ def bare_agent(module):
     return agent
 
 
+def test_stop_includes_completed_control_without_ordinary_ledger_entry(agent_module):
+    agent = bare_agent(agent_module)
+    snapshot = {"operation_id": "control", "status": "cancelled", "hold": {"confirmed": True}}
+    agent.controls = types.SimpleNamespace(
+        stop=lambda *args, **kwargs: ["control"],
+        start_holds=lambda ids: None,
+        snapshot=lambda oid: snapshot,
+    )
+    result = agent.stop({"payload": {"operation_id": "control"}, "session_id": "session"})
+    assert result == {
+        "confirmed_ids": ["control"],
+        "unresolved_ids": [],
+        "controls": {"control": snapshot},
+    }
+
+
 def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
     import autonomy
 

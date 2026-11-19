@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from .contract import CONTACTS
 from .errors import BackendUnknown, BridgeError
+from .fake_controls import FakeControls
 
 EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -27,6 +28,9 @@ class Backend(Protocol):
     async def configure_autonomy(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
+    async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]: ...
@@ -47,6 +51,7 @@ class FakeBackend:
         self.posture_reached = True
         self.calls: list[dict[str, Any]] = []
         self.autonomy_results: dict[str, dict[str, Any]] = {}
+        self.controls = FakeControls(self)
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
         self.revoked: set[str] = set()
         self.sink: EventSink | None = None
@@ -141,6 +146,10 @@ class FakeBackend:
                     "chains": self.chains,
                     "postures": ["StandInit", "Sit", "Crouch"],
                     "autonomy": self.autonomy_catalog,
+                    "joint_controls": {
+                        "available": connected,
+                        "reason": None if connected else "disconnected",
+                    },
                 },
             )
 
@@ -292,6 +301,7 @@ class FakeBackend:
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None
     ) -> dict[str, Any]:
+        controls = await self.controls.stop(operation_id, session_id)
         matched = [
             key
             for key, (owner, _) in self.active.items()
@@ -301,7 +311,10 @@ class FakeBackend:
         if not self.connected or not self.stop_confirmed:
             return {
                 "confirmed_ids": [],
-                "unresolved_ids": matched or ([operation_id] if operation_id else []),
+                "unresolved_ids": list(
+                    set(matched + list(controls) + ([operation_id] if operation_id else []))
+                ),
+                "controls": controls,
             }
         for key in matched:
             self.active[key][1].set()
@@ -316,13 +329,25 @@ class FakeBackend:
                 )
             )
         ]
+        unresolved = {oid for oid, value in controls.items() if not value["released"]}
         return {
             "confirmed_ids": list(
-                set(matched + completed + ([operation_id] if operation_id else []))
+                set(matched + completed + list(controls) + ([operation_id] if operation_id else []))
+                - unresolved
             ),
-            "unresolved_ids": [],
+            "unresolved_ids": list(unresolved),
+            "controls": controls,
             "results": {key: self.autonomy_results[key] for key in completed},
         }
+
+    async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self.controls.submit(session_id, payload)
+
+    async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]:
+        return await self.controls.status(session_id, operation_id)
+
+    async def release_joint_controls(self, session_id: str) -> dict[str, Any]:
+        return await self.controls.release(session_id)
 
     async def fence(self, session_id: str) -> bool:
         if not self.connected or not self.fence_confirmed:
@@ -334,6 +359,7 @@ class FakeBackend:
         return {"backend": "fake", "connected": self.connected, "inflight": list(self.active)}
 
     async def close(self) -> None:
+        await self.controls.close()
         if self.samples_task:
             self.samples_task.cancel()
             await asyncio.gather(self.samples_task, return_exceptions=True)

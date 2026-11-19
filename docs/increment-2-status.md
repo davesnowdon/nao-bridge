@@ -12,7 +12,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Joint/chain/limit/coupling/posture discovery and measured/commanded state | Read-only surface implemented; unit/client/raw-HTTP and native container checks pass | Pending |
 | Wake/rest, stiffness, absolute targets, head/hand helpers, postures | Implemented with session ownership and explicit preparation | Pending |
 | Timed trajectories, validation, JSON import/export | Implemented; single native submission, sparse timelines and coupled-joint validation | Pending |
-| Owned latest-value setpoints, TTL, cancellation/hold | Native agent scheduler, private IPC and fixture implemented; public HTTP/SDK integration pending | Hold must remain unadvertised until verified |
+| Owned latest-value setpoints, TTL, cancellation/hold | HTTP lifecycle, native/fake backends and bounded forwarding implemented; Python helpers pending | Hold must remain unadvertised until verified |
 | Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Joint/touch sampling and sampled posture implemented; battery and posture/fall events pending | Rate/skew and source behavior pending |
@@ -35,7 +35,7 @@ native joint/posture discovery, separately sampled measured/commanded angles and
 stiffness, and all previous contact/recovery checks. Slow acquisition is classified
 using its start time; optional motion sample failures do not invalidate speech or
 contacts. Subsequent finite commands use the discovered bounds and fresh state;
-explicit preparation commands are now implemented; interactive controls remain pending.
+explicit preparation commands and the interactive-control HTTP lifecycle are now implemented.
 
 Finite motion validation: the full suite passed 114 server/integration and 30 client
 tests plus lint/types; the additional coupled-stop regression and contract tests
@@ -99,8 +99,8 @@ trigger supervision if they exit unexpectedly.
 
 The candidate hold submits fresh measured joint angles at speed fraction 0.1,
 without a stiffness change. Native hardware availability remains false; only the
-local SDK fixture enables it. The public setpoint route, operation lifecycle,
-fake-backend parity, Python control scopes and Recorder UI remain to be wired.
+local SDK fixture enables it. The public setpoint route, operation lifecycle and
+fake backend are now implemented; Python control helpers and Recorder UI remain pending.
 
 Agent-control validation: the full suite passed 188 server/integration and 30 client
 tests plus lint/types. After adding explicit fenced release, the 44 focused
@@ -108,3 +108,18 @@ agent/control tests and type checks passed. The final production native containe
 suite passed, including expiry and measured-target hold with all four ordinary
 workers blocked, early cancellation, ended-ID rejection and fenced release. These
 checks used the local SDK fixture; no physical robot was contacted.
+
+Interactive-control HTTP lifecycle: `PUT /motion/joint_setpoints` creates one owned
+operation at sequence zero and returns the same operation for newer full-target
+updates. The API retains only the newest pending update, keeps ended IDs through
+the session lifetime, enforces separate four-control capacity, and integrates
+expiry, scoped cancellation, priority stop and fenced recovery. The fake backend
+models expiry/hold outcomes without claiming physical behavior. A fresh agent's
+stop response cannot resolve an earlier generation's unknown operation.
+
+HTTP-control validation: `make check` passed 215 server/integration and 30 client
+tests, lint and types. Final normalization/precondition changes passed 28 focused
+control tests and type checking. The contract compatibility guard passed. Native
+container checks exercise ordered HTTP updates, integral JSON sequence normalization,
+expiry/hold, ended-ID rejection and cancellation, alongside all existing fixture
+checks. Python control helpers and the remaining delivery matrix stay in scope.

@@ -14,6 +14,8 @@ from .config import Settings
 from .contract import CONTACTS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
+from .joint_controls import KIND as CONTROL_KIND
+from .joint_controls import JointControls
 from .motion import compile_trajectory, stiffness_targets
 
 LOG = logging.getLogger(__name__)
@@ -22,12 +24,13 @@ KNOWN_TERMINAL = TERMINAL - {"unknown"}
 RECOVERY_KINDS = {"session.close", "session.revoke", "robot.stop"}
 CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
 MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change"}
-NATIVE_KINDS = {
+ORDINARY_KINDS = {
     "speech.utterance",
     "motion.joint_move",
     "motion.trajectory_run",
     "autonomy.transition",
 } | MOTION_ACTIONS
+NATIVE_KINDS = ORDINARY_KINDS | {CONTROL_KIND}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -98,6 +101,7 @@ class Core:
         self.resources: dict[str, str] = {}
         self.configuration_owners: dict[str, str] = {}
         self.pending_replacements: dict[str, str] = {}
+        self.joint_controls = JointControls(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -296,6 +300,16 @@ class Core:
                     available and any(joint["writable"] for joint in self.info.get("joints", []))
                 ),
                 "motion.joints": feature(available and bool(self.info.get("joints"))),
+                "motion.joint_setpoints": {
+                    "status": "available"
+                    if available and self.info.get("joint_controls", {}).get("available")
+                    else "unavailable",
+                    "reason": None
+                    if available and self.info.get("joint_controls", {}).get("available")
+                    else self.info.get("joint_controls", {}).get(
+                        "reason", "not_connected_or_discovered"
+                    ),
+                },
                 "motion.postures": feature(available and bool(self.info.get("postures"))),
                 "motion.stiffness": feature(
                     available
@@ -332,7 +346,15 @@ class Core:
                     "sample_rate_hz",
                 )
             }
-            | {"session_lease_seconds": self.settings.lease_seconds, "max_native_operations": 4},
+            | {
+                "session_lease_seconds": self.settings.lease_seconds,
+                "max_native_operations": 4,
+                "max_joint_controls": 4,
+                "max_joint_control_ids": 4096,
+                "joint_control_default_ttl": 0.5,
+                "joint_control_max_ttl": 1.0,
+                "joint_control_default_speed": 0.1,
+            },
             "event_types": list(EVENT_TYPES),
             "state_groups": ["sensors", "joints", "motion", "autonomy"],
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
@@ -636,9 +658,9 @@ class Core:
             if (old := self.operations.get(old_id)) is not None and not old.released
         }
         if (
-            kind in NATIVE_KINDS
+            kind in ORDINARY_KINDS
             and sum(
-                op.public["kind"] in NATIVE_KINDS
+                op.public["kind"] in ORDINARY_KINDS
                 and not op.released
                 and op.public["id"] not in waiting
                 for op in self.operations.values()
@@ -769,22 +791,7 @@ class Core:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         plan = compile_trajectory(body["trajectory"], self.info.get("joints", []))
-        targets = {resource.removeprefix("joint.") for resource in plan.resources}
-        if any(
-            not joint["writable"]
-            for joint in self.info.get("joints", [])
-            if joint["name"] in targets
-        ):
-            raise BridgeError("unsupported", "Joint control unavailable", 422)
-        state = self.state(["joints", "motion"])["groups"]
-        if any(group["quality"] != "fresh" for group in state.values()):
-            raise BridgeError("precondition_failed", "Fresh joint and motion state required", 409)
-        if not state["motion"]["value"]["awake"] or any(
-            state["joints"]["value"]["stiffness"].get(name, 0) <= 0 for name in targets
-        ):
-            raise BridgeError(
-                "precondition_failed", "Motion requires an awake robot and stiff target joints", 409
-            )
+        self.require_joint_motion(plan.resources)
         replacing = None
         if previous_id := body.get("replace_operation_id"):
             replacing = self.operation(previous_id, session.public["id"])
@@ -805,6 +812,24 @@ class Core:
             else self.run_native(op, payload)
         )
         return copy.deepcopy(op.public)
+
+    def require_joint_motion(self, resources: list[str]) -> None:
+        targets = {resource.removeprefix("joint.") for resource in resources}
+        if any(
+            not joint["writable"]
+            for joint in self.info.get("joints", [])
+            if joint["name"] in targets
+        ):
+            raise BridgeError("unsupported", "Joint control unavailable", 422)
+        state = self.state(["joints", "motion"])["groups"]
+        if any(group["quality"] != "fresh" for group in state.values()):
+            raise BridgeError("precondition_failed", "Fresh joint and motion state required", 409)
+        if not state["motion"]["value"]["awake"] or any(
+            (state["joints"]["value"]["stiffness"].get(name) or 0) <= 0 for name in targets
+        ):
+            raise BridgeError(
+                "precondition_failed", "Motion requires an awake robot and stiff target joints", 409
+            )
 
     def move_joints(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         return self.trajectory(
@@ -1062,7 +1087,8 @@ class Core:
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 result = await self.backend.stop(operation_id=op.public["id"])
-            if op.public["id"] in result["confirmed_ids"]:
+                result = await self.joint_controls.settle_stop(result, [op])
+            if self.stop_confirmed(op, result):
                 self.finish_stopped(op, result)
                 return True
             else:
@@ -1079,7 +1105,32 @@ class Core:
             )
         return False
 
+    def stop_confirmed(self, op: Operation, stopped: dict[str, Any]) -> bool:
+        # A fresh agent's early-stop tombstone cannot establish an old native outcome.
+        return (
+            op.public["connection_generation"] == self.generation
+            and op.public["id"] in stopped["confirmed_ids"]
+        )
+
     def finish_stopped(self, op: Operation, stopped: dict[str, Any]) -> None:
+        control = stopped.get("controls", {}).get(op.public["id"])
+        if op.public["kind"] == CONTROL_KIND:
+            if control:
+                self.joint_controls.reconcile(op, control, stopping=True)
+            else:
+                record = self.joint_controls.records[
+                    (op.public["session_id"], op.public["control"]["id"])
+                ]
+                self.finish(
+                    op,
+                    "succeeded" if record.expired else "cancelled",
+                    {
+                        "reason": "joint_control_expired" if record.expired else "cancelled",
+                        "dispatched": False,
+                        "hold": {"required": False, "confirmed": True},
+                    },
+                )
+            return
         result = stopped.get("results", {}).get(op.public["id"])
         if op.public["kind"] == "autonomy.transition" and isinstance(result, dict):
             outcome = result.get("outcome", "unknown")
@@ -1125,18 +1176,32 @@ class Core:
         for op in affected:
             if op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
+            elif op.public["kind"] == CONTROL_KIND and op.public["status"] == "running":
+                self.update(op, status="cancelling")
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 fenced = await self.backend.fence(sid)
                 stopped = await self.backend.stop(session_id=sid)
+                stopped = await self.joint_controls.settle_stop(stopped, affected)
         except Exception:
             fenced = False
             stopped = {"confirmed_ids": [], "unresolved_ids": []}
+        controls_released = True
+        if (
+            force
+            and fenced
+            and any(op.public["kind"] == CONTROL_KIND and not op.released for op in affected)
+        ):
+            try:
+                async with asyncio.timeout(self.settings.backend_timeout_seconds):
+                    await self.backend.release_joint_controls(sid)
+            except Exception:
+                controls_released = False
         unresolved = []
         for op in affected:
             if op.released or op.public["kind"] in ("session.close", "session.revoke"):
                 continue
-            if op.public["id"] in stopped["confirmed_ids"]:
+            if self.stop_confirmed(op, stopped):
                 self.finish_stopped(op, stopped)
             else:
                 unresolved.append(op.public["id"])
@@ -1145,7 +1210,7 @@ class Core:
                     "unknown",
                     error=BridgeError("cleanup_unconfirmed", "Native work may continue", 503),
                 )
-                if force and fenced:
+                if force and fenced and (op.public["kind"] != CONTROL_KIND or controls_released):
                     op.released = True
                     op.retained_until = self.clock() + self.settings.history_seconds
                     for resource in op.public["resources"]:
@@ -1160,7 +1225,7 @@ class Core:
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
             "unresolved_resources": unresolved_resources,
-            "force_release": force and fenced,
+            "force_release": force and fenced and controls_released,
         }
 
     def close_session(
@@ -1224,12 +1289,15 @@ class Core:
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
+            elif op.public["kind"] == CONTROL_KIND and op.public["status"] == "running":
+                self.update(op, status="cancelling")
         async with asyncio.timeout(self.settings.backend_timeout_seconds):
             stopped = await self.backend.stop()
+            stopped = await self.joint_controls.settle_stop(stopped, list(self.operations.values()))
         for op in list(self.operations.values()):
             if op.public["kind"] not in NATIVE_KINDS or op.released:
                 continue
-            if op.public["status"] == "accepted" or op.public["id"] in stopped["confirmed_ids"]:
+            if op.public["status"] == "accepted" or self.stop_confirmed(op, stopped):
                 self.finish_stopped(op, stopped)
             else:
                 self.finish(
@@ -1462,6 +1530,7 @@ class Core:
 
     def forget_session(self, sid: str) -> None:
         session = self.sessions.pop(sid)
+        self.joint_controls.forget_session(sid)
         if session.stop_operation_id:
             self.forget_operation(session.stop_operation_id)
         for key, record in list(self.keys.items()):

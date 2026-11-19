@@ -400,6 +400,67 @@ try:
     assert probe.wait(second_motion)["status"] == "cancelled"
     state = probe.request("GET", "/api/state?include=joints&wait_for_fresh_ms=1000")
     assert state["groups"]["joints"]["value"]["stiffness"]["HeadYaw"] == 0.5
+    assert (
+        probe.request("GET", "/api/robot/capabilities")["features"]["motion.joint_setpoints"][
+            "status"
+        ]
+        == "available"
+    )
+    control = probe.request(
+        "PUT",
+        "/api/motion/joint_setpoints",
+        {"control_id": "native-slider", "sequence": 0.0, "positions": {"HeadYaw": 0.1}, "ttl": 0.5},
+        status=202,
+        schema="Operation",
+    )
+    for sequence in range(1, 6):
+        update = probe.request(
+            "PUT",
+            "/api/motion/joint_setpoints",
+            {
+                "control_id": "native-slider",
+                "sequence": sequence,
+                "positions": {"HeadYaw": sequence / 20},
+                "ttl": 0.5,
+            },
+            status=202,
+            schema="Operation",
+        )
+        assert update["id"] == control["id"] and update["control"]["sequence"] == sequence
+    outcome = probe.wait(control)
+    assert outcome["status"] == "succeeded", outcome
+    assert outcome["result"]["reason"] == "joint_control_expired", outcome
+    assert outcome["result"]["hold"]["confirmed"], outcome
+    ended = probe.request(
+        "PUT",
+        "/api/motion/joint_setpoints",
+        {"control_id": "native-slider", "sequence": 6, "positions": {"HeadYaw": 0.1}},
+        status=409,
+    )
+    assert ended["error"]["code"] == "control_ended"
+    control = probe.request(
+        "PUT",
+        "/api/motion/joint_setpoints",
+        {
+            "control_id": "native-cancel-slider",
+            "sequence": 0,
+            "positions": {"HeadYaw": 0},
+            "ttl": 1,
+        },
+        status=202,
+        schema="Operation",
+    )
+    until(lambda: probe.request("GET", "/api/operations/" + control["id"])["status"] == "running")
+    probe.request("POST", "/api/operations/" + control["id"] + "/cancel", {}, status=202)
+    outcome = probe.wait(control)
+    assert outcome["status"] == "cancelled", outcome
+    assert outcome["result"]["hold"]["confirmed"], outcome
+    state = probe.request("GET", "/api/state?include=joints&wait_for_fresh_ms=1000")
+    assert state["groups"]["joints"]["value"]["stiffness"]["HeadYaw"] == 0.5
+    print(
+        "Native HTTP controls: ordering, expiry/hold, ended IDs and cancellation passed",
+        flush=True,
+    )
     cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
     assert probe.wait(cleanup)["status"] == "succeeded"
     print(

@@ -9,8 +9,10 @@ HTTP/SSE endpoints without bridge configuration.
 
 The current surface includes increment 1, contact sensors, joint/posture discovery,
 shared motion state, finite joint/trajectory commands, stiffness, wake/rest and
-posture commands, and explicit autonomy settings. Interactive controls, media and
-sequences remain in progress.
+posture commands, explicit autonomy settings, and the joint-control HTTP lifecycle.
+Joint controls are available in software fixtures; physical availability stays
+false until controlled-hold acceptance. Python control scopes, media and sequences
+remain in progress.
 The Python client is optional.
 
 Set `BRIDGE=http://127.0.0.1:3000` in your shell.
@@ -98,6 +100,57 @@ Python exposes `motion.wake()`, `.rest()`, `.set_stiffness({"Head":0.7})` and
 finite commands. After native completion the operation waits up to one second for
 new shared joint and motion observations. `result.state_refreshed` reports whether
 they arrived; command completion alone does not prove fresh observations.
+
+## Interactive joint controls
+
+Check `features.motion.joint_setpoints` in capabilities before use. With an active
+session, `PUT /motion/joint_setpoints` accepts:
+
+```json
+{
+  "control_id": "head-slider",
+  "sequence": 0,
+  "positions": {"HeadYaw": 0.2, "HeadPitch": 0.1},
+  "speed": 0.1,
+  "ttl": 0.5
+}
+```
+
+Sequence zero creates one `motion.joint_control` operation. Each subsequent update
+uses a greater sequence and contains targets for exactly the same joint names.
+Updates return HTTP 202 with the same operation ID and a `control` object containing
+the ID, last accepted sequence, TTL and expiry time. Acceptance means the target was
+accepted, not reached. Poll the operation or subscribe to `operation.changed`.
+
+Speed is a fraction in `(0, 1]`, default 0.1. TTL is seconds in `(0, 1]`, default
+0.5, counted from server acceptance. Sequence numbers are integers from zero through
+9,007,199,254,740,991. An identical duplicate returns the current operation without
+renewing expiry; a changed duplicate returns `sequence_conflict`, and an older
+sequence returns `stale_sequence`. Missing IDs with a nonzero sequence return
+`not_found`. Ended IDs return `control_ended`, even after operation history expires.
+Session renewal never renews a control. Creating a new control requires a new ID.
+
+The API forwards at most one update at a time per control and retains only the newest
+pending target. The native agent also has a latest-target slot and checks remaining
+expiry independently of HTTP and ordinary command workers. Invalid updates do not
+renew expiry or replace the pending target. Admission requires fresh state, awake
+and stiff target joints, discovered bounds and consistent coupled-motor targets.
+Controls use ordinary resource ownership, including retained configuration owners.
+Up to four disjoint controls coexist, separately from four finite native commands;
+up to 4,096 control IDs are retained across sessions. Limits appear in capabilities.
+
+Expiry requests a measured-target hold without changing stiffness. Confirmed expiry
+finishes as `succeeded` with `result.reason: "joint_control_expired"`; explicit
+operation cancellation finishes as `cancelled`. `result.hold` records confirmation
+and `dispatched_sequence` identifies the last confirmed target dispatch when known.
+An unconfirmed target or hold leaves the operation `unknown` and its joints
+quarantined. Explicit forced session recovery requires fencing and a finished native
+hold attempt before releasing reservations. A new agent's stop acknowledgement does
+not resolve an unknown outcome from an earlier connection generation. None of these
+software outcomes establishes a physical stop on untested hardware.
+
+The HTTP route and native/fake backends are implemented. Python raw setters and
+scoped refresh/cancel helpers are the next client integration step.
 
 ## Absolute joint moves and trajectories
 

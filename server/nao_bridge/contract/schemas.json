@@ -647,6 +647,9 @@
         "replaces_operation_id": {
           "type": "string",
           "description": "Previous finite motion named by this replacement, when applicable."
+        },
+        "control": {
+          "$ref": "#/$defs/JointControlStatus"
         }
       },
       "required": [
@@ -1925,6 +1928,76 @@
       "required": [
         "settings",
         "unavailable"
+      ],
+      "additionalProperties": true
+    },
+    "JointSetpoint": {
+      "type": "object",
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "positions": {
+          "$ref": "#/$defs/JointPositions"
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.1
+        },
+        "ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        }
+      },
+      "required": [
+        "control_id",
+        "sequence",
+        "positions"
+      ],
+      "additionalProperties": false
+    },
+    "JointControlStatus": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "ttl",
+        "expires_at"
       ],
       "additionalProperties": true
     }

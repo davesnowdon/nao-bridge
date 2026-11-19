@@ -256,7 +256,7 @@ class Agent(object):
             (confirmed if value["status"] in ("succeeded", "cancelled") else unresolved).append(key)
         result = {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
-                        if self.records[key].get("action") == "autonomy" and "result" in self.records[key])
+                        if key in self.records and self.records[key].get("action") == "autonomy" and "result" in self.records[key])
         if outcomes:
             result["results"] = outcomes
         if control_ids:

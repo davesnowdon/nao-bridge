@@ -3,7 +3,7 @@
   "info": {
     "title": "NAO Bridge",
     "version": "1.1.0",
-    "description": "Increment 1 HTTP/SSE contract. No v1 compatibility. Physical hardware acceptance is pending."
+    "description": "Implemented HTTP/SSE contract, including increment-2 foundations. No v1 compatibility. Physical motion and hold acceptance is pending."
   },
   "servers": [
     {
@@ -1615,6 +1615,65 @@
         ],
         "summary": "Apply explicit autonomy settings with observed per-setting results"
       }
+    },
+    "/motion/joint_setpoints": {
+      "put": {
+        "operationId": "putJointSetpoint",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JointSetpoint"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ],
+        "description": "Sequence zero creates one owned operation; newer sequences replace its full joint target. Duplicate updates do not renew expiry. Acceptance does not mean the target was reached. Defaults: speed 0.1, TTL 0.5 seconds; maximum TTL 1 second. Unavailable on hardware until hold acceptance."
+      }
     }
   },
   "components": {
@@ -1753,6 +1812,12 @@
       },
       "PostureCreate": {
         "$ref": "schemas.json#/$defs/PostureCreate"
+      },
+      "JointSetpoint": {
+        "$ref": "schemas.json#/$defs/JointSetpoint"
+      },
+      "JointControlStatus": {
+        "$ref": "schemas.json#/$defs/JointControlStatus"
       }
     }
   }
