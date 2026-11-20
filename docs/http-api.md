@@ -11,8 +11,8 @@ The current surface includes increment 1, contact sensors, joint/posture discove
 shared motion state, finite joint/trajectory commands, stiffness, wake/rest and
 posture commands, explicit autonomy settings, and the joint-control HTTP lifecycle.
 Joint controls are available in software fixtures; physical availability stays
-false until controlled-hold acceptance. Python control scopes, media and sequences
-remain in progress.
+false until controlled-hold acceptance. Python raw setters and control scopes are
+implemented; media and sequences remain in progress.
 The Python client is optional.
 
 Set `BRIDGE=http://127.0.0.1:3000` in your shell.
@@ -149,8 +149,10 @@ hold attempt before releasing reservations. A new agent's stop acknowledgement d
 not resolve an unknown outcome from an earlier connection generation. None of these
 software outcomes establishes a physical stop on untested hardware.
 
-The HTTP route and native/fake backends are implemented. Python raw setters and
-scoped refresh/cancel helpers are the next client integration step.
+Python supplies `motion.set_joint_targets(positions, control_id=..., sequence=...)`
+for a single update and `motion.joint_control(positions, speed=..., ttl=...)` for a
+scope that manages identity, ordering, refresh and cancellation. Both sync and async
+clients use the same route. See the [client lifecycle](../clients/python/README.md#joint-controls).
 
 ## Absolute joint moves and trajectories
 

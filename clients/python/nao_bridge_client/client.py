@@ -6,6 +6,7 @@ from collections.abc import Coroutine
 from typing import Any, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
+from .controls import AsyncJointControl
 from .models import (
     Capabilities,
     Event,
@@ -149,6 +150,31 @@ class Motion:
 
     def postures(self) -> PosturesData:
         return self._nao._run(self._nao._async.motion.postures())
+
+    def set_joint_targets(
+        self,
+        positions: dict[str, float],
+        *,
+        control_id: str | None = None,
+        sequence: int = 0,
+        speed: float | None = None,
+        ttl: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.set_joint_targets(
+                    positions, control_id=control_id, sequence=sequence, speed=speed, ttl=ttl
+                )
+            ),
+        )
+
+    def joint_control(
+        self, positions: dict[str, float], *, speed: float | None = None, ttl: float | None = None
+    ) -> JointControl:
+        return JointControl(
+            self._nao, self._nao._async.motion.joint_control(positions, speed=speed, ttl=ttl)
+        )
 
     def wake(
         self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
@@ -435,6 +461,46 @@ class Operations:
             )
         )
         return {**result, "items": [Operation(self._nao, item) for item in result["items"]]}
+
+
+class JointControl:
+    def __init__(self, nao: Nao, control: AsyncJointControl):
+        self._nao, self._async = nao, control
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def operation(self) -> Operation:
+        return Operation(self._nao, self._async.operation)
+
+    @property
+    def error(self) -> Exception | None:
+        return self._async.error
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    @property
+    def closed(self) -> bool:
+        return self._async.closed
+
+    def __enter__(self) -> JointControl:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+    def set_targets(self, positions: dict[str, float], *, speed: float | None = None) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.set_targets(positions, speed=speed)))
+
+    def close(self) -> None:
+        if self._nao._loop is None and self.closed:
+            return
+        self._nao._run(self._async.close())
 
 
 class Operation:

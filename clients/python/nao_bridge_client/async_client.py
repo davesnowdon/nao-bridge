@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from pydantic import ValidationError
 
+from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
@@ -101,6 +102,7 @@ class AsyncNao:
         self._lost: SessionLost | None = None
         self._session_lock = asyncio.Lock()
         self._subscriptions: set[AsyncSubscription] = set()
+        self._controls: set[AsyncJointControl] = set()
         self.last_pending_request: PendingRequest | None = None
         self.cleanup_error: Exception | None = None
         self.robot = AsyncRobot(self)
@@ -391,6 +393,11 @@ class AsyncNao:
             AmbiguousRequest(self._pending_session) if self._pending_session else None
         )
         try:
+            for control in list(self._controls):
+                try:
+                    await control.close()
+                except Exception as exc:
+                    failure = failure or exc
             for sub in list(self._subscriptions):
                 try:
                     await sub.close()
@@ -496,6 +503,59 @@ class AsyncMotion:
 
     async def postures(self) -> PosturesData:
         return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
+
+    async def set_joint_targets(
+        self,
+        positions: dict[str, float],
+        *,
+        control_id: str | None = None,
+        sequence: int = 0,
+        speed: float | None = None,
+        ttl: float | None = None,
+    ) -> AsyncOperation:
+        """Send one target only. Reuse its control ID with a newer sequence to update it."""
+        if control_id is None and sequence != 0:
+            raise ValueError("A nonzero sequence requires an existing control ID")
+        session = await self._nao._ensure_session()
+        cid = control_id if control_id is not None else uuid.uuid4().hex
+        body: dict[str, Any] = {
+            "control_id": cid,
+            "sequence": sequence,
+            "positions": dict(positions),
+        }
+        if speed is not None:
+            body["speed"] = speed
+        if ttl is not None:
+            body["ttl"] = ttl
+        data = decode(
+            OperationData,
+            await self._nao._request(
+                "PUT", "/api/motion/joint_setpoints", body=body, session_id=session.id
+            ),
+        )
+        if (
+            data.session_id != session.id
+            or data.bridge_instance_id != session.bridge_instance_id
+            or data.connection_generation != session.connection_generation
+        ):
+            raise self._nao._lose(
+                "Joint-control response belongs to a different session or connection"
+            )
+        if (
+            data.kind != "motion.joint_control"
+            or data.control is None
+            or data.control.id != cid
+            or data.control.sequence != sequence
+        ):
+            raise ProtocolError(
+                "Joint-control response does not match the submitted identity/sequence"
+            )
+        return AsyncOperation(self._nao, data)
+
+    def joint_control(
+        self, positions: dict[str, float], *, speed: float | None = None, ttl: float | None = None
+    ) -> AsyncJointControl:
+        return AsyncJointControl(self._nao, positions, speed=speed, ttl=ttl)
 
     async def wake(
         self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None

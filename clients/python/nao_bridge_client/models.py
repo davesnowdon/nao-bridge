@@ -110,6 +110,13 @@ class SessionData(WireModel):
     cleanup_operation_id: str | None
 
 
+class JointControlData(WireModel):
+    id: str
+    sequence: int = Field(ge=0, le=9007199254740991)
+    ttl: float = Field(gt=0, le=1)
+    expires_at: str
+
+
 class OperationData(WireModel):
     id: str
     kind: str
@@ -128,6 +135,7 @@ class OperationData(WireModel):
     error: ErrorDetail | None
     child_operation_ids: list[str]
     replaces_operation_id: str | None = None
+    control: JointControlData | None = None
 
 
 class StateGroup(WireModel):

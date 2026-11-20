@@ -1,7 +1,8 @@
 """NAO Bridge HTTP/SSE client. The replacement contract intentionally removes the v1 API."""
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .client import Nao, Operation, Subscription
+from .client import JointControl, Nao, Operation, Subscription
+from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
@@ -23,9 +24,11 @@ __all__ = [
     "AsyncNao",
     "AsyncOperation",
     "AsyncSubscription",
+    "AsyncJointControl",
     "Nao",
     "Operation",
     "Subscription",
+    "JointControl",
     "AmbiguousRequest",
     "BridgeError",
     "CleanupError",

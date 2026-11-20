@@ -1,6 +1,6 @@
 # Client contract and implementation guide
 
-Status: lifecycle guide for the replacement API, 6 November 2026. Increment 1 now has [canonical schemas/fixtures](../contracts/README.md) and an [HTTP walkthrough](http-api.md). Motion, media and sequence sections below describe later delivery increments. The [API plan](api-plan.md) defines domain behavior; [implementation status](implementation-status.md) records verified software and remaining hardware gates.
+Status: lifecycle guide for the replacement API. The [canonical schemas/fixtures](../contracts/README.md) and [HTTP walkthrough](http-api.md) describe the delivered wire surface. Motion foundations are implemented; velocity, media and sequences below include later delivery work. The [API plan](api-plan.md) defines domain behavior; [increment-2 status](increment-2-status.md) records current progress and remaining hardware gates.
 
 ## Contract ownership
 
@@ -66,6 +66,18 @@ All state helpers read `GET /api/state?include=...`. Domain helpers are projecti
 Use `PUT /api/motion/joint_setpoints` for slider/jog targets and `PUT /api/motion/velocity` for base velocities. Create a control with sequence zero, then increment the sequence for each new full setpoint. Joint controls fix their joint set for their lifetime. Keep at most one outstanding update plus the latest pending UI target; do not accumulate a backlog of intermediate slider positions. The server/agent also reject stale updates and replace pending setpoints. Returned acceptance does not mean the physical target was reached.
 
 A scoped helper may refresh the target while the application deliberately controls it; a raw setter sends only one update. Do not renew old interactive work after expiry or reconnect. Cancel explicitly on scope exit. Joint expiry requests a verified hold without removing stiffness; base expiry requests controlled stop. Both report uncertainty if confirmation fails. Agent-side enforcement is independent of a surviving SSE connection or API process; no client may infer physical stop solely from its own network failure.
+
+Python's implemented joint scope schedules refresh from the TTL returned by the
+server, using a conservative monotonic deadline measured from request dispatch.
+It keeps one outstanding PUT and one latest pending target. Concurrent application
+updates may be coalesced; acknowledgement does not promise that each intermediate
+target was sent. Late or lost acknowledgements stop refresh and trigger a bounded
+cancellation attempt for the known operation. An unknown creation cannot be
+cancelled by operation ID until that ID is known; report the uncertainty and use
+TTL/session cleanup, without silently creating a new control. Surface background
+errors to the application and on scope exit. Parent-client shutdown stops
+refreshers before closing its session or transport. Python examples and error
+behavior are in the [client README](../clients/python/README.md#joint-controls).
 
 ## SSE recipe
 
