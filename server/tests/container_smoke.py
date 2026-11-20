@@ -300,6 +300,30 @@ async def check_native_controls():
             )
         await asyncio.sleep(0.2)
         assert all(not task.done() for task in blocked)
+        recognition = await backend.configure_recognition(
+            {
+                "producer_id": "blocked-workers-recognition",
+                "revision": 1,
+                "configuration": {
+                    "vocabulary": ["capture"],
+                    "language": "English",
+                    "paused": False,
+                },
+            }
+        )
+        assert recognition["status"] in {"warming", "listening"}
+        async with asyncio.timeout(3):
+            while state.get("recognition.words", {}).get("revision") != 1:
+                await asyncio.sleep(0.01)
+        stopped_recognition = await backend.configure_recognition(
+            {
+                "producer_id": "blocked-workers-recognition",
+                "revision": 2,
+                "configuration": None,
+            }
+        )
+        assert stopped_recognition["status"] == "stopped"
+        assert all(not task.done() for task in blocked)
         payload = {
             "operation_id": "control-one",
             "control_id": "fixture-control",
@@ -497,6 +521,60 @@ try:
     assert probe.wait(cleanup)["status"] == "succeeded"
     probe.session = None
     print("20 native subscribe/attach/delete cycles: no retained streams/subscriptions", flush=True)
+    probe.session = probe.request(
+        "POST", "/api/sessions", {"name": "native-recognition"}, status=201
+    )["id"]
+    listener = probe.request(
+        "POST",
+        "/api/speech/listeners",
+        {"vocabulary": ["capture", "play"]},
+        status=201,
+        schema="Listener",
+    )
+    listener_path = "/api/speech/listeners/" + listener["id"]
+    until(lambda: probe.request("GET", listener_path, schema="Listener")["status"] == "listening")
+    sub = probe.request(
+        "POST", "/api/events/subscriptions", {"events": ["speech.recognized"]}, status=201
+    )
+    probe.stream(
+        sub,
+        observations=[
+            (
+                "speech.recognized",
+                "SpeechRecognized",
+                {
+                    "listener_id": listener["id"],
+                    "hypotheses": [{"text": "capture", "confidence": 0.9}],
+                },
+            ),
+        ],
+    )
+    probe.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+    until(
+        lambda: (
+            probe.request("GET", "/api/robot/diagnostics")["backend"]["native_subscriptions"] == 17
+        )
+    )
+    speech = probe.request(
+        "POST", "/api/speech/utterances", {"text": "[fixture:block]"}, status=202
+    )
+    until(lambda: probe.request("GET", listener_path)["reason"] == "bridge_output")
+    probe.request("POST", "/api/operations/" + speech["id"] + "/cancel", {}, status=202)
+    assert probe.wait(speech)["status"] == "cancelled"
+    until(lambda: probe.request("GET", listener_path)["status"] == "listening")
+    probe.request("PATCH", listener_path, {"vocabulary": ["save"], "paused": True}, status=202)
+    until(lambda: probe.request("GET", listener_path)["status"] == "paused")
+    cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
+    assert probe.wait(cleanup)["status"] == "succeeded"
+    until(
+        lambda: (
+            probe.request("GET", "/api/robot/diagnostics")["backend"]["native_subscriptions"] == 15
+        )
+    )
+    print(
+        "Native HTTP listeners: SSE, speech suppression/cancel/resume and cleanup passed",
+        flush=True,
+    )
     probe.session = probe.request("POST", "/api/sessions", {"name": "native-motion"}, status=201)[
         "id"
     ]

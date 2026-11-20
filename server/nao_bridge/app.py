@@ -291,6 +291,49 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.post("/api/speech/listeners")
+    async def create_listener(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "ListenerCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /speech/listeners",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.listeners.create(owner, value),
+        )
+        return created(result, "speech/listeners", 201)
+
+    @app.get("/api/speech/listeners/{listener_id}")
+    async def get_listener(request: Request, listener_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.listeners.get(listener_id, session(request, False).public["id"]).public
+        )
+
+    @app.patch("/api/speech/listeners/{listener_id}")
+    async def configure_listener(request: Request, listener_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "ListenerConfigure")
+        item = core.listeners.get(listener_id, session(request).public["id"])
+        return created(core.listeners.configure(item, value), "speech/listeners", 202)
+
+    @app.post("/api/speech/listeners/{listener_id}/stop")
+    async def stop_listener(request: Request, listener_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.listeners.get(listener_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /speech/listeners/" + listener_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.listeners.stop(item),
+        )
+        return created(result, "speech/listeners", 202)
+
     @app.post("/api/motion/joint_moves")
     async def move_joints(request: Request) -> Response:
         value = await body(request, "JointMoveCreate")
@@ -445,6 +488,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     if name == "touch.changed"
                     else core.capabilities()["features"][name]
                     if name in {"motion.posture_changed", "motion.fall_changed"}
+                    else core.capabilities()["features"]["speech.listeners"]
+                    if name in {"speech.recognized", "speech.listener_changed"}
                     else {"status": "available", "reason": None},
                 }
                 for name, schema in EVENT_TYPES.items()

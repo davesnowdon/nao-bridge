@@ -295,6 +295,9 @@ class AgentBackend:
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._rpc("controls", "joint_setpoint", payload, session_id)
 
+    async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("command", "recognition", payload, timeout=8)
+
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]:
         return await self._rpc("priority", "release_controls", {}, session_id)
 

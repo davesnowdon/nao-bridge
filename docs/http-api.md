@@ -306,6 +306,69 @@ backslash control markup; defaults are volume `0.5`, rate `1.0`, and the discove
 language/voice. Volume is 0–1; rate is 0.5–2.0. The rate maps to native percentage,
 not a promise of physical speech duration.
 
+## Vocabulary listeners
+
+`POST /speech/listeners` creates an owned activity and returns 201 with its status
+URL. Example body:
+
+```json
+{"vocabulary":["capture","play"],"language":"English","confidence_threshold":0.5,"pause_during_output":true,"paused":false}
+```
+
+Only vocabulary is required. Defaults are the discovered recognition language,
+threshold 0.5, output suppression enabled and manual pause disabled. Discovery is
+in `capabilities.recognition`; it does not activate a recognizer. Vocabulary is
+limited to 64 unique nonempty phrases, 128 characters each and 2048 characters
+total. Recognition uses exact phrases, not transcription or word spotting.
+
+Creation starts asynchronously. Read `GET /speech/listeners/{id}` or observe
+`speech.listener_changed`: statuses are `starting`, `configuring`, `warming`,
+`listening`, `paused`, `stopping`, `stopped`, `failed`, and `unknown`. Configuration
+completion does not prove readiness; without a native readiness source the activity
+stays `warming`, although actual recognized hypotheses can be delivered. Its fields
+include configuration, pause reason and failure. GET requires the owner's session
+ID and remains available after that session ends, within retention.
+
+`PATCH /speech/listeners/{id}` accepts any nonempty subset of the creation fields
+and returns 202. Wait for a pending transition before changing it again.
+`POST /speech/listeners/{id}/stop` accepts `{}` and returns 202; repeated stop is
+harmless. Creation and stop accept idempotency keys. PATCH is not retried
+automatically: read the activity after an uncertain response. Ended activities
+cannot be resumed. These routes return Listener resources, not command Operations.
+
+Listeners share one native producer when vocabulary, language and
+`pause_during_output` match; phrase ordering is irrelevant. Incompatible requests
+return 409 before changing the recognizer. Confidence thresholds and manual pause
+can differ. Stopping one listener leaves compatible peers active. Default limits
+are 32 live/unresolved listeners and 256 retained records, advertised in capabilities;
+released records use the normal history interval.
+
+Subscribe to `speech.recognized` for `{listener_id, hypotheses:[{text,confidence}]}`.
+Confidence is native evidence, not a calibrated probability. Both listener events
+are scoped to the owning session. Filter multiple listener IDs in the application.
+After `stream.reset`, GET owned listeners to reconcile readiness; recognition events
+are not replayed.
+
+Before speech starts, the recognizer confirms its pause. It resumes after known
+speech completion/cancellation except for manually paused listeners. Unknown speech
+keeps suppression in effect across agent restart until confirmed stop or explicit
+fenced recovery. Opt-out permits recognition during bridge output. Uncertain
+suppression prevents speech dispatch and quarantines recognition. Audio playback
+will use the same policy when that later domain is implemented.
+
+Session expiry/close stops owned listeners; priority stop stops all listeners and
+active output. Recognition cleanup has a dedicated bounded worker. Actuator stop
+does not wait for its transitions. Autonomy transitions conflict with listeners
+because they can change the global recognition environment.
+
+Unknown recognition requires agent recovery; reconnect never resumes listeners.
+Explicit fenced release can release an old generation's logical ownership while
+preserving its `unknown` record. For a current-generation unknown transition,
+restart the agent before release. Native applications/ALDialog can interfere with
+the global recognizer; the bridge refuses observed existing activity and does not
+stop other applications or change autonomous-life/expression settings implicitly.
+Python listener handles are still being added; the HTTP/SSE contract is implemented.
+
 ## Session, command, outcome and cancellation
 
 ```bash

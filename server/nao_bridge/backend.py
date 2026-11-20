@@ -28,6 +28,7 @@ class Backend(Protocol):
     async def configure_autonomy(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
@@ -57,6 +58,9 @@ class FakeBackend:
         self.sink: EventSink | None = None
         self.samples_task: asyncio.Task | None = None
         self.touch = {item["id"]: False for item in CONTACTS}
+        self.recognition: dict[str, Any] | None = None
+        self.recognition_calls: list[dict[str, Any]] = []
+        self.recognition_failure: str | None = None
         self.chains = {
             "Head": ["HeadYaw", "HeadPitch"],
             "LArm": ["LShoulderPitch", "LHand"],
@@ -150,6 +154,14 @@ class FakeBackend:
                         "posture_fields": ["family", "posture"],
                         "fall_phases": ["fallen", "falling"],
                     },
+                    "recognition": {
+                        "available": connected,
+                        "languages": ["English", "French"],
+                        "default_language": "English",
+                        "readiness_observed": True,
+                        "max_vocabulary": 64,
+                        "max_vocabulary_characters": 2048,
+                    },
                     "joint_controls": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -196,6 +208,42 @@ class FakeBackend:
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         return await self._execute(operation_id, session_id, payload, "speech")
+
+    async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]:
+        import copy
+
+        self.recognition_calls.append(copy.deepcopy(payload))
+        await asyncio.sleep(0)
+        if self.recognition_failure == "rejected":
+            raise BridgeError("resource_busy", "Native recognizer is in use", 409)
+        self.recognition = copy.deepcopy(payload)
+        if self.recognition_failure == "unknown":
+            raise BackendUnknown("Recognition acknowledgement lost")
+        config = payload["configuration"]
+        value = {
+            **payload,
+            "status": "stopped"
+            if config is None
+            else "paused"
+            if config["paused"]
+            else "listening",
+            "reason": None,
+        }
+        if self.sink:
+            await self.sink("recognition.state", value)
+        return value
+
+    async def recognized(self, hypotheses: list[dict[str, Any]]) -> None:
+        value = self.recognition
+        if self.sink and value and value["configuration"] and not value["configuration"]["paused"]:
+            await self.sink(
+                "recognition.words",
+                {
+                    "producer_id": value["producer_id"],
+                    "revision": value["revision"],
+                    "hypotheses": hypotheses,
+                },
+            )
 
     async def trajectory(
         self, operation_id: str, session_id: str, payload: dict[str, Any]

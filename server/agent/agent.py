@@ -20,6 +20,7 @@ from motion import valid_trajectory, valid_motion_action
 from autonomy import valid_autonomy, TransitionStopped
 from controls import JointControls, ControlError
 from sampling import GROUPS, GroupSampler
+from recognition import valid_configuration
 from wire import VERSION, encode, frames, monotonic
 
 
@@ -40,11 +41,13 @@ class Agent(object):
         self.revoked = {}
         self.lock = threading.RLock()
         self.work = queue.Queue(16)
+        self.recognition_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
         self.records = collections.OrderedDict()
         self.dropped = 0
+        self.recognition_cleanup = None
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
         self.driver = FixtureDriver(self.observe, self.lock) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe, self.lock)
@@ -70,7 +73,20 @@ class Agent(object):
         with self.lock:
             self.heartbeat = 0
             self.epoch += 1
+            recognition = getattr(self.driver, "recognition", None)
+            if recognition:
+                recognition.invalidate()
+                self.recognition_cleanup = recognition
         self.emergency_stop.set()
+
+    def recognition_recovery(self):
+        while True:
+            target = self.recognition_cleanup
+            if target and target.close():
+                with self.lock:
+                    if self.recognition_cleanup is target:
+                        self.recognition_cleanup = None
+            time.sleep(0.1)
 
     def watchdog(self):
         while True:
@@ -110,9 +126,10 @@ class Agent(object):
                 return False
         return bool(request.get("session_id"))
 
-    def worker(self):
+    def worker(self, work=None):
+        requests = self.work if work is None else work
         while True:
-            request, replies = self.work.get()
+            request, replies = requests.get()
             rid = request["id"]
             with self.lock:
                 record = self.records[rid]
@@ -129,6 +146,9 @@ class Agent(object):
             self.reply(replies, request, "accepted")
             future = None
             try:
+                if request["action"] == "recognition":
+                    self.run_recognition(request, record, replies)
+                    continue
                 if request["action"] == "autonomy":
                     self.run_autonomy(request, record, replies)
                     continue
@@ -173,6 +193,25 @@ class Agent(object):
                     record.update(status="unknown", finished=monotonic())
                     self.reply(replies, request, "unknown", message="Native completion unconfirmed")
 
+    def run_recognition(self, request, record, replies):
+        adapter = self.driver.recognition
+        if adapter is None:
+            raise ValueError("Recognition unavailable")
+        record["phase"] = "dispatch_started"
+        try:
+            result = adapter.configure(request["payload"],
+                                       lambda: not record.get("stop_requested") and self.valid(request, initial=False) is None)
+        except Exception as error:
+            if adapter.poisoned or not isinstance(error, ValueError):
+                record.update(status="unknown", finished=monotonic())
+                self.reply(replies, request, "unknown", message="Recognition transition unconfirmed")
+            else:
+                record.update(status="rejected", finished=monotonic())
+                self.reply(replies, request, "rejected", code=getattr(error, "code", "unsupported"), message=str(error))
+            return
+        record.update(status="completed", result=result, finished=monotonic())
+        self.reply(replies, request, result=result)
+
     def run_autonomy(self, request, record, replies):
         before = self.driver.autonomy.prepare(request["payload"])
 
@@ -208,6 +247,7 @@ class Agent(object):
                                      "result": {"cancelled": True, "dispatched": False}}
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
+                        and (record.get("action") != "recognition" or key == oid)
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
                 record["stop_requested"] = True
@@ -230,7 +270,7 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if record.get("action") == "autonomy" and record["phase"] != "queued":
+            if record.get("action") in ("autonomy", "recognition") and record["phase"] != "queued":
                 # A completed individual setter does not finish a multi-setting transition.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
                 continue
@@ -379,7 +419,7 @@ class Agent(object):
                             self.heartbeat = monotonic()
                             self.reply(replies, request, result={"epoch": self.epoch, "dropped": self.dropped,
                                                                "work_queue": self.work.qsize(), "records": len(self.records),
-                                                               "native_subscriptions": len(self.driver.subscribers) + (len(self.driver.motion_events.links) if self.driver.motion_events else 0)})
+                                                               "native_subscriptions": len(self.driver.subscribers) + sum(len(adapter.links) for adapter in (self.driver.motion_events, self.driver.recognition) if adapter)})
                         elif lane == "priority" and action == "fence":
                             sid = request.get("session_id")
                             if not isinstance(sid, type(u"")) or not sid or (sid not in self.revoked and len(self.revoked) >= 4096):
@@ -416,17 +456,17 @@ class Agent(object):
                                 self.reply(replies, request, result=value)
                             except ValueError as error:
                                 self.reply(replies, request, "rejected", code=getattr(error, "code", "invalid_request"), message=str(error))
-                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy"):
+                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition"):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy}[action](request.get("payload")) and bool(request.get("session_id"))):
+                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration}[action](request.get("payload")) and (action == "recognition" or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
-                                self.work.put_nowait((request, replies))
+                                (self.recognition_work if action == "recognition" else self.work).put_nowait((request, replies))
                                 self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
@@ -460,9 +500,10 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
+        background(self.run_critical, self.worker, self.recognition_work)
         for group in GROUPS:
             background(self.run_critical, self.sampler.run, group)
-        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling):
+        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling, self.recognition_recovery):
             background(self.run_critical, worker)
         for lane in ("priority", "command", "controls", "events"):
             background(self.run_critical, self.serve, lane)

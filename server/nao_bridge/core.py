@@ -16,6 +16,7 @@ from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
 from .joint_controls import KIND as CONTROL_KIND
 from .joint_controls import JointControls
+from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
 
 LOG = logging.getLogger(__name__)
@@ -42,6 +43,8 @@ EVENT_TYPES = {
     "touch.changed": "TouchChanged",
     "motion.posture_changed": "MotionPostureChanged",
     "motion.fall_changed": "MotionFallChanged",
+    "speech.recognized": "SpeechRecognized",
+    "speech.listener_changed": "Listener",
 }
 GROUPS = {"sensors", "joints", "motion", "autonomy", "lights"}
 
@@ -104,6 +107,7 @@ class Core:
         self.configuration_owners: dict[str, str] = {}
         self.pending_replacements: dict[str, str] = {}
         self.joint_controls = JointControls(self)
+        self.listeners = Listeners(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -185,6 +189,7 @@ class Core:
                 return
             self.connection = data["connection"]
             self.generation += 1
+            self.listeners.connection_changed()
             self.samples.clear()
             self.sample_changed.set()
             self.emit(
@@ -213,6 +218,8 @@ class Core:
                         error=BridgeError("connection_lost", "Native outcome is unconfirmed", 503),
                     )
 
+        elif kind in {"recognition.state", "recognition.words"}:
+            self.listeners.observation(kind, data)
         elif kind == "sample":
             if self.connection != "connected":
                 return
@@ -299,6 +306,9 @@ class Core:
                 "speech.utterances": feature(
                     available and self.info.get("speech", {}).get("available", False)
                 ),
+                "speech.listeners": feature(
+                    available and self.info.get("recognition", {}).get("available", False)
+                ),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "motion.posture_changed": feature(
                     available and bool(self.info.get("motion_events", {}).get("posture_fields"))
@@ -348,6 +358,8 @@ class Core:
                     "max_recovery_operations",
                     "max_idempotency_keys",
                     "max_subscriptions",
+                    "max_listeners",
+                    "max_listener_history",
                     "max_streams",
                     "max_streams_per_session",
                     "event_queue_count",
@@ -369,6 +381,7 @@ class Core:
             "event_types": list(EVENT_TYPES),
             "state_groups": ["sensors", "joints", "motion", "autonomy"],
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
+            "recognition": copy.deepcopy(self.info.get("recognition", {})),
             "motion_events": copy.deepcopy(
                 self.info.get("motion_events", {"posture_fields": [], "fall_phases": []})
             ),
@@ -622,6 +635,8 @@ class Core:
                     if result["id"] in self.operations
                     else "session"
                     if result["id"] in self.sessions
+                    else "listener"
+                    if result["id"] in self.listeners.items
                     else "subscription"
                 )
                 self.keys[identity] = Idempotent(
@@ -642,6 +657,8 @@ class Core:
         cancellable: bool = True,
         replacing: Operation | None = None,
     ) -> Operation:
+        if "speech.recognition" in resources and self.listeners.busy():
+            raise BridgeError("resource_busy", "Vocabulary listeners own recognition", 409)
         if kind in NATIVE_KINDS and self.stop_pending():
             raise BridgeError("resource_busy", "Robot stop is in progress", 409)
         recovery = kind in RECOVERY_KINDS
@@ -788,6 +805,8 @@ class Core:
             finished_at=utc(),
         )
         op.done.set()
+        if op.public["kind"] == "speech.utterance" and status != "unknown":
+            self.listeners.end_output(op.public["id"])
 
     def utterance(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         if self.connection != "connected":
@@ -980,6 +999,7 @@ class Core:
             )
         resources = [
             "autonomy.configuration",
+            "speech.recognition",
             "locomotion",
             "speech.output",
             *["joint." + joint["name"] for joint in self.info.get("joints", [])],
@@ -1031,6 +1051,14 @@ class Core:
         generation = self.generation
         self.update(op, status="running", started_at=utc())
         try:
+            if op.public["kind"] == "speech.utterance":
+                await self.listeners.begin_output(op.public["id"])
+                if (
+                    op.public["status"] != "running"
+                    or session.public["status"] != "active"
+                    or generation != self.generation
+                ):
+                    return
             dispatch = (
                 self.backend.speak
                 if op.public["kind"] == "speech.utterance"
@@ -1186,6 +1214,7 @@ class Core:
         session.public["status"] = status
         session.retained_until = self.clock() + self.settings.history_seconds
         self.emit("session.changed", session.public, session.public["id"])
+        self.listeners.stop_session(session.public["id"])
         for sub in list(self.subscriptions.values()):
             if sub.public["session_id"] == session.public["id"]:
                 sub.close(graceful=True)
@@ -1245,6 +1274,8 @@ class Core:
                 )
                 if force and fenced and (op.public["kind"] != CONTROL_KIND or controls_released):
                     op.released = True
+                    if op.public["kind"] == "speech.utterance":
+                        self.listeners.end_output(op.public["id"])
                     op.retained_until = self.clock() + self.settings.history_seconds
                     for resource in op.public["resources"]:
                         if self.resources.get(resource) == op.public["id"]:
@@ -1254,11 +1285,16 @@ class Core:
                 r: owner for r, owner in self.configuration_owners.items() if owner != sid
             }
         unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
+        unresolved_listeners = await self.listeners.cleanup(sid, force, fenced)
+        listeners_released = not self.listeners.owns(sid)
+        if not listeners_released:
+            unresolved_resources.append("speech.recognition")
         return {
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
             "unresolved_resources": unresolved_resources,
-            "force_release": force and fenced and controls_released,
+            "unresolved_listener_ids": unresolved_listeners,
+            "force_release": force and fenced and controls_released and listeners_released,
         }
 
     def close_session(
@@ -1319,6 +1355,7 @@ class Core:
         )
 
     async def stop_all(self) -> dict[str, Any]:
+        self.listeners.stop_all()
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
@@ -1346,6 +1383,10 @@ class Core:
                 if op.public["kind"] in NATIVE_KINDS and not op.released
             }
         )
+        await self.listeners.settled()
+        stopped["unresolved_listener_ids"] = [
+            item.public["id"] for item in self.listeners.items.values() if not item.released
+        ]
         return stopped
 
     def priority_stop(self, session: Session) -> dict[str, Any]:
@@ -1363,7 +1404,13 @@ class Core:
         self.update(op, status="running", started_at=utc())
         try:
             result = await self.stop_all()
-            self.finish(op, "unknown" if result["unresolved_ids"] else "succeeded", result)
+            self.finish(
+                op,
+                "unknown"
+                if result["unresolved_ids"] or result["unresolved_listener_ids"]
+                else "succeeded",
+                result,
+            )
         except Exception:
             self.finish(
                 op,
@@ -1447,10 +1494,13 @@ class Core:
             )
         ]
         if sub.attachments or last_event_id:
+            recover = ["state", "operations"]
+            if {"speech.recognized", "speech.listener_changed"} & set(sub.public["events"]):
+                recover.append("listeners")
             initial.append(
                 self.event(
                     "stream.reset",
-                    {"reason": "reattached_without_replay", "recover": ["state", "operations"]},
+                    {"reason": "reattached_without_replay", "recover": recover},
                 )
             )
         groups = sub.public["samples"][0]["groups"] if sub.public["samples"] else ["sensors"]
@@ -1507,6 +1557,13 @@ class Core:
             for resource, oid in self.resources.items()
             if self.operations[oid].public["status"] == "unknown"
         }
+        unknown_listeners = [
+            item.public["id"]
+            for item in self.listeners.items.values()
+            if item.public["status"] == "unknown" and not item.released
+        ]
+        if unknown_listeners:
+            quarantined["speech.recognition"] = unknown_listeners
         return {
             "bridge_instance_id": self.instance,
             "connection_generation": self.generation,
@@ -1524,6 +1581,7 @@ class Core:
             ),
             "sessions": len(self.sessions),
             "subscriptions": len(self.subscriptions),
+            "listeners": len(self.listeners.items),
             "streams": len(self.streams),
             "backend": backend,
             "queue_overflows": self.queue_overflows,
@@ -1586,6 +1644,7 @@ class Core:
                     for o in self.operations.values()
                 )
                 or sid in self.configuration_owners.values()
+                or self.listeners.owns(sid)
             ):
                 continue
             self.forget_session(sid)
@@ -1593,6 +1652,7 @@ class Core:
 
     def sweep(self) -> None:
         now = self.clock()
+        self.listeners.sweep()
         for session in list(self.sessions.values()):
             if session.public["status"] == "active" and session.deadline <= now:
                 self.expire(session)
@@ -1600,6 +1660,7 @@ class Core:
                 session.retained_until
                 and session.retained_until <= now
                 and session.public["id"] not in self.configuration_owners.values()
+                and not self.listeners.owns(session.public["id"])
                 and not any(
                     o.public["session_id"] == session.public["id"] and not o.released
                     for o in self.operations.values()
@@ -1626,6 +1687,10 @@ class Core:
                     session.public["status"] == "active"
                     or (session.retained_until and session.retained_until > now)
                 ):
+                    continue
+            elif record.resource_kind == "listener":
+                listener = self.listeners.items.get(rid)
+                if listener and (not listener.released or (listener.retained_until or 0) > now):
                     continue
             elif rid in self.subscriptions:
                 record.expires = now + self.settings.history_seconds

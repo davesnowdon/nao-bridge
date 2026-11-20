@@ -470,6 +470,10 @@
             "fall_phases"
           ],
           "additionalProperties": true
+        },
+        "recognition": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
@@ -2093,6 +2097,228 @@
       ],
       "additionalProperties": true,
       "description": "ALBattery charge percentage observed through shared ALMemory sampling; null is unavailable, not empty."
+    },
+    "ListenerCreate": {
+      "type": "object",
+      "properties": {
+        "vocabulary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pause_during_output": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "vocabulary"
+      ],
+      "additionalProperties": false
+    },
+    "ListenerConfigure": {
+      "type": "object",
+      "properties": {
+        "vocabulary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pause_during_output": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "ListenerConfiguration": {
+      "type": "object",
+      "properties": {
+        "vocabulary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pause_during_output": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "vocabulary",
+        "language",
+        "confidence_threshold",
+        "pause_during_output",
+        "paused"
+      ],
+      "additionalProperties": true
+    },
+    "Listener": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configuration": {
+          "$ref": "#/$defs/ListenerConfiguration"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "configuring",
+            "warming",
+            "listening",
+            "paused",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "configuration",
+        "status",
+        "reason",
+        "error"
+      ],
+      "additionalProperties": true
+    },
+    "SpeechRecognized": {
+      "type": "object",
+      "properties": {
+        "listener_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "hypotheses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "text",
+              "confidence"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "listener_id",
+        "hypotheses"
+      ],
+      "additionalProperties": true
     }
   }
 }

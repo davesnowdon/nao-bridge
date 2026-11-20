@@ -412,5 +412,7 @@ class FixtureDriver(NativeDriver):
                             ("ALMotion/RobotIsFalling", True), ("robotHasFallen", True)]
             event, value = observations[self.contact_index % len(observations)]
             self.memory_impl.sources[event].signal(value)
+            if self.recognition_impl.vocabulary:
+                self.recognition_impl.emit([self.recognition_impl.vocabulary[0], 0.9])
             self.contact_index += 1
         return super(FixtureDriver, self).sample_sensors(memory)

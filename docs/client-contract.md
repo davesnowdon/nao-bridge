@@ -91,6 +91,24 @@ behavior are in the [client README](../clients/python/README.md#joint-controls).
 
 The consumer boundary must be documented by each SDK: transport delivery does not guarantee that arbitrary application side effects completed. There is no exactly-once application-action guarantee. Include fixtures for normal delivery, duplicate IDs, unknown event types, malformed frames, coalesced samples, queue overflow, reconnect reset, and expired/restarted streams. Historical replay is outside the four-increment plan; durable sample/media recordings remain available independently.
 
+## Vocabulary listener lifecycle
+
+Listener creation returns a resource, initially `starting`, rather than an Operation.
+Read its status URL or observe the owning session's `speech.listener_changed` events
+to distinguish configuration completion, warming, observed listening, manual/output
+pause and failure. Recognized events carry listener IDs and hypotheses. Subscribe
+before awaiting input; after a stream reset, GET the listener and treat missed
+hypotheses as lost. Do not replay recognition events or recreate an invalidated
+listener automatically.
+
+Clients may use `PATCH` for configuration and manual pause, and `POST .../stop` for
+cleanup. An uncertain PATCH response requires a GET, not an automatic retry.
+Creation/stop use the normal retained idempotency keys. Keep listener handles pinned
+to their creating client/session/generation, and expose unknown cleanup rather than
+claiming that closing a context stopped the native recognizer. Shared producer
+selection and output suppression are server responsibilities. Public HTTP/SSE is
+implemented; the Python scoped listener helpers are the next implementation step.
+
 ## Portable motion, media, and sequences
 
 Use discovered names/units and fresh measured state to build Recorder poses. Save schema-versioned trajectory JSON; submit it directly to the server. A Python builder and a future Rust editor must produce interchangeable documents. The same applies to finite sequence JSON and server-side dry validation. Resource checks and scheduling cannot rely on a particular builder having validated them first.

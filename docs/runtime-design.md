@@ -96,6 +96,17 @@ Start the video-format experiment with MJPEG in one explicitly selected containe
 
 Write sample recordings in the modern process from the same acquisition feed as `/state` and `state.sample`, before per-viewer coalescing or drops. A recording has its own bounded writer queue and explicit loss markers; it must not depend on an SSE subscriber keeping up.
 
+Recognition configuration has a separate supervised worker and a one-request
+queue on the private command lane, so four occupied ordinary command workers do
+not prevent listener cleanup. One API-owned native producer uses increasing
+configuration revisions; the modern process owns session-specific logical listeners
+and filters their hypotheses. Each native setter checks the current API authority.
+Authority loss immediately fences callbacks and later writes, then a separate
+bounded cleanup worker attempts the owned unsubscribe. It does not block the
+watchdog/actuator stop path. Public priority stop leaves an in-flight configuration
+to finish in order while the API requests producer shutdown; cutting through a
+native language/vocabulary setter could leave its outcome uncertain.
+
 The native shared sampler has four permanent, supervised workers: sensors
 (contacts/battery), joints, motion/posture, and autonomy. Each runs one acquisition
 at a time with a requested 10 Hz cadence; a slow group cannot occupy another

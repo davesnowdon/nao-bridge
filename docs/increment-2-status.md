@@ -16,7 +16,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Implemented with independent bounded acquisition workers and connection fencing | Rate/skew and source behavior pending |
-| Vocabulary listeners and speech suppression | Native adapter/discovery tested; public lifecycle, sharing, suppression and clients pending | Pending |
+| Vocabulary listeners and speech suppression | HTTP/SSE lifecycle, sharing, cleanup and speech suppression implemented; Python handles pending | Pending |
 | Bounded sample recordings and finalized assets/checksums/ranges | Pending | Real acquisition pending |
 | Public-API Recorder example and raw-HTTP acceptance scenario | Pending | Three-pose replay pending |
 
@@ -56,9 +56,30 @@ Validation: `make check` passed 280 server/integration and 41 client tests plus
 lint/types; the native container suite passed, including actual SDK recognition
 signals, pause/reconfiguration, old-callback rejection and cleanup. A final
 pre-dispatch fencing regression passed with all 19 focused recognition tests.
-This is the private adapter foundation: no public listener routes or recognition
-capability are advertised yet. IPC/ownership integration, shared listeners,
-speech suppression, HTTP/SSE schemas and Python helpers remain required.
+At that foundation step, no public listener routes or recognition capability were
+advertised. The following step adds the
+public server lifecycle; Python helpers remain required.
+
+Public listeners now use an owned activity resource with asynchronous readiness,
+bounded history and shared native configuration. Manual pause and thresholds are
+per listener; vocabulary/language/output-pause policy must match. Session cleanup
+removes only owned listeners; priority stop reaches actuators before awaiting
+listener cleanup. Native recognition has its own bounded worker and checks API
+authority between setters. Unknown writes quarantine recognition, while rejected
+updates preserve confirmed state. Speech requires acknowledged suppression and
+cannot resume recognition after an unknown output without explicit recovery.
+Old-generation callbacks/results cannot restore invalidated listeners.
+
+Public-listener validation: `make check` passed 298 server/integration and 41 client
+tests plus lint/types; contract compatibility and the production container suite
+passed. Raw HTTP/SSE verifies native hypotheses, suppression during blocked speech,
+cancellation/resume, configuration and subscription cleanup. Private IPC can start
+and stop recognition with all four ordinary workers blocked. Regression tests cover
+sharing, ownership, limits, idempotency, invalid/conflicting configuration, manual
+pause, lost acknowledgements, cleanup quarantine, old-generation recovery and
+cancel-before-speech-dispatch. No physical robot was contacted.
+A final listener-stream reset check passed with all 23 focused listener/contract
+tests; resets explicitly request listener readiness reconciliation.
 
 Contact foundation validation: `make check` passed 93 server/integration and 23
 client tests, lint, and type checks. The compatibility guard passed for additive

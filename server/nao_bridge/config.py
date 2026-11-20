@@ -23,6 +23,8 @@ class Settings:
     max_recovery_operations: int = 128
     max_idempotency_keys: int = 4096
     max_subscriptions: int = 16
+    max_listeners: int = 32
+    max_listener_history: int = 256
     max_streams: int = 8
     max_streams_per_session: int = 4
     event_queue_count: int = 256
@@ -51,6 +53,8 @@ class Settings:
             "max_recovery_operations",
             "max_idempotency_keys",
             "max_subscriptions",
+            "max_listeners",
+            "max_listener_history",
             "max_streams",
             "max_streams_per_session",
             "event_queue_count",
