@@ -120,7 +120,24 @@ per-group updates with their original acquisition windows, not a claimed atomic
 snapshot. Native service serialization and actual source rates still need hardware
 measurement.
 
-Recordings require bounded files and retained asset metadata; select the metadata storage implementation during recording delivery rather than requiring a database now. Compute checksums incrementally while writing. Finalize/flush the file before publishing immutable metadata and a checksum-derived ETag. Handle interrupted recording files and quota accounting before admitting new recordings. Active recording files are not downloadable assets; finalized partial recordings remain explicitly partial and immutable. This storage is for requested recordings, not operation recovery.
+The implemented storage foundation uses one bounded JSON manifest per asset,
+without a database. The recording worker and public routes still need to connect
+it to the acquisition feed. An exclusive directory lock prevents two API processes
+from sharing quota accounting. Admission reserves each recording's maximum content
+size and an asset-count slot. Compute SHA-256 incrementally while writing; fsync
+content, atomically rename it, then atomically publish/fsync finalized metadata.
+Active files are not downloadable. Finalized content, including partial recordings,
+is immutable. Open readers pin assets against deletion and expiry.
+
+At startup, reconcile writing/deleting manifests before admitting new work. Keep
+interrupted recordings as partial assets with an explicit interruption error,
+trimming incomplete NDJSON tails and hashing surviving bytes. Validate completed
+file sizes/checksums; fail closed on corrupt metadata or unaccounted contents instead
+of silently losing data. Interrupted deletion is resumed through a durable tombstone.
+Quota covers content bytes, with separate bounded metadata/count overhead; do not
+evict unexpired assets to admit new work. Run storage I/O in bounded workers outside
+the event loop and priority IPC path. This storage retains recording data only:
+it never restores sessions, operations, or robot commands.
 
 ## Retain HTTP commands and SSE events
 

@@ -17,11 +17,31 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Implemented with independent bounded acquisition workers and connection fencing | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | HTTP/SSE lifecycle, sharing, cleanup, speech suppression and sync/async Python handles implemented | Pending |
-| Bounded sample recordings and finalized assets/checksums/ranges | Pending | Real acquisition pending |
+| Bounded sample recordings and finalized assets/checksums/ranges | File/metadata storage foundation implemented; recording lifecycle, public routes and ranges pending | Real acquisition pending |
 | Public-API Recorder example and raw-HTTP acceptance scenario | Pending | Three-pose replay pending |
 
 Further increment-3/4 software work can follow. Network-loss and Apple Silicon
 acceptance are deferred by the user. A software pass does not complete those gates.
+
+The asset-store foundation uses per-file JSON manifests, exclusive directory
+ownership, byte/count admission limits, incremental SHA-256 and immutable final
+content. It refuses to serve unfinished files. A finalized partial recording is
+retained with an error; interrupted NDJSON tails are truncated to the last complete
+line before hashing. Startup reconciles write/rename/metadata/deletion windows,
+checks existing finalized contents, and accounts for surviving partial bytes before
+admission. Corrupt/unaccounted files fail startup without silent deletion; uncertain
+new-file admission blocks further reservations until storage recovery. Active
+writers and open download readers prevent deletion/expiry. Unexpired assets are
+never evicted for quota. Quotas cover content bytes; bounded manifests are additional
+metadata overhead. No sessions or operations are persisted or resumed.
+
+This module is not yet connected to public routes or the shared sampler. The next
+step remains a bounded recording worker/queue, explicit gap records, owned recording
+and operation lifecycles, range downloads, configuration and SDK/application access.
+Twenty storage tests pass, covering fault-injected short writes, interrupted
+finalization/deletion/admission, retention, competing reservations, checksum
+verification and directory ownership. Lint and type checks also pass. These are
+filesystem/software checks, not robot recording acceptance.
 
 Battery/posture/fall observation validation: `make check` passed 257 server/integration
 and 41 standalone client tests, lint and types; the contract compatibility guard
