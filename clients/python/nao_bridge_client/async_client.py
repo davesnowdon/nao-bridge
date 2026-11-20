@@ -29,11 +29,13 @@ from .errors import (
     StaleState,
 )
 from .json_wire import loads
+from .listeners import AsyncListener
 from .models import (
     Capabilities,
     ErrorDetail,
     Event,
     JointCatalog,
+    ListenerData,
     OperationData,
     PosturesData,
     RobotInfo,
@@ -777,6 +779,54 @@ class AsyncAutonomy:
 class AsyncSpeech:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def listen(
+        self,
+        vocabulary: list[str],
+        *,
+        language: str | None = None,
+        confidence_threshold: float | None = None,
+        pause_during_output: bool | None = None,
+        paused: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncListener:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"vocabulary": vocabulary}
+        body.update(
+            {
+                key: value
+                for key, value in {
+                    "language": language,
+                    "confidence_threshold": confidence_threshold,
+                    "pause_during_output": pause_during_output,
+                    "paused": paused,
+                }.items()
+                if value is not None
+            }
+        )
+        return AsyncListener(
+            self._nao,
+            decode(
+                ListenerData,
+                await self._nao._request(
+                    "POST",
+                    "/api/speech/listeners",
+                    body=body,
+                    key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+                ),
+            ),
+        )
+
+    async def get_listener(self, listener_id: str) -> AsyncListener:
+        if self._nao.session_id is None:
+            raise SessionLost("A listener must belong to the current client session")
+        return AsyncListener(
+            self._nao,
+            decode(
+                ListenerData,
+                await self._nao._request("GET", "/api/speech/listeners/" + listener_id),
+            ),
+        )
 
     async def say(
         self,

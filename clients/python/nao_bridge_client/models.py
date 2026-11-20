@@ -53,6 +53,7 @@ class Capabilities(WireModel):
     speech: dict[str, Any]
     autonomy: dict[str, AutonomySetting] = Field(default_factory=dict)
     motion_events: dict[str, list[str]] = Field(default_factory=dict)
+    recognition: dict[str, Any] = Field(default_factory=dict)
 
 
 class Sensor(WireModel):
@@ -137,6 +138,45 @@ class OperationData(WireModel):
     child_operation_ids: list[str]
     replaces_operation_id: str | None = None
     control: JointControlData | None = None
+
+
+class ListenerConfiguration(WireModel):
+    vocabulary: list[str]
+    language: str
+    confidence_threshold: float = Field(ge=0, le=1)
+    pause_during_output: bool
+    paused: bool
+
+
+class ListenerData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    configuration: ListenerConfiguration
+    status: Literal[
+        "starting",
+        "configuring",
+        "warming",
+        "listening",
+        "paused",
+        "stopping",
+        "stopped",
+        "failed",
+        "unknown",
+    ]
+    reason: str | None
+    error: ErrorDetail | None
+
+
+class SpeechHypothesis(WireModel):
+    text: str
+    confidence: float = Field(ge=0, le=1)
+
+
+class SpeechRecognizedData(WireModel):
+    listener_id: str
+    hypotheses: list[SpeechHypothesis]
 
 
 class StateGroup(WireModel):

@@ -106,8 +106,13 @@ cleanup. An uncertain PATCH response requires a GET, not an automatic retry.
 Creation/stop use the normal retained idempotency keys. Keep listener handles pinned
 to their creating client/session/generation, and expose unknown cleanup rather than
 claiming that closing a context stopped the native recognizer. Shared producer
-selection and output suppression are server responsibilities. Public HTTP/SSE is
-implemented; the Python scoped listener helpers are the next implementation step.
+selection and output suppression are server responsibilities. Public HTTP/SSE and
+Python sync/async scoped handles are implemented. A local readiness wait must not
+infer `listening` from `warming` or from successful configuration alone. A wait
+timeout or cancellation leaves the activity owned and running; explicit stop or
+session cleanup ends it. SDKs must document these independently from scope exit,
+which requests cleanup and surfaces uncertainty. See the
+[Python listener guide](../clients/python/README.md#vocabulary-listeners).
 
 ## Portable motion, media, and sequences
 

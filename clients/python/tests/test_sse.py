@@ -85,6 +85,29 @@ def test_incomplete_frame_not_delivered():
     assert list(SSEParser().feed(raw)) == []
 
 
+@pytest.mark.parametrize("confidence", [True, -0.1, 1.1, "0.9", None])
+def test_malformed_recognition_is_not_delivered_as_an_action(confidence):
+    value = envelope(
+        type="speech.recognized",
+        data={
+            "listener_id": "listener",
+            "hypotheses": [{"text": "capture", "confidence": confidence}],
+        },
+    )
+    with pytest.raises(ProtocolError):
+        list(SSEParser().feed(frame(value)))
+
+
+def test_recognition_accepts_future_fields_and_exposes_listener_identity():
+    data = {
+        "listener_id": "listener",
+        "hypotheses": [{"text": "capture", "confidence": 0.9, "future": True}],
+        "future": "ignored",
+    }
+    event = list(SSEParser().feed(frame(envelope(type="speech.recognized", data=data))))[0]
+    assert event.data == data
+
+
 @pytest.mark.parametrize(
     "kind,data",
     [

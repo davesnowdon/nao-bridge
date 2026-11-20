@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .models import OperationData
+from .models import ListenerData, OperationData
 
 
 class BridgeError(Exception):
@@ -39,6 +39,24 @@ class SessionLost(BridgeError):
 class StaleState(BridgeError):
     def __init__(self, groups: list[str]):
         super().__init__("stale_state", "Fresh state is unavailable", details={"groups": groups})
+
+
+class ListenerTimeout(TimeoutError):
+    def __init__(self, listener_id: str):
+        super().__init__("Local wait timed out; listener was not stopped: " + listener_id)
+        self.listener_id = listener_id
+
+
+class ListenerError(BridgeError):
+    def __init__(self, listener: ListenerData):
+        self.listener = listener
+        self.listener_id = listener.id
+        error = listener.error
+        super().__init__(
+            error.code if error else "listener_" + listener.status,
+            error.message if error else "Listener " + listener.status,
+            details=error.details if error else {},
+        )
 
 
 class OperationTimeout(TimeoutError):

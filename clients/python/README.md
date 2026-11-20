@@ -37,6 +37,9 @@ asyncio.run(main())
 | `robot.info()`, `robot.capabilities()` | Discovery without creating a session |
 | `robot.state(include=..., require_fresh=True)` | Shared observations; raises `StaleState` for stale/unavailable requested groups |
 | `speech.say(text, wait=True, ...)` | Server-defaulted plain speech; returns an Operation |
+| `speech.listen(vocabulary, ...)`, `.get_listener(id)` | Owned vocabulary listener and current readiness |
+| `listener.configure(...)`, `.pause()`, `.resume()`, `.stop()` | Accepted configuration changes and explicit cleanup |
+| `listener.wait_configured()`, `.wait_ready()`, `.refresh()` | Distinguish applied configuration from observed listening |
 | `robot.stop(wait=True)` | Priority stop for implemented speech and motion work |
 | `motion.joints()`, `.postures()`, `.state(...)` | Joint limits/chains/coupling and shared measured/commanded state |
 | `motion.wake()`, `.rest()`, `.set_stiffness(...)`, `.posture(...)` | Explicit preparation with session ownership |
@@ -113,6 +116,55 @@ An omitted ID generates a new ID with sequence zero. To update that control, sup
 its ID and a greater sequence yourself. This path sends once and lets TTL expire;
 it has no `wait` parameter. Use the returned operation's ordinary wait/refresh
 methods if needed. Identical duplicate updates never extend server expiry.
+
+## Vocabulary listeners
+
+Check `robot.capabilities().features["speech.listeners"]` and the `recognition`
+catalog for supported languages. Listen returns an activity handle immediately;
+it does not wait for the recognizer to become ready. Omitted options use server
+defaults, including pausing recognition during bridge speech output.
+
+```python
+from nao_bridge_client import Nao, SpeechRecognizedData
+
+with Nao() as nao:
+    with nao.events.subscribe(events=["speech.recognized"]) as events:
+        with nao.speech.listen(["capture", "play"]) as listener:
+            listener.wait_ready(timeout=10)
+            for event in events:
+                if event.type == "speech.recognized":
+                    result = SpeechRecognizedData.model_validate(event.data)
+                    if result.listener_id == listener.id:
+                        print(result.hypotheses)
+                        break
+                elif event.type in {"stream.reset", "client.stream_gap"}:
+                    listener.refresh()  # Missed voice input cannot be recovered.
+```
+
+The async form is `async with await nao.speech.listen(...) as listener`; await its
+methods. Both variants expose typed `listener.data`, including configuration,
+status, reason and error. `configure`, `pause` and `resume` return acceptance;
+call `wait_configured()` to await `warming`, `listening` or `paused`. Only
+`wait_ready()` requires observed `listening`. A backend without readiness events
+can remain `warming` while delivering hypotheses. Neither wait opens an SSE stream;
+they poll GET and default to a ten-second local timeout (`None` waits indefinitely).
+`ListenerTimeout` leaves the listener active. Cancelling an async wait also leaves
+it active; exiting its scope requests cleanup.
+
+`stop()` waits for confirmed terminal cleanup within the client's `cleanup_timeout`;
+`stop(wait=False)` only requests it. Scope exit calls `close()`, which stops the
+listener. `ListenerError` includes its last record and distinguishes failed/unknown
+outcomes. Unknown cleanup raises and is retained in `listener.cleanup_error`; an
+existing application exception is preserved with a warning. Parent client closure
+closes the owning session, including listeners not used in their own scopes.
+Handles cannot control a reopened session or automatically recreate ended listeners.
+
+Creation/stop have retained idempotency keys. After an ambiguous creation, explicitly
+retry its original request and use `speech.get_listener(result["id"])` to recover a
+handle. PATCH has no automatic retry: refresh after a lost response to inspect the
+accepted configuration. `speech.listener_changed` and `speech.recognized` payloads
+are validated by the SSE reader. Filter recognized events by listener ID in the
+application; listener creation itself does not create an event subscription.
 
 ## Lifecycle and errors
 

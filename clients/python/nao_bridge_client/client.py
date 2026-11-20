@@ -7,10 +7,12 @@ from typing import Any, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
 from .controls import AsyncJointControl
+from .listeners import AsyncListener
 from .models import (
     Capabilities,
     Event,
     JointCatalog,
+    ListenerData,
     OperationData,
     PosturesData,
     RobotInfo,
@@ -409,6 +411,35 @@ class Speech:
     def __init__(self, nao: Nao):
         self._nao = nao
 
+    def listen(
+        self,
+        vocabulary: list[str],
+        *,
+        language: str | None = None,
+        confidence_threshold: float | None = None,
+        pause_during_output: bool | None = None,
+        paused: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> Listener:
+        return Listener(
+            self._nao,
+            self._nao._run(
+                self._nao._async.speech.listen(
+                    vocabulary,
+                    language=language,
+                    confidence_threshold=confidence_threshold,
+                    pause_during_output=pause_during_output,
+                    paused=paused,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def get_listener(self, listener_id: str) -> Listener:
+        return Listener(
+            self._nao, self._nao._run(self._nao._async.speech.get_listener(listener_id))
+        )
+
     def say(
         self,
         text: str,
@@ -438,6 +469,80 @@ class Speech:
                 )
             ),
         )
+
+
+class Listener:
+    def __init__(self, nao: Nao, listener: AsyncListener):
+        self._nao = nao
+        self._async = listener
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def data(self) -> ListenerData:
+        return self._async.data
+
+    @property
+    def status(self) -> str:
+        return self._async.status
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    def __enter__(self) -> Listener:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+    def refresh(self) -> Listener:
+        self._nao._run(self._async.refresh())
+        return self
+
+    def configure(
+        self,
+        *,
+        vocabulary: list[str] | None = None,
+        language: str | None = None,
+        confidence_threshold: float | None = None,
+        pause_during_output: bool | None = None,
+        paused: bool | None = None,
+    ) -> Listener:
+        self._nao._run(
+            self._async.configure(
+                vocabulary=vocabulary,
+                language=language,
+                confidence_threshold=confidence_threshold,
+                pause_during_output=pause_during_output,
+                paused=paused,
+            )
+        )
+        return self
+
+    def pause(self) -> Listener:
+        return self.configure(paused=True)
+
+    def resume(self) -> Listener:
+        return self.configure(paused=False)
+
+    def wait_ready(self, *, timeout: float | None = 10) -> Listener:
+        self._nao._run(self._async.wait_ready(timeout=timeout))
+        return self
+
+    def wait_configured(self, *, timeout: float | None = 10) -> Listener:
+        self._nao._run(self._async.wait_configured(timeout=timeout))
+        return self
+
+    def stop(self, *, wait: bool = True, timeout: float | None = None) -> Listener:
+        self._nao._run(self._async.stop(wait=wait, timeout=timeout))
+        return self
+
+    def close(self) -> None:
+        self._nao._run(self._async.close())
 
 
 class Operations:
