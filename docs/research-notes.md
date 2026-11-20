@@ -178,3 +178,30 @@ reports fall-manager completion. These sources emit true indications; absence or
 false input does not establish that a robot has recovered. The bridge neither
 changes fall safeguards nor manufactures a persistent upright/fallen state.
 
+## Vocabulary recognition adapter
+
+[NAOqi 2.1 recognition](https://doc.aldebaran.com/2-1/naoqi/audio/alspeechrecognition.html)
+provides alternating phrase/confidence pairs. Exact-phrase mode avoids the native
+word-spotting markers; the adapter accepts only configured phrases and finite
+confidence values in 0–1. Confidence remains native evidence, not a calibrated
+application probability. Acoustic recognition quality requires a physical robot;
+the SDK fixture establishes service/callback behavior only.
+
+The [2.1 API](https://doc.aldebaran.com/2-1/naoqi/audio/alspeechrecognition-api.html)
+and [2.8 API](https://doc.aldebaran.com/2-8/naoqi/audio/alspeechrecognition-api.html)
+provide pause, language/vocabulary configuration, named subscriptions and readiness
+events. The adapter serializes its own native changes, pauses before setters, and
+does not infer listening readiness from a successful subscribe call. Before first
+activation it checks `ALSpeechRecognition/IsRunning`; true or missing/invalid state
+refuses takeover. This cannot exclude a concurrent external NAOqi/ALDialog client
+changing the global recognizer after the check. The bridge must document that
+native-app interference boundary, rather than silently stopping other applications
+or disabling autonomous life. Audio/visual recognition expression settings are
+not changed implicitly.
+
+The adapter uses a unique native subscription name and attempts only its own
+unsubscribe. Abrupt process/network loss can leave native producer state uncertain;
+reconnection does not establish cleanup or authorize automatic listener resumption.
+The remaining public lifecycle must preserve this uncertainty and explicitly map
+revision-tagged native observations to owned listeners.
+

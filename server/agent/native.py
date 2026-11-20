@@ -12,6 +12,7 @@ from motion import MotionObservation, PostureObservation, FixtureMotion, Fixture
 from wire import monotonic
 from autonomy import Autonomy, FixtureAutonomy
 from observations import BATTERY_KEY, MotionEvents, battery_value
+from recognition import Recognition, FixtureRecognition
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -40,7 +41,7 @@ def contact_values(values):
 class NativeDriver(object):
     joint_hold_verified = False
 
-    def __init__(self, endpoint, observe):
+    def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
         self.observe = observe
         self.session = None
@@ -56,6 +57,8 @@ class NativeDriver(object):
         self.safety_posture = None
         self.autonomy = None
         self.motion_events = None
+        self.recognition = None
+        self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
 
     def call(self, service, method, *args):
@@ -118,6 +121,8 @@ class NativeDriver(object):
         self.description["autonomy"] = self.autonomy.catalog
         self.motion_events = MotionEvents(self.memory, self.call, self.observe)
         self.description["motion_events"] = self.motion_events.support
+        self.recognition = Recognition(self.session, self.memory, self.call, self.observe, self.adapter_lock)
+        self.description["recognition"] = self.recognition.catalog
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -282,6 +287,9 @@ class NativeDriver(object):
 
     def close(self):
         self._connected.clear()
+        if self.recognition:
+            self.recognition.close()
+            self.recognition = None
         if self.motion_events:
             self.motion_events.close()
             self.motion_events = None
@@ -341,6 +349,7 @@ class FixtureMemory(object):
     def __init__(self):
         self.sources = dict((event, FixtureTouch()) for event in TOUCH)
         self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
+        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening"])
         self.values = dict((key, 0) for key in MEMORY_KEYS)
         self.values[BATTERY_KEY] = 76
 
@@ -352,6 +361,9 @@ class FixtureMemory(object):
 
     def getListData(self, keys):
         return [self.values.get(key) for key in keys]
+
+    def getData(self, key):
+        return self.values.get(key)
 
     def toggle(self, index):
         item = CONTACTS[index % len(CONTACTS)]
@@ -365,7 +377,7 @@ class FixtureDriver(NativeDriver):
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
-    def __init__(self, observe):
+    def __init__(self, observe, lock=None):
         self.server = qi.Session()
         self.server.listenStandalone("tcp://127.0.0.1:0")
         self.work_impl = FixtureSpeech()
@@ -374,6 +386,7 @@ class FixtureDriver(NativeDriver):
         self.motion_impl = qi.multiThreaded()(FixtureMotion)()
         self.posture_impl = qi.multiThreaded()(FixturePosture)(self.motion_impl)
         self.autonomy_impl = qi.multiThreaded()(FixtureAutonomy)()
+        self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
@@ -381,7 +394,8 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALMotion", self.motion_impl)
         self.server.registerService("ALRobotPosture", self.posture_impl)
         self.server.registerService("ALAutonomousLife", self.autonomy_impl)
-        super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe)
+        self.server.registerService("ALSpeechRecognition", self.recognition_impl)
+        super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 
     def connect(self):

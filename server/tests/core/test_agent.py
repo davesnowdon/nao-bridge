@@ -25,6 +25,7 @@ def agent_module(monkeypatch):
     sys.modules.pop("controls", None)
     sys.modules.pop("sampling", None)
     sys.modules.pop("observations", None)
+    sys.modules.pop("recognition", None)
 
 
 class DrainQueue:

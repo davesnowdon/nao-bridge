@@ -16,7 +16,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Implemented with independent bounded acquisition workers and connection fencing | Rate/skew and source behavior pending |
-| Vocabulary listeners and speech suppression | Pending | Pending |
+| Vocabulary listeners and speech suppression | Native adapter/discovery tested; public lifecycle, sharing, suppression and clients pending | Pending |
 | Bounded sample recordings and finalized assets/checksums/ranges | Pending | Real acquisition pending |
 | Public-API Recorder example and raw-HTTP acceptance scenario | Pending | Three-pose replay pending |
 
@@ -42,6 +42,23 @@ is discarded after generation change, and a fresh read then succeeds. Unit tests
 also cover errors after reconnect, acquisition windows, adapter capture and
 per-group failure. Existing native motion, controls, observations, stream load and
 process-recovery checks still pass. No robot was contacted.
+
+Recognition adapter foundation: optional read-only discovery, bounded exact-phrase
+vocabulary, serialized pause/configure/resume, revision-tagged callbacks and named
+subscription cleanup are implemented. Native readiness is observed separately from
+configuration completion; missing readiness stays `warming`. Existing external
+recognition activity or unknown engine state is rejected before mutation. Invalid
+updates leave an existing producer intact; an unconfirmed setter disables event
+delivery and requires agent recovery. Authority is checked before each native
+write, and old callbacks cannot cross a configuration revision.
+
+Validation: `make check` passed 280 server/integration and 41 client tests plus
+lint/types; the native container suite passed, including actual SDK recognition
+signals, pause/reconfiguration, old-callback rejection and cleanup. A final
+pre-dispatch fencing regression passed with all 19 focused recognition tests.
+This is the private adapter foundation: no public listener routes or recognition
+capability are advertised yet. IPC/ownership integration, shared listeners,
+speech suppression, HTTP/SSE schemas and Python helpers remain required.
 
 Contact foundation validation: `make check` passed 93 server/integration and 23
 client tests, lint, and type checks. The compatibility guard passed for additive

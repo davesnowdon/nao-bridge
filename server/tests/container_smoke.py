@@ -167,6 +167,67 @@ finally:
     print(result.strip(), flush=True)
 
 
+def check_native_recognition():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys, time
+sys.path.insert(0, '/opt/nao-bridge/agent')
+from native import FixtureDriver
+from wire import monotonic
+
+seen = []
+driver = FixtureDriver(lambda kind, data: seen.append((kind, data)))
+def wait(predicate):
+    deadline = monotonic() + 3
+    while not predicate():
+        assert monotonic() < deadline, 'recognition fixture deadline exceeded'
+        time.sleep(0.01)
+def request(revision, vocabulary=None, paused=False):
+    return {'producer_id': 'fixture-producer', 'revision': revision,
+            'configuration': {'language': 'English',
+                              'vocabulary': vocabulary or ['capture', 'play'],
+                              'paused': paused}}
+try:
+    info = driver.connect()
+    assert info['recognition']['available'], info
+    adapter = driver.recognition
+    assert not adapter.links and not driver.recognition_impl.subscribers
+    adapter.configure(request(1))
+    wait(lambda: adapter.snapshot()['status'] == 'listening')
+    old_callback = adapter.links[0][2]
+    driver.recognition_impl.emit(['capture', 0.9, 'play', 0.1])
+    wait(lambda: any(kind == 'recognition.words' for kind, data in seen))
+    words = [data for kind, data in seen if kind == 'recognition.words']
+    assert words[-1]['revision'] == 1 and words[-1]['hypotheses'][0]['text'] == 'capture'
+    assert adapter.configure(request(2, paused=True))['status'] == 'paused'
+    driver.recognition_impl.emit(['capture', 0.8])
+    assert adapter.configure(request(3, ['capture', 'save']))['status'] in ('warming', 'listening')
+    wait(lambda: adapter.snapshot()['status'] == 'listening')
+    count = len([data for kind, data in seen if kind == 'recognition.words'])
+    old_callback(['capture', 0.8])
+    assert len([data for kind, data in seen if kind == 'recognition.words']) == count
+    driver.recognition_impl.emit(['play', 0.9, 'save', 0.8])
+    wait(lambda: len([data for kind, data in seen if kind == 'recognition.words']) > count)
+    latest = [data for kind, data in seen if kind == 'recognition.words'][-1]
+    assert latest['revision'] == 3
+    assert latest['hypotheses'] == [{'text': 'save', 'confidence': 0.8}]
+    adapter.configure({'producer_id': 'fixture-producer', 'revision': 4, 'configuration': None})
+    assert not adapter.links and not driver.recognition_impl.subscribers
+    print('Native recognition: discovery, phrases, pause/configure, callbacks and cleanup passed')
+finally:
+    driver.close()
+    driver.server.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
 async def check_native_controls():
     from nao_bridge.config import Settings
     from nao_bridge.errors import BridgeError
@@ -332,6 +393,7 @@ try:
     assert "/opt/legacy/" not in api_maps and "/nao-bridge/lib/" not in api_maps
     check_legacy_bundle()
     check_native_sampling()
+    check_native_recognition()
     asyncio.run(check_native_controls())
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")

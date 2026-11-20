@@ -47,7 +47,7 @@ class Agent(object):
         self.dropped = 0
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
-        self.driver = FixtureDriver(self.observe) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe)
+        self.driver = FixtureDriver(self.observe, self.lock) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe, self.lock)
         self.sampler = GroupSampler(self.observe, monotonic)
         self.controls = JointControls(self.driver, self.lock, monotonic,
                                       lambda function, *args: background(self.run_control, function, *args),
