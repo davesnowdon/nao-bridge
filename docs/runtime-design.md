@@ -121,8 +121,8 @@ snapshot. Native service serialization and actual source rates still need hardwa
 measurement.
 
 The implemented storage foundation uses one bounded JSON manifest per asset,
-without a database. The recording worker and public routes still need to connect
-it to the acquisition feed. An exclusive directory lock prevents two API processes
+without a database. Bounded recording workers and public routes now connect it
+to the acquisition feed. An exclusive directory lock prevents two API processes
 from sharing quota accounting. Admission reserves each recording's maximum content
 size and an asset-count slot. Compute SHA-256 incrementally while writing; fsync
 content, atomically rename it, then atomically publish/fsync finalized metadata.
@@ -132,8 +132,9 @@ is immutable. Open readers pin assets against deletion and expiry.
 At startup, reconcile writing/deleting manifests before admitting new work. Keep
 interrupted recordings as partial assets with an explicit interruption error,
 trimming incomplete NDJSON tails and hashing surviving bytes. Validate completed
-file sizes/checksums; fail closed on corrupt metadata or unaccounted contents instead
-of silently losing data. Interrupted deletion is resumed through a durable tombstone.
+file sizes/checksums; storage initialization fails closed on corrupt metadata or
+unaccounted contents instead of silently losing data. Robot control remains available
+with recording storage marked unavailable. Interrupted deletion is resumed through a durable tombstone.
 Quota covers content bytes, with separate bounded metadata/count overhead; do not
 evict unexpired assets to admit new work. Run storage I/O in bounded workers outside
 the event loop and priority IPC path. This storage retains recording data only:

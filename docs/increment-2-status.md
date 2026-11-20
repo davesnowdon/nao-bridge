@@ -17,8 +17,8 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Implemented with independent bounded acquisition workers and connection fencing | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | HTTP/SSE lifecycle, sharing, cleanup, speech suppression and sync/async Python handles implemented | Pending |
-| Bounded sample recordings and finalized assets/checksums/ranges | File/metadata storage foundation implemented; recording lifecycle, public routes and ranges pending | Real acquisition pending |
-| Public-API Recorder example and raw-HTTP acceptance scenario | Pending | Three-pose replay pending |
+| Bounded sample recordings and finalized assets/checksums/ranges | HTTP lifecycle, bounded shared-feed writer, gap records, retained assets and range downloads implemented; SDK helpers pending | Real acquisition pending |
+| Public-API Recorder example and raw-HTTP acceptance scenario | Raw HTTP state/trajectory/recording checks implemented; reference application pending | Three-pose replay pending |
 
 Further increment-3/4 software work can follow. Network-loss and Apple Silicon
 acceptance are deferred by the user. A software pass does not complete those gates.
@@ -29,19 +29,56 @@ content. It refuses to serve unfinished files. A finalized partial recording is
 retained with an error; interrupted NDJSON tails are truncated to the last complete
 line before hashing. Startup reconciles write/rename/metadata/deletion windows,
 checks existing finalized contents, and accounts for surviving partial bytes before
-admission. Corrupt/unaccounted files fail startup without silent deletion; uncertain
+admission. Corrupt/unaccounted files fail storage initialization without silent deletion; uncertain
 new-file admission blocks further reservations until storage recovery. Active
 writers and open download readers prevent deletion/expiry. Unexpired assets are
 never evicted for quota. Quotas cover content bytes; bounded manifests are additional
 metadata overhead. No sessions or operations are persisted or resumed.
 
-This module is not yet connected to public routes or the shared sampler. The next
-step remains a bounded recording worker/queue, explicit gap records, owned recording
-and operation lifecycles, range downloads, configuration and SDK/application access.
+The storage foundation has now been connected to public routes and the shared
+sampler as described below. SDK/application access remains the next delivery step.
 Twenty storage tests pass, covering fault-injected short writes, interrupted
 finalization/deletion/admission, retention, competing reservations, checksum
 verification and directory ownership. Lint and type checks also pass. These are
 filesystem/software checks, not robot recording acceptance.
+
+Sample recordings now expose `POST /recordings`, GET status and explicit stop,
+with an associated `recording.samples` operation. One bounded queue/daemon writer
+per active recording receives shared state before SSE viewer handling. No recording
+performs extra robot polling. The file contains metadata/units, timestamped state,
+explicit gap rows and an end row. Rate selection skips intermediate acquisitions
+without inventing interpolated samples; missed/overflowed observations remain gaps.
+The initial snapshot and subsequent groups retain their source quality/windows.
+Gaps produce an explicitly partial asset and failed operation; normal duration/stop
+produces a completed asset, and operation cancellation finalizes before reporting
+cancelled. Session expiry/connection loss retains partial data without automatic resume.
+
+Quota and live/history limits are checked before accepting an operation. Priority
+stop reaches native actuators before waiting for storage finalization. A blocked
+writer retains its bounded slot; cleanup reports its unresolved operation rather
+than assuming the file finalized. Filesystem failure blocks new recordings; storage
+startup failure leaves robot control available. A successful partial finalization
+remains downloadable after a later write failure.
+
+Assets expose paginated list/metadata/delete, `asset.created` events and immutable binary content with SHA-256 ETag,
+single byte ranges and If-Range. Downloads have their own bounded worker slots and
+two 64 KiB queue entries each, pin files while responses are active, and release
+them on disconnect/send failure. Slow downloads do not share command workers.
+Background expiry is bounded and skips active/referenced files. Default Docker
+storage works without a volume; mount it to survive container removal. API restart
+retains files only, with interrupted recordings explicitly partial and all sessions,
+operations and recording activities starting empty.
+
+Recording/asset validation: `make check` passed 352 server/integration tests and
+47 standalone client tests, plus lint/types. The focused recording/storage/contract
+suite passed 52 tests. Cases cover explicit bounds, quota, gaps, overflowed SSE,
+blocked writes with priority-stop ordering, cancellation/session cleanup, expiry,
+storage failure isolation, paginated metadata/events, ranges, slow/disconnected
+downloads and API restart. The production native container suite passed shared
+SDK acquisition into NDJSON, checksums/ranges, retained finalized assets, and an
+API kill during recording recovered as partial. The contract compatibility guard
+passed. No physical robot was contacted; actual source timing and motion remain
+hardware gates.
 
 Battery/posture/fall observation validation: `make check` passed 257 server/integration
 and 41 standalone client tests, lint and types; the contract compatibility guard

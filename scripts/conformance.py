@@ -1,6 +1,7 @@
 """SDK-independent core contract checks, restricted to robot-free backends."""
 
 import argparse
+import hashlib
 import http.client
 import json
 import time
@@ -50,6 +51,56 @@ class Probe:
             {"$defs": self.schemas["$defs"], "$ref": "#/$defs/" + name},
             format_checker=FormatChecker(),
         ).validate(value)
+
+    def sample_recording(self):
+        assert self.request("GET", "/api/robot")["backend"] in {"fake", "native-fixture"}
+        recording = self.request(
+            "POST",
+            "/api/recordings",
+            {
+                "source": {"kind": "samples", "groups": ["joints", "sensors"], "rate_hz": 5},
+                "duration": 0.8,
+                "max_bytes": 262144,
+            },
+            status=201,
+            schema="Recording",
+        )
+        outcome = self.wait({"id": recording["operation_id"]})
+        assert outcome["status"] in {"succeeded", "failed"}, outcome
+        current = self.request("GET", "/api/recordings/" + recording["id"], schema="Recording")
+        asset = self.request("GET", "/api/assets/" + current["asset_id"], schema="Asset")
+        if outcome["status"] == "failed":
+            assert outcome["error"]["code"] == "recording_gaps" and asset["status"] == "partial", (
+                outcome
+            )
+        path = "/api/assets/" + asset["id"] + "/content"
+        conn = self.connection()
+        try:
+            conn.request("GET", path)
+            response = conn.getresponse()
+            raw = response.read()
+            assert response.status == 200 and len(raw) == asset["size_bytes"]
+            assert hashlib.sha256(raw).hexdigest() == asset["sha256"]
+            etag = response.getheader("ETag")
+            assert etag == '"' + asset["sha256"] + '"'
+            rows = [json.loads(row) for row in raw.splitlines()]
+            for row in rows:
+                self.validate("RecordingLine", row)
+            assert rows[0]["type"] == "metadata" and rows[-1]["type"] == "end"
+            samples = [row["state"] for row in rows if row["type"] == "sample"]
+            assert len(samples) >= 2
+            assert any(sample["groups"]["joints"]["quality"] == "fresh" for sample in samples)
+            assert all(
+                sample["connection_generation"] == recording["connection_generation"]
+                for sample in samples
+            )
+            conn.request("GET", path, headers={"Range": "bytes=0-31", "If-Range": etag})
+            response = conn.getresponse()
+            assert response.status == 206 and response.read() == raw[:32]
+            assert response.getheader("Content-Range") == "bytes 0-31/" + str(len(raw))
+        finally:
+            conn.close()
+        return asset["id"]
 
     def wait(self, operation):
         deadline = time.monotonic() + 5
@@ -276,6 +327,11 @@ def run(url):
             status=400,
             schema="Error",
         )
+        if (
+            probe.request("GET", "/api/robot/capabilities")["features"]["recordings"]["status"]
+            == "available"
+        ):
+            probe.sample_recording()
         subscription = probe.request(
             "POST",
             "/api/events/subscriptions",

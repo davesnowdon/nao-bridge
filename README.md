@@ -9,8 +9,10 @@ The replacement delivers the increment 1 foundation plus the first increment-2
 features: head/hand/foot state and events, joint/posture discovery, measured and
 commanded joint state, explicit wake/rest and stiffness, posture changes, absolute
 joint moves, timed trajectories and explicit autonomy settings. HTTP vocabulary
-listeners support shared recognition, pause and suppression during speech; Python
-listener handles are still in progress. Plain speech,
+listeners support shared recognition, pause and suppression during speech, with
+sync/async Python handles. Bounded sample recordings produce checksummed NDJSON
+assets with range downloads; Python recording helpers and the Recorder app remain
+in progress. Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
 remain available. Contract 1.1.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
@@ -61,7 +63,24 @@ retaining its own diagnostics and in-memory operation state.
 An API restart starts a new bridge instance with empty sessions, operations,
 subscriptions and retry history. Nothing is resumed or replayed. Previously
 submitted robot work may still be running; restarting the bridge does not
-establish its outcome. No data volume is needed for the current implementation.
+establish its outcome. The container records to `/var/lib/nao-bridge/assets` by
+default. A volume is optional: mount that directory to retain recording assets
+when replacing/removing a container. Its metadata stores files, never sessions or
+operations. Without a mount, assets last only as long as the container filesystem.
+
+For a local fake server with recording enabled:
+
+```bash
+uv run --project server nao-bridge --backend fake --asset-directory /tmp/nao-bridge-assets
+```
+
+Storage defaults are a 256 MiB content quota, 256 retained/active assets and seven
+days' retention. Set `--asset-quota-bytes` / `NAO_BRIDGE_ASSET_QUOTA_BYTES` and
+`--asset-retention-seconds` / `NAO_BRIDGE_ASSET_RETENTION_SECONDS` as needed.
+`--asset-directory` / `NAO_BRIDGE_ASSET_DIR` chooses a writable directory; only one
+bridge process may own it. Local runs without a directory keep recording unavailable.
+Storage initialization failure disables recordings/assets while robot control
+continues. Existing finalized assets remain downloadable after a later write failure.
 
 To exercise the actual SDK without a robot, use `--backend native-fixture`. This
 registers local fixture services and produces synthetic head/hand/foot contacts through the

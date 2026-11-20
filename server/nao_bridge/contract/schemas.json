@@ -2319,6 +2319,407 @@
         "hypotheses"
       ],
       "additionalProperties": true
+    },
+    "RecordingSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "samples"
+        },
+        "groups": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "joints",
+              "sensors",
+              "motion",
+              "autonomy"
+            ]
+          }
+        },
+        "rate_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 50
+        }
+      },
+      "required": [
+        "kind",
+        "groups"
+      ],
+      "additionalProperties": false
+    },
+    "RecordingCreate": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/RecordingSource"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 300
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 65536,
+          "maximum": 33554432,
+          "default": 8388608
+        },
+        "allow_lower_rate": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "source",
+        "duration"
+      ],
+      "additionalProperties": false
+    },
+    "Recording": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "source": {
+          "$ref": "#/$defs/RecordingSource"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 65536
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "recording",
+            "stopping",
+            "completed",
+            "failed"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asset_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "error",
+        "operation_id",
+        "source",
+        "duration",
+        "max_bytes",
+        "status",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "asset_id"
+      ],
+      "additionalProperties": true
+    },
+    "Asset": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "partial"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "content_type",
+        "created_at",
+        "expires_at",
+        "size_bytes",
+        "sha256",
+        "status",
+        "error",
+        "metadata"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingMetadata": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "metadata"
+        },
+        "schema_version": {
+          "const": "1.0"
+        },
+        "recording_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "robot": {
+          "$ref": "#/$defs/Robot"
+        },
+        "source": {
+          "$ref": "#/$defs/RecordingSource"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "units": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "schema_version",
+        "recording_id",
+        "robot",
+        "source",
+        "created_at",
+        "units"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingSample": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "sample"
+        },
+        "state": {
+          "$ref": "#/$defs/State"
+        }
+      },
+      "required": [
+        "type",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingGap": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "gap"
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "from_bridge_time_ms": {
+          "type": "number"
+        },
+        "to_bridge_time_ms": {
+          "type": "number"
+        },
+        "dropped_samples": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "reasons",
+        "from_bridge_time_ms",
+        "to_bridge_time_ms",
+        "dropped_samples"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingEnd": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "end"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ended_bridge_time_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "reason",
+        "sample_count",
+        "dropped_samples",
+        "ended_bridge_time_ms"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingLine": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RecordingMetadata"
+        },
+        {
+          "$ref": "#/$defs/RecordingSample"
+        },
+        {
+          "$ref": "#/$defs/RecordingGap"
+        },
+        {
+          "$ref": "#/$defs/RecordingEnd"
+        }
+      ]
+    },
+    "Assets": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Asset"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": true
     }
   }
 }

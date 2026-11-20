@@ -154,6 +154,8 @@ class AssetStore:
                     error={
                         "code": "recording_interrupted",
                         "message": "Recording process ended before finalization",
+                        "details": {},
+                        "retryable": False,
                     },
                 )
                 record.update(state="finalized", reserved_bytes=size)
@@ -250,6 +252,7 @@ class AssetStore:
         content_type: str,
         max_bytes: int,
         metadata: dict[str, Any],
+        expire: bool = True,
     ) -> AssetWriter:
         with self.lock:
             self._open()
@@ -259,7 +262,8 @@ class AssetStore:
                 )
             if type(max_bytes) is not int or max_bytes <= 0:
                 raise ValueError("A positive bounded byte reservation is required")
-            self.sweep()
+            if expire:
+                self.sweep()
             if len(self.records) >= self.max_assets or max_bytes > self.stats()["available_bytes"]:
                 raise BridgeError("storage_full", "Asset capacity is exhausted", 507)
             aid, now = uuid.uuid4().hex, self.clock()
@@ -348,12 +352,13 @@ class AssetStore:
             self.records[aid] = record
             self._remove(aid)
 
-    def sweep(self) -> None:
+    def sweep(self, only: set[str] | None = None) -> None:
         with self.lock:
             self._open()
             for aid, record in list(self.records.items()):
                 if (
-                    record["state"] == "finalized"
+                    (only is None or aid in only)
+                    and record["state"] == "finalized"
                     and record["expires"] <= self.clock()
                     and aid not in self.writers
                     and not self.readers.get(aid)
@@ -426,7 +431,9 @@ class AssetWriter:
                 size_bytes=size,
                 sha256=digest,
                 status="partial" if error else "completed",
-                error=copy.deepcopy(error),
+                error={"details": {}, "retryable": False, **copy.deepcopy(error)}
+                if error
+                else None,
             )
             record.update(state="finalized", reserved_bytes=size)
             self.store._manifest(self.id, record)

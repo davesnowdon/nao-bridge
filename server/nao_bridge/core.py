@@ -18,6 +18,8 @@ from .joint_controls import KIND as CONTROL_KIND
 from .joint_controls import JointControls
 from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
+from .recordings import KIND as RECORDING_KIND
+from .recordings import Recordings
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -45,6 +47,8 @@ EVENT_TYPES = {
     "motion.fall_changed": "MotionFallChanged",
     "speech.recognized": "SpeechRecognized",
     "speech.listener_changed": "Listener",
+    "recording.changed": "Recording",
+    "asset.created": "Asset",
 }
 GROUPS = {"sensors", "joints", "motion", "autonomy", "lights"}
 
@@ -108,6 +112,7 @@ class Core:
         self.pending_replacements: dict[str, str] = {}
         self.joint_controls = JointControls(self)
         self.listeners = Listeners(self)
+        self.recordings = Recordings(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -124,6 +129,7 @@ class Core:
         return task
 
     async def start(self) -> None:
+        await self.recordings.start()
         await self.backend.start(self.backend_event)
         self.spawn(self.maintenance())
 
@@ -136,6 +142,7 @@ class Core:
                 await self.stop_all()
         except Exception:
             LOG.exception("Shutdown stop could not be confirmed")
+        await self.recordings.close()
         for op in self.operations.values():
             if op.public["status"] not in TERMINAL:
                 self.finish(
@@ -211,7 +218,7 @@ class Core:
                         ),
                     )
                     continue
-                if op.public["status"] not in TERMINAL:
+                if op.public["status"] not in TERMINAL and op.public["kind"] != RECORDING_KIND:
                     self.finish(
                         op,
                         "unknown",
@@ -243,6 +250,7 @@ class Core:
                     "error": data.get("errors", {}).get(group),
                 }
             self.sample_changed.set()
+            self.recordings.sample(set(data["groups"]))
             for sub in self.subscriptions.values():
                 requests = sub.public["samples"]
                 if not requests or not sub.buffer or sub.buffer.closed:
@@ -262,6 +270,7 @@ class Core:
         ):
             self.emit(kind, data)
         elif kind == "observation_gap":
+            self.recordings.observation_gap()
             for sub in self.subscriptions.values():
                 if sub.buffer:
                     sub.buffer.close()
@@ -345,7 +354,8 @@ class Core:
                         for item in self.info.get("autonomy", {}).values()
                     )
                 ),
-                "recordings": feature(False, False),
+                "recordings": feature(available and self.recordings.available()),
+                "assets": feature(self.recordings.store is not None),
                 "sequences": feature(False, False),
             },
             "limits": {
@@ -360,6 +370,16 @@ class Core:
                     "max_subscriptions",
                     "max_listeners",
                     "max_listener_history",
+                    "asset_quota_bytes",
+                    "max_assets",
+                    "max_asset_downloads",
+                    "asset_retention_seconds",
+                    "max_recordings",
+                    "max_recording_history",
+                    "max_recording_seconds",
+                    "max_recording_bytes",
+                    "recording_queue_count",
+                    "recording_queue_bytes",
                     "max_streams",
                     "max_streams_per_session",
                     "event_queue_count",
@@ -637,6 +657,8 @@ class Core:
                     if result["id"] in self.sessions
                     else "listener"
                     if result["id"] in self.listeners.items
+                    else "recording"
+                    if result["id"] in self.recordings.items
                     else "subscription"
                 )
                 self.keys[identity] = Idempotent(
@@ -1137,6 +1159,11 @@ class Core:
             return copy.deepcopy(op.public)
         if not op.public["cancellable"]:
             raise BridgeError("unsupported", "This operation cannot be cancelled", 422)
+        if op.public["kind"] == RECORDING_KIND:
+            for item in self.recordings.active():
+                if item.operation is op:
+                    self.recordings.stop(item, reason="cancelled", cancelled=True)
+                    return copy.deepcopy(op.public)
         if op.public["status"] == "accepted":
             self.finish(op, "cancelled", {"dispatched": False})
         elif op.public["status"] != "cancelling":
@@ -1215,6 +1242,7 @@ class Core:
         session.retained_until = self.clock() + self.settings.history_seconds
         self.emit("session.changed", session.public, session.public["id"])
         self.listeners.stop_session(session.public["id"])
+        self.recordings.stop_session(session.public["id"], status)
         for sub in list(self.subscriptions.values()):
             if sub.public["session_id"] == session.public["id"]:
                 sub.close(graceful=True)
@@ -1233,7 +1261,9 @@ class Core:
         affected = [
             op
             for op in self.operations.values()
-            if op.public["session_id"] == sid and not op.released
+            if op.public["session_id"] == sid
+            and not op.released
+            and op.public["kind"] != RECORDING_KIND
         ]
         for op in affected:
             if op.public["status"] == "accepted":
@@ -1286,6 +1316,8 @@ class Core:
             }
         unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
         unresolved_listeners = await self.listeners.cleanup(sid, force, fenced)
+        unresolved_recordings = await self.recordings.settle(sid)
+        unresolved.extend(unresolved_recordings)
         listeners_released = not self.listeners.owns(sid)
         if not listeners_released:
             unresolved_resources.append("speech.recognition")
@@ -1294,7 +1326,11 @@ class Core:
             "unresolved_operation_ids": unresolved,
             "unresolved_resources": unresolved_resources,
             "unresolved_listener_ids": unresolved_listeners,
-            "force_release": force and fenced and controls_released and listeners_released,
+            "force_release": force
+            and fenced
+            and controls_released
+            and listeners_released
+            and not unresolved_recordings,
         }
 
     def close_session(
@@ -1356,6 +1392,7 @@ class Core:
 
     async def stop_all(self) -> dict[str, Any]:
         self.listeners.stop_all()
+        self.recordings.stop_all()
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
@@ -1387,6 +1424,7 @@ class Core:
         stopped["unresolved_listener_ids"] = [
             item.public["id"] for item in self.listeners.items.values() if not item.released
         ]
+        stopped["unresolved_ids"].extend(await self.recordings.settle())
         return stopped
 
     def priority_stop(self, session: Session) -> dict[str, Any]:
@@ -1497,6 +1535,10 @@ class Core:
             recover = ["state", "operations"]
             if {"speech.recognized", "speech.listener_changed"} & set(sub.public["events"]):
                 recover.append("listeners")
+            if "recording.changed" in sub.public["events"]:
+                recover.append("recordings")
+            if "asset.created" in sub.public["events"]:
+                recover.append("assets")
             initial.append(
                 self.event(
                     "stream.reset",
@@ -1582,6 +1624,8 @@ class Core:
             "sessions": len(self.sessions),
             "subscriptions": len(self.subscriptions),
             "listeners": len(self.listeners.items),
+            "recordings": len(self.recordings.items),
+            "active_recordings": len(self.recordings.active()),
             "streams": len(self.streams),
             "backend": backend,
             "queue_overflows": self.queue_overflows,
@@ -1645,6 +1689,7 @@ class Core:
                 )
                 or sid in self.configuration_owners.values()
                 or self.listeners.owns(sid)
+                or self.recordings.owns(sid)
             ):
                 continue
             self.forget_session(sid)
@@ -1653,6 +1698,7 @@ class Core:
     def sweep(self) -> None:
         now = self.clock()
         self.listeners.sweep()
+        self.recordings.tick()
         for session in list(self.sessions.values()):
             if session.public["status"] == "active" and session.deadline <= now:
                 self.expire(session)
@@ -1661,6 +1707,7 @@ class Core:
                 and session.retained_until <= now
                 and session.public["id"] not in self.configuration_owners.values()
                 and not self.listeners.owns(session.public["id"])
+                and not self.recordings.owns(session.public["id"])
                 and not any(
                     o.public["session_id"] == session.public["id"] and not o.released
                     for o in self.operations.values()
@@ -1691,6 +1738,12 @@ class Core:
             elif record.resource_kind == "listener":
                 listener = self.listeners.items.get(rid)
                 if listener and (not listener.released or (listener.retained_until or 0) > now):
+                    continue
+            elif record.resource_kind == "recording":
+                recording = self.recordings.items.get(rid)
+                if recording and (
+                    not recording.done.is_set() or (recording.retained_until or 0) > now
+                ):
                     continue
             elif rid in self.subscriptions:
                 record.expires = now + self.settings.history_seconds

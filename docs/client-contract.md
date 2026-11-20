@@ -116,6 +116,22 @@ which requests cleanup and surfaces uncertainty. See the
 
 ## Portable motion, media, and sequences
 
+Sample-recording clients create an owned Recording and track its associated
+Operation through finalization. A stop request is accepted asynchronously; do not
+report a finished asset until GET exposes its ID and the operation ends. A failed
+recording can still produce a partial asset. Local wait cancellation does not imply
+server stop; explicit recording stop, operation cancellation and session cleanup
+finalize it. Unknown cleanup means the writer has not been confirmed finished, not
+that a new native robot command should be submitted. Recordings never automatically
+resume after connection/session loss.
+
+Inspect NDJSON gap records and per-group quality before converting samples into
+poses or trajectories. An incomplete recording may have no end row; its asset
+status/error is authoritative. File checksums verify downloaded bytes, not missing
+acquisitions. A client must explicitly select/resample valid intervals instead of
+interpolating across gaps without user intent. The recording HTTP and asset routes
+are implemented; Python recording/download helpers remain pending.
+
 Use discovered names/units and fresh measured state to build Recorder poses. Save schema-versioned trajectory JSON; submit it directly to the server. A Python builder and a future Rust editor must produce interchangeable documents. The same applies to finite sequence JSON and server-side dry validation. Resource checks and scheduling cannot rely on a particular builder having validated them first.
 
 Binary images/audio/video/downloads use the documented content routes and content types. Assets carry metadata, sizes/checksums, and partial/completed status; SSE announces metadata/lifecycle only. Stream downloads incrementally rather than requiring base64 JSON or loading large assets into memory. Browser-side and native clients follow the same protocol even if their networking libraries differ.

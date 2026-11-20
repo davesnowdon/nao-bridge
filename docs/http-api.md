@@ -488,6 +488,85 @@ API restart discards sessions, operations, subscriptions and retry keys. Prior I
 return 404, and clients must deliberately create new sessions. No work is resumed;
 missing history does not establish whether earlier robot work stopped.
 
-All failures use `{ "error": { "code", "message", "details", "retryable" },
+JSON API failures use `{ "error": { "code", "message", "details", "retryable" },
 "request_id" }`. Keep unknown codes intact; `retryable` does not authorize arbitrary
 side-effect replay. Reject returned stream URLs that change the bridge origin.
+
+## Sample recordings and retained assets
+
+Recording storage is enabled by default in Docker; local runs need
+`--asset-directory`. Inspect `features.recordings`, `features.assets` and the
+advertised limits. Create an owned recording with the same session header as other
+activities:
+
+```http
+POST /api/recordings
+X-Session-ID: <session-id>
+Idempotency-Key: capture-1
+Content-Type: application/json
+
+{"source":{"kind":"samples","groups":["joints","sensors"],"rate_hz":5},"duration":10,"max_bytes":1048576}
+```
+
+The 201 response includes `id`, `operation_id`, accepted `source`, bounds and
+`status: "starting"`. GET `/api/recordings/{id}` or observe `recording.changed` to
+track `recording`, `stopping` and `completed`/`failed`. The associated operation
+finishes only after finalization. GET status remains available to the owning
+retained session after closure. Creation and `POST /recordings/{id}/stop` accept
+idempotency keys; stop takes `{}` and returns 202 with the recording resource.
+Cancelling the associated operation also drains/finalizes before reporting cancelled.
+
+`source.kind` is currently `samples`; choose any nonempty subset of `joints`,
+`sensors`, `motion`, `autonomy`. Omitted rate uses the configured sampler cap
+(default 10 Hz); an excessive request needs `allow_lower_rate: true` to accept a
+lower rate. Source cadence is best effort and does not promise new hardware values
+at every requested interval. Duration is required, positive and at most 300 seconds; default
+byte reservation is 8 MiB, maximum 32 MiB, minimum 64 KiB. Configured lower limits
+take precedence. Four recordings and 256 retained recording records are allowed
+by default. Quota admission reserves the maximum before accepting the operation;
+unexpired assets are never evicted to make space.
+
+NDJSON uses the named `RecordingLine` schema. Its `metadata` row includes contract
+version for the file, source selection, robot/bridge identity and units. `sample`
+rows use the same measured/commanded state, group quality and acquisition timestamps
+as GET state. `gap` rows report observation loss, writer overflow, unavailable/stale
+sources or long acquisition intervals; zero `dropped_samples` means the missing
+count is not known. `end` reports the reason and sample/drop counts. Files are
+independent of SSE viewer queues. A file with gaps is explicitly partial, with a
+`recording_gaps` error; its operation fails but its surviving asset is usable.
+Byte limits, storage failure, session expiry and connection loss also retain
+partial data where possible. Interrupted files may lack an end row or contain no
+complete rows; asset metadata still identifies the source and interruption.
+
+Once `asset_id` is present:
+
+```http
+GET /api/assets
+GET /api/assets/<asset-id>
+GET /api/assets/<asset-id>/content
+Range: bytes=0-65535
+If-Range: "<sha256>"
+```
+
+Asset routes do not require a live robot session. Metadata includes byte count,
+SHA-256, content type, creation/expiry, completed/partial status and error. Content
+is immutable and has a quoted checksum ETag. A satisfiable single range returns
+206 and `Content-Range`; suffix/open-ended ranges are accepted. Unsupported or
+unsatisfiable ranges return an empty 416 with `Content-Range: bytes */<size>`.
+An If-Range mismatch returns the full 200 representation. Verify the checksum after
+downloading; a mid-stream I/O failure terminates the response. Browser CORS exposes
+the download headers. At most two downloads run by default, separately from command
+and recording workers; extra downloads get 429. Each has two 64 KiB queued chunks
+and a five-second send deadline.
+
+`DELETE /api/assets/{id}` returns 204; an active download prevents deletion with
+409. Asset listing uses `limit` (default 50, maximum 100) and `cursor`, ordered by
+creation time then opaque ID. Follow `next_cursor` until null; a removed/expired
+cursor returns 400, requiring a fresh listing. Pages are not a snapshot. Subscribe
+to `asset.created` for completed/partial availability; after a stream gap, reconcile
+through the list/metadata routes. Background expiry runs at most once a minute and skips pinned
+files. Assets survive session closure and API restart when their directory survives;
+recording/session/operation IDs do not resume after API restart. Storage stores no
+command recovery state. Mount `/var/lib/nao-bridge/assets` in Docker to retain files
+across container replacement, or use the directory/quota/retention settings described
+in the [README](../README.md).

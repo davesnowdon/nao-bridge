@@ -291,6 +291,85 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/assets")
+    async def list_assets(request: Request) -> dict[str, Any]:
+        query(request, {"cursor", "limit"})
+        core.recordings.http.check()
+        limit = bounded_int(request, "limit", 50, 100, 1)
+        values = sorted(
+            (
+                value
+                for aid, value in core.recordings.assets.items()
+                if aid not in core.recordings.http.deleting
+            ),
+            key=lambda value: (value["created_at"], value["id"]),
+        )
+        cursor = request.query_params.get("cursor")
+        if cursor:
+            positions = [index for index, value in enumerate(values) if value["id"] == cursor]
+            if not positions:
+                raise BridgeError("invalid_request", "Cursor is invalid or expired")
+            values = values[positions[0] + 1 :]
+        page = values[:limit]
+        return {
+            "items": copy.deepcopy(page),
+            "next_cursor": page[-1]["id"] if len(values) > limit else None,
+        }
+
+    @app.get("/api/assets/{asset_id}")
+    async def get_asset(request: Request, asset_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(core.recordings.http.get(asset_id))
+
+    @app.get("/api/assets/{asset_id}/content")
+    async def asset_content(request: Request, asset_id: str) -> Response:
+        query(request, set())
+        return await core.recordings.http.content(
+            asset_id, request.headers.get("range"), request.headers.get("if-range")
+        )
+
+    @app.delete("/api/assets/{asset_id}")
+    async def delete_asset(request: Request, asset_id: str) -> Response:
+        query(request, set())
+        await core.recordings.http.delete(asset_id)
+        return Response(status_code=204)
+
+    @app.post("/api/recordings")
+    async def create_recording(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "RecordingCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /recordings",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.recordings.create(owner, value),
+        )
+        return created(result, "recordings", 201)
+
+    @app.get("/api/recordings/{recording_id}")
+    async def get_recording(request: Request, recording_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.recordings.get(recording_id, session(request, False).public["id"]).public
+        )
+
+    @app.post("/api/recordings/{recording_id}/stop")
+    async def stop_recording(request: Request, recording_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.recordings.get(recording_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /recordings/" + recording_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.recordings.stop(item),
+        )
+        return created(result, "recordings", 202)
+
     @app.post("/api/speech/listeners")
     async def create_listener(request: Request) -> Response:
         query(request, set())
@@ -490,6 +569,10 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     if name in {"motion.posture_changed", "motion.fall_changed"}
                     else core.capabilities()["features"]["speech.listeners"]
                     if name in {"speech.recognized", "speech.listener_changed"}
+                    else core.capabilities()["features"]["recordings"]
+                    if name == "recording.changed"
+                    else core.capabilities()["features"]["assets"]
+                    if name == "asset.created"
                     else {"status": "available", "reason": None},
                 }
                 for name, schema in EVENT_TYPES.items()
@@ -541,6 +624,15 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         allow_methods=["*"],
         allow_headers=["*"],
         allow_private_network=True,
-        expose_headers=["Location", "X-Request-ID", "Retry-After"],
+        expose_headers=[
+            "Location",
+            "X-Request-ID",
+            "Retry-After",
+            "ETag",
+            "Accept-Ranges",
+            "Content-Range",
+            "Content-Length",
+            "Content-Disposition",
+        ],
     )
     return app

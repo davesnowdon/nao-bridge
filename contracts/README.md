@@ -34,6 +34,16 @@ backpressure, retained history and explicit recovery. The production-container
 runner adds real SDK loopback callbacks, agent kill/freeze and restart fencing.
 Neither is evidence of physical stop or callback behavior on a robot.
 
+With recording storage enabled, the direct runner also captures bounded shared
+joint/sensor samples and verifies NDJSON schemas, checksum and byte-range download.
+`RecordingCreate` requires an explicit samples source and positive duration; the
+request/scenario fixtures include missing bounds and invalid selections. The
+production container suite additionally kills the API during recording, then checks
+that finalized assets survive and interrupted files become partial without restoring
+sessions or operations. `RecordingLine` describes metadata/sample/gap/end rows;
+`Asset` describes finalized completed/partial content. Assets have paginated metadata
+and `asset.created` notifications, with GET reconciliation after an SSE gap.
+
 ## Request fingerprints
 
 A key is scoped to the session (bridge instance for session creation).

@@ -685,6 +685,11 @@ try:
         "Native HTTP controls: ordering, expiry/hold, ended IDs and cancellation passed",
         flush=True,
     )
+    retained_asset = probe.sample_recording()
+    print(
+        "Native sample recording: measured state, NDJSON, checksum and range download passed",
+        flush=True,
+    )
     cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
     assert probe.wait(cleanup)["status"] == "succeeded"
     print(
@@ -787,6 +792,23 @@ try:
     # A new API instance starts empty; it cannot establish earlier robot outcomes.
     session = probe.request("POST", "/api/sessions", {"name": "api-crash"}, status=201)
     probe.session = session["id"]
+    interrupted_recording = probe.request(
+        "POST",
+        "/api/recordings",
+        {
+            "source": {"kind": "samples", "groups": ["joints", "sensors"]},
+            "duration": 30,
+            "max_bytes": 1048576,
+        },
+        status=201,
+        schema="Recording",
+    )
+    until(
+        lambda: (
+            probe.request("GET", "/api/recordings/" + interrupted_recording["id"])["status"]
+            == "recording"
+        )
+    )
     operation = probe.request(
         "POST", "/api/speech/utterances", {"text": "[fixture:block]"}, status=202
     )
@@ -804,6 +826,33 @@ try:
     probe.request("PATCH", "/api/sessions/" + session["id"], {}, status=404)
     diag = probe.request("GET", "/api/robot/diagnostics")
     assert not diag["quarantined_resources"] and diag["sessions"] == 0
+    probe.request("GET", "/api/assets/" + retained_asset, schema="Asset")
+    interrupted_asset = next(
+        asset
+        for asset in probe.request("GET", "/api/assets", schema="Assets")["items"]
+        if asset["metadata"]["recording_id"] == interrupted_recording["id"]
+    )
+    assert (
+        interrupted_asset["status"] == "partial"
+        and interrupted_asset["error"]["code"] == "recording_interrupted"
+    )
+    connection = probe.connection()
+    try:
+        connection.request("GET", "/api/assets/" + interrupted_asset["id"] + "/content")
+        response = connection.getresponse()
+        content = response.read()
+        assert (
+            response.status == 200
+            and hashlib.sha256(content).hexdigest() == interrupted_asset["sha256"]
+        )
+        for row in content.splitlines():
+            probe.validate("RecordingLine", json.loads(row))
+    finally:
+        connection.close()
+    print(
+        "API restart: finalized asset retained and interrupted recording recovered as partial",
+        flush=True,
+    )
     probe.session = probe.request("POST", "/api/sessions", {}, status=201)["id"]
     assert probe.session != session["id"]
     assert (
