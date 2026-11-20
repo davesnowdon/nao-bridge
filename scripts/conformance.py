@@ -60,7 +60,7 @@ class Probe:
             time.sleep(0.02)
         raise AssertionError("Operation did not finish within fixture deadline")
 
-    def stream(self, subscription, *, reconnect=False, touch=False, contacts=()):
+    def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
         conn = self.connection(timeout=3)
         headers = {
             "X-Session-ID": self.session,
@@ -79,10 +79,14 @@ class Probe:
         seen, fields, ids = set(), {}, set()
         expected_contacts = {(sensor, level) for sensor in contacts for level in (False, True)}
         edges, levels = set(), set()
+        pending_observations = list(observations)
         deadline = time.monotonic() + (16 if contacts else 5)
         try:
             while (
-                wanted - seen or expected_contacts - edges or expected_contacts - levels
+                wanted - seen
+                or expected_contacts - edges
+                or expected_contacts - levels
+                or pending_observations
             ) and time.monotonic() < deadline:
                 raw = response.readline(262145)
                 assert raw and len(raw) <= 262144, "Unexpected EOF or oversized frame"
@@ -98,6 +102,11 @@ class Probe:
                     assert event["id"] not in ids
                     ids.add(event["id"])
                     seen.add(event["type"])
+                    for expected in pending_observations[:]:
+                        kind, schema, data = expected
+                        if event["type"] == kind and event["data"] == data:
+                            self.validate(schema, event["data"])
+                            pending_observations.remove(expected)
                     if event["type"] == "touch.changed":
                         edges.add((event["data"]["sensor"], event["data"]["pressed"]))
                     elif event["type"] == "state.sample":
@@ -110,6 +119,7 @@ class Probe:
                     key, _, value = line.partition(":")
                     fields[key] = value.removeprefix(" ")
             assert wanted <= seen, (wanted, seen)
+            assert not pending_observations, ("missing observations", pending_observations)
             assert expected_contacts <= edges, ("missing contact edges", expected_contacts - edges)
             assert expected_contacts <= levels, (
                 "missing contact levels",

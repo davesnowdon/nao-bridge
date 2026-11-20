@@ -11,6 +11,7 @@ import qi
 from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture, valid_trajectory, valid_motion_action
 from wire import monotonic
 from autonomy import Autonomy, FixtureAutonomy
+from observations import BATTERY_KEY, MotionEvents, battery_value
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -54,6 +55,7 @@ class NativeDriver(object):
         self.posture = None
         self.safety_posture = None
         self.autonomy = None
+        self.motion_events = None
         self.sample_windows = {}
         self.sample_errors = {}
         self._connected = threading.Event()
@@ -116,6 +118,8 @@ class NativeDriver(object):
             self.safety_posture = None
         self.autonomy = Autonomy(self.session, self.call)
         self.description["autonomy"] = self.autonomy.catalog
+        self.motion_events = MotionEvents(self.memory, self.call, self.observe)
+        self.description["motion_events"] = self.motion_events.support
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -136,8 +140,9 @@ class NativeDriver(object):
     def sample(self):
         self.sample_windows, self.sample_errors = {}, {}
         start = monotonic()
-        values = self.call(self.memory, "getListData", MEMORY_KEYS)
+        values = self.call(self.memory, "getListData", MEMORY_KEYS + [BATTERY_KEY])
         groups = {"sensors": contact_values(values)}
+        groups["sensors"]["battery"] = battery_value(values[len(MEMORY_KEYS)] if len(values) > len(MEMORY_KEYS) else None)
         self.sample_windows["sensors"] = [start, monotonic()]
         for group in ("joints", "motion"):
             start = monotonic()
@@ -282,6 +287,9 @@ class NativeDriver(object):
 
     def close(self):
         self._connected.clear()
+        if self.motion_events:
+            self.motion_events.close()
+            self.motion_events = None
         for subscriber, link, _ in self.subscribers:
             try:
                 subscriber.signal.disconnect(link)
@@ -337,7 +345,12 @@ class FixtureTouch(object):
 class FixtureMemory(object):
     def __init__(self):
         self.sources = dict((event, FixtureTouch()) for event in TOUCH)
+        self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
         self.values = dict((key, 0) for key in MEMORY_KEYS)
+        self.values[BATTERY_KEY] = 76
+
+    def getEventList(self):
+        return list(self.sources)
 
     def subscriber(self, event):
         return self.sources[event]
@@ -386,5 +399,9 @@ class FixtureDriver(NativeDriver):
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
             self.memory_impl.toggle(self.contact_index // 2)
+            observations = [("PostureChanged", "StandInit"), ("PostureFamilyChanged", "Standing"),
+                            ("ALMotion/RobotIsFalling", True), ("robotHasFallen", True)]
+            event, value = observations[self.contact_index % len(observations)]
+            self.memory_impl.sources[event].signal(value)
             self.contact_index += 1
         return super(FixtureDriver, self).sample()

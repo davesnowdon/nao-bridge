@@ -332,19 +332,36 @@ try:
     until(lambda: recovery_probe.request("GET", "/api/robot/diagnostics")["streams"] == 0)
     diagnostics = recovery_probe.request("GET", "/api/robot/diagnostics")
     assert diagnostics["subscriptions"] == 0
-    assert diagnostics["backend"]["native_subscriptions"] == 11
-    contacts = probe.request("GET", "/api/sensors")["items"]
+    assert diagnostics["backend"]["native_subscriptions"] == 15
+    sensors = probe.request("GET", "/api/sensors")["items"]
+    contacts = [item for item in sensors if item["event_type"] == "touch.changed"]
+    battery = next(item for item in sensors if item["id"] == "battery.charge")
+    assert battery["unit"] == "percent" and battery["state"]["status"] == "available"
+    state = probe.request("GET", "/api/state?include=sensors&wait_for_fresh_ms=1000")
+    assert state["groups"]["sensors"]["value"]["battery"] == {"charge": 76, "reason": None}
     assert all(item["events"]["status"] == "available" for item in contacts)
     sub = probe.request(
         "POST",
         "/api/events/subscriptions",
-        {"events": ["touch.changed"], "samples": [{"groups": ["sensors"], "rate_hz": 10}]},
+        {
+            "events": ["touch.changed", "motion.posture_changed", "motion.fall_changed"],
+            "samples": [{"groups": ["sensors"], "rate_hz": 10}],
+        },
         status=201,
     )
-    probe.stream(sub, contacts=[item["id"] for item in contacts])
+    probe.stream(
+        sub,
+        contacts=[item["id"] for item in contacts],
+        observations=[
+            ("motion.posture_changed", "MotionPostureChanged", {"posture": "StandInit"}),
+            ("motion.posture_changed", "MotionPostureChanged", {"family": "Standing"}),
+            ("motion.fall_changed", "MotionFallChanged", {"phase": "falling"}),
+            ("motion.fall_changed", "MotionFallChanged", {"phase": "fallen"}),
+        ],
+    )
     probe.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
     print(
-        "All 11 native contacts: independent press/release events and sampled state passed",
+        "Native observations: all 11 contacts, battery, posture/family and both fall phases passed",
         flush=True,
     )
     cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)

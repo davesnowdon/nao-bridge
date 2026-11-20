@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class WireModel(BaseModel):
@@ -52,6 +52,7 @@ class Capabilities(WireModel):
     replay_supported: Literal[False]
     speech: dict[str, Any]
     autonomy: dict[str, AutonomySetting] = Field(default_factory=dict)
+    motion_events: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class Sensor(WireModel):
@@ -206,6 +207,22 @@ class StreamResetData(WireModel):
 class TouchChangedData(WireModel):
     sensor: str
     pressed: bool
+
+
+class MotionPostureChangedData(WireModel):
+    posture: str | None = Field(default=None, min_length=1, max_length=128)
+    family: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def require_observed_field(self) -> MotionPostureChangedData:
+        present = self.model_fields_set & {"posture", "family"}
+        if not present or any(getattr(self, name) is None for name in present):
+            raise ValueError("Posture event needs an observed posture or family")
+        return self
+
+
+class MotionFallChangedData(WireModel):
+    phase: Literal["falling", "fallen"]
 
 
 class StateSampleData(WireModel):

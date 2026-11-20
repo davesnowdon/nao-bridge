@@ -1818,6 +1818,15 @@
       },
       "JointControlStatus": {
         "$ref": "schemas.json#/$defs/JointControlStatus"
+      },
+      "MotionPostureChanged": {
+        "$ref": "schemas.json#/$defs/MotionPostureChanged"
+      },
+      "MotionFallChanged": {
+        "$ref": "schemas.json#/$defs/MotionFallChanged"
+      },
+      "BatteryStateValue": {
+        "$ref": "schemas.json#/$defs/BatteryStateValue"
       }
     }
   }

@@ -448,6 +448,28 @@
           "additionalProperties": {
             "$ref": "#/$defs/AutonomySetting"
           }
+        },
+        "motion_events": {
+          "type": "object",
+          "properties": {
+            "posture_fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "fall_phases": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "posture_fields",
+            "fall_phases"
+          ],
+          "additionalProperties": true
         }
       },
       "required": [
@@ -2000,6 +2022,77 @@
         "expires_at"
       ],
       "additionalProperties": true
+    },
+    "MotionPostureChanged": {
+      "type": "object",
+      "properties": {
+        "posture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "posture"
+          ]
+        },
+        {
+          "required": [
+            "family"
+          ]
+        }
+      ],
+      "additionalProperties": true,
+      "description": "Partial native observation: only supplied fields changed; this is not an atomic posture/family snapshot."
+    },
+    "MotionFallChanged": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "falling",
+            "fallen"
+          ]
+        }
+      },
+      "required": [
+        "phase"
+      ],
+      "additionalProperties": true,
+      "description": "Observed fall-manager start/completion, not persistent physical state or proof of recovery. No synthetic standing event."
+    },
+    "BatteryStateValue": {
+      "type": "object",
+      "properties": {
+        "charge": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "charge",
+        "reason"
+      ],
+      "additionalProperties": true,
+      "description": "ALBattery charge percentage observed through shared ALMemory sampling; null is unavailable, not empty."
     }
   }
 }

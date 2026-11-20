@@ -153,6 +153,8 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
 async def test_all_contacts_discovery_state_and_filtered_events(socket_rig):
     async with socket_rig() as (url, core, backend), AsyncNao(url) as nao:
         sensors = await nao.sensors.list()
+        assert len(sensors) == 12
+        sensors = [item for item in sensors if item.event_type == "touch.changed"]
         assert len(sensors) == 11
         assert all(item.events.status == "available" for item in sensors)
         assert nao.session_id is None
@@ -194,8 +196,11 @@ async def test_sensor_discovery_reports_missing_readings_and_disconnection(rig):
         assert items["bumper.left"]["state"]["status"] == "available"
         await backend.connection(False)
         items = (await client.get("/api/sensors")).json()["items"]
+        assert all(item["state"]["status"] == "unavailable" for item in items)
         assert all(
-            item["state"]["status"] == item["events"]["status"] == "unavailable" for item in items
+            item["events"]["status"] == "unavailable"
+            for item in items
+            if item["event_type"] == "touch.changed"
         )
 
 
@@ -443,3 +448,22 @@ async def test_sync_explicit_close_and_deliberate_reopen(socket_rig):
         await asyncio.to_thread(work)
         assert len(backend.calls) == 2
         assert all(session.public["status"] == "closed" for session in core.sessions.values())
+
+
+async def test_partial_event_availability_and_stream_payloads(socket_rig):
+    async with socket_rig() as (url, core, backend), AsyncNao(url) as nao:
+        core.info["motion_events"] = {"posture_fields": ["family"], "fall_phases": []}
+        caps = await nao.robot.capabilities()
+        assert caps.motion_events == {"posture_fields": ["family"], "fall_phases": []}
+        assert caps.features["motion.posture_changed"].status == "available"
+        assert caps.features["motion.fall_changed"].status == "unavailable"
+        async with await nao.events.subscribe(events=["motion.posture_changed"]) as sub:
+            async with asyncio.timeout(2):
+                async for event in sub:
+                    if event.type == "stream.ready":
+                        break
+                await backend.sink("motion.posture_changed", {"family": "Standing"})
+                async for event in sub:
+                    if event.type == "motion.posture_changed":
+                        assert event.data == {"family": "Standing"}
+                        break

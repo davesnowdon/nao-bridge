@@ -83,3 +83,34 @@ def test_malformed_required_frames_are_protocol_errors(raw):
 def test_incomplete_frame_not_delivered():
     raw = frame(envelope())[:-1]
     assert list(SSEParser().feed(raw)) == []
+
+
+@pytest.mark.parametrize(
+    "kind,data",
+    [
+        ("motion.posture_changed", {"posture": "StandInit"}),
+        ("motion.posture_changed", {"family": "Standing"}),
+        ("motion.fall_changed", {"phase": "falling"}),
+        ("motion.fall_changed", {"phase": "fallen"}),
+    ],
+)
+def test_motion_observations(kind, data):
+    event = list(SSEParser().feed(frame(envelope(type=kind, data=data))))[0]
+    assert event.type == kind and event.data == data
+
+
+@pytest.mark.parametrize(
+    "kind,data",
+    [
+        ("motion.posture_changed", {}),
+        ("motion.posture_changed", {"posture": None}),
+        ("motion.posture_changed", {"posture": ""}),
+        ("motion.posture_changed", {"family": 1}),
+        ("motion.posture_changed", {"family": "Standing", "posture": None}),
+        ("motion.fall_changed", {"phase": "recovered"}),
+        ("motion.fall_changed", {"phase": True}),
+    ],
+)
+def test_malformed_motion_observations_are_protocol_errors(kind, data):
+    with pytest.raises(ProtocolError):
+        list(SSEParser().feed(frame(envelope(type=kind, data=data))))

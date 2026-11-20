@@ -48,6 +48,21 @@ foot; otherwise the aggregate is unknown. Group freshness describes acquisition
 age, so inspect individual nulls as well. Dedicated events and raw state are
 separate observations: an edge can arrive before the next shared sample.
 
+The catalog also includes `battery.charge`, in percent. Its value is
+`groups.sensors.value.battery.charge` (integer 0–100 or null), with a sibling
+`reason` for missing/invalid readings. `BatteryStateValue` describes that object.
+It uses shared state samples rather than a dedicated public battery event;
+fresh acquisition does not establish when the robot last updated its battery value.
+No charging or charger-connected status is inferred from charge.
+
+`motion.posture_changed` carries `posture` or `family` (at least one nonempty
+string). Each native event reports its own field, not an atomic pair.
+`motion.fall_changed` carries `phase: "falling"` or `"fallen"`, indicating native
+fall-manager start or completion. These are observations, not a persistent fallen
+boolean or proof of recovery. No event is synthesized for an absent source.
+Capabilities expose discovered `motion_events.posture_fields` and `.fall_phases`;
+`GET /events/types` links the payload schemas and reports availability.
+
 Each group carries `quality`, `age_ms`, acquisition timestamps and unavailable/stale
 reasons. Acquisition clocks are bridge-local monotonic milliseconds; group sampling
 is not an atomic robot snapshot. A freshness wait shares the sampler.
@@ -70,6 +85,10 @@ in sampling subscriptions. All readers share the same producer. Freshness counts
 from the start of each group's acquisition, not the arrival of its final response;
 the snapshot acquisition window exposes skew across groups. The 10 Hz limit is a
 requested bridge cadence, not a hardware-verified source rate.
+The advertised SSE rate cannot exceed 10 Hz. Higher requests fail unless
+`allow_lower_rate: true` permits an explicit downgrade. Lower configured SSE caps
+do not change the native producer's requested cadence. Independent sampling-group
+workers are still pending; a slow read can currently delay subsequent groups.
 
 ## Motion preparation
 

@@ -15,13 +15,23 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Owned latest-value setpoints, TTL, cancellation/hold | HTTP lifecycle, native/fake backends, bounded forwarding and sync/async Python scopes implemented | Hold must remain unadvertised until verified |
 | Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
-| Shared joint/touch/battery sampling; posture/fall events | Joint/touch sampling and sampled posture implemented; battery and posture/fall events pending | Rate/skew and source behavior pending |
+| Shared joint/touch/battery sampling; posture/fall events | Battery and optional native posture/fall events implemented; independent sampling-group workers pending | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | Pending | Pending |
 | Bounded sample recordings and finalized assets/checksums/ranges | Pending | Real acquisition pending |
 | Public-API Recorder example and raw-HTTP acceptance scenario | Pending | Three-pose replay pending |
 
 Further increment-3/4 software work can follow. Network-loss and Apple Silicon
 acceptance are deferred by the user. A software pass does not complete those gates.
+
+Battery/posture/fall observation validation: `make check` passed 257 server/integration
+and 41 standalone client tests, lint and types; the contract compatibility guard
+passed. The production container suite passed with all 11 contact state/event pairs,
+battery percentage, both posture fields and both fall phases delivered through real
+SDK signals and public HTTP/SSE. Tests cover legacy/modern fall names, partial event
+availability, missing/invalid battery readings, late callbacks after close, strict
+client payload validation and explicit sample-rate downgrade. Rates above 10 Hz
+cannot be advertised. No physical robot was contacted; independent sampling-group
+workers and source rate/skew measurements remain outstanding.
 
 Contact foundation validation: `make check` passed 93 server/integration and 23
 client tests, lint, and type checks. The compatibility guard passed for additive

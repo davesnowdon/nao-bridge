@@ -146,6 +146,10 @@ class FakeBackend:
                     "chains": self.chains,
                     "postures": ["StandInit", "Sit", "Crouch"],
                     "autonomy": self.autonomy_catalog,
+                    "motion_events": {
+                        "posture_fields": ["family", "posture"],
+                        "fall_phases": ["fallen", "falling"],
+                    },
                     "joint_controls": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -161,7 +165,11 @@ class FakeBackend:
                     "sample",
                     {
                         "groups": {
-                            "sensors": {"touch": dict(self.touch), "touch_unavailable": {}},
+                            "sensors": {
+                                "touch": dict(self.touch),
+                                "touch_unavailable": {},
+                                "battery": {"charge": 76, "reason": None},
+                            },
                             "joints": {key: dict(value) for key, value in self.joint_state.items()},
                             "motion": dict(self.motion_state),
                             "autonomy": {

@@ -40,6 +40,8 @@ EVENT_TYPES = {
     "operation.changed": "Operation",
     "state.sample": "StateSample",
     "touch.changed": "TouchChanged",
+    "motion.posture_changed": "MotionPostureChanged",
+    "motion.fall_changed": "MotionFallChanged",
 }
 GROUPS = {"sensors", "joints", "motion", "autonomy", "lights"}
 
@@ -247,7 +249,10 @@ class Core:
                             {"state": self.state(requests[0]["groups"]), "skipped_samples": 0},
                         )
                     )
-        elif kind == "touch.changed" and self.connection == "connected":
+        elif (
+            kind in {"touch.changed", "motion.posture_changed", "motion.fall_changed"}
+            and self.connection == "connected"
+        ):
             self.emit(kind, data)
         elif kind == "observation_gap":
             for sub in self.subscriptions.values():
@@ -295,6 +300,12 @@ class Core:
                     available and self.info.get("speech", {}).get("available", False)
                 ),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
+                "motion.posture_changed": feature(
+                    available and bool(self.info.get("motion_events", {}).get("posture_fields"))
+                ),
+                "motion.fall_changed": feature(
+                    available and bool(self.info.get("motion_events", {}).get("fall_phases"))
+                ),
                 "events": feature(True),
                 "motion": feature(
                     available and any(joint["writable"] for joint in self.info.get("joints", []))
@@ -358,6 +369,9 @@ class Core:
             "event_types": list(EVENT_TYPES),
             "state_groups": ["sensors", "joints", "motion", "autonomy"],
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
+            "motion_events": copy.deepcopy(
+                self.info.get("motion_events", {"posture_fields": [], "fall_phases": []})
+            ),
             "replay_supported": False,
             "speech": self.info.get("speech", {}),
         }
@@ -397,6 +411,25 @@ class Core:
                     "event_type": "touch.changed",
                 }
             )
+        battery = value.get("battery", {})
+        charge_available = sample["quality"] == "fresh" and battery.get("charge") is not None
+        items.append(
+            {
+                "id": "battery.charge",
+                "label": "Battery charge",
+                "unit": "percent",
+                "state_group": "sensors",
+                "state_field": "battery.charge",
+                "state": {
+                    "status": "available" if charge_available else "unavailable",
+                    "reason": None
+                    if charge_available
+                    else battery.get("reason") or sample["reason"] or "not_sampled",
+                },
+                "events": {"status": "unsupported", "reason": "use_state_samples"},
+                "event_type": None,
+            }
+        )
         return {"items": items, "connection_generation": self.generation}
 
     def joint_catalog(self) -> dict[str, Any]:

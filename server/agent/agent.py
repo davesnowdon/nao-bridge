@@ -378,7 +378,7 @@ class Agent(object):
                             self.heartbeat = monotonic()
                             self.reply(replies, request, result={"epoch": self.epoch, "dropped": self.dropped,
                                                                "work_queue": self.work.qsize(), "records": len(self.records),
-                                                               "native_subscriptions": len(self.driver.subscribers)})
+                                                               "native_subscriptions": len(self.driver.subscribers) + (len(self.driver.motion_events.links) if self.driver.motion_events else 0)})
                         elif lane == "priority" and action == "fence":
                             sid = request.get("session_id")
                             if not isinstance(sid, type(u"")) or not sid or (sid not in self.revoked and len(self.revoked) >= 4096):

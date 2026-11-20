@@ -443,6 +443,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     "schema": "/api/schemas.json#/$defs/" + schema,
                     "support": core.capabilities()["features"]["touch.changed"]
                     if name == "touch.changed"
+                    else core.capabilities()["features"][name]
+                    if name in {"motion.posture_changed", "motion.fall_changed"}
                     else {"status": "available", "reason": None},
                 }
                 for name, schema in EVENT_TYPES.items()

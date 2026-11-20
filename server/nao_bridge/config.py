@@ -42,8 +42,8 @@ class Settings:
             raise ValueError("Unknown backend")
         if self.lease_seconds <= 0 or self.history_seconds <= 0:
             raise ValueError("Lease and history retention must be positive")
-        if self.sample_rate_hz <= 0 or self.sample_rate_hz > 20:
-            raise ValueError("Sample rate must be in (0, 20]")
+        if not 0 < self.sample_rate_hz <= 10:
+            raise ValueError("Sample rate must be in (0, 10]; faster acquisition is unverified")
         for name in (
             "max_sessions",
             "max_session_history",
