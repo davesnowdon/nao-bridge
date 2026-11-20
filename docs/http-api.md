@@ -88,7 +88,10 @@ requested bridge cadence, not a hardware-verified source rate.
 The advertised SSE rate cannot exceed 10 Hz. Higher requests fail unless
 `allow_lower_rate: true` permits an explicit downgrade. Lower configured SSE caps
 do not change the native producer's requested cadence. Independent sampling-group
-workers are still pending; a slow read can currently delay subsequent groups.
+workers acquire sensors, joints, motion and autonomy separately. A slow/failed
+read affects its group; completed groups continue updating the shared cache.
+In-flight readings from a previous connection are discarded. Native service-side
+serialization can still affect observed rates and must be measured on hardware.
 
 ## Motion preparation
 

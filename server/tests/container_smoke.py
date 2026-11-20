@@ -104,6 +104,69 @@ def check_legacy_bundle():
     )
 
 
+def check_native_sampling():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys, threading
+sys.path.insert(0, '/opt/nao-bridge/agent')
+from native import FixtureDriver
+from motion import FixtureMotion
+from sampling import GroupSampler
+from wire import monotonic
+
+entered, release = threading.Event(), threading.Event()
+blocking = [False]
+original = FixtureMotion.getAngles
+def delayed(self, names, measured):
+    if blocking[0]:
+        entered.set()
+        if not release.wait(3):
+            raise RuntimeError('fixture blocked past deadline')
+    return original(self, names, measured)
+FixtureMotion.getAngles = delayed
+seen = []
+driver = FixtureDriver(lambda *args: None)
+worker = None
+try:
+    driver.connect()
+    sampler = GroupSampler(lambda kind, data: seen.append(data), monotonic)
+    sampler.configure(driver.sample_readers())
+    blocking[0] = True
+    worker = threading.Thread(target=sampler.acquire, args=('joints',))
+    worker.start()
+    assert entered.wait(2), 'delayed SDK call did not start'
+    for group in ('sensors', 'motion', 'autonomy'):
+        sampler.acquire(group)
+    assert len(seen) == 3, seen
+    assert all(not data['errors'] for data in seen), seen
+    groups = set(group for data in seen for group in data['groups'])
+    assert groups == set(['sensors', 'motion', 'autonomy'])
+    sampler.configure({})
+    blocking[0] = False
+    release.set()
+    worker.join(4)
+    assert not worker.is_alive() and len(seen) == 3, seen
+    sampler.configure(driver.sample_readers())
+    sampler.acquire('joints')
+    assert seen[-1]['groups']['joints']['measured']['HeadYaw'] == 0.1
+    print('Native sampling: blocked read isolated; old result discarded; fresh read passed')
+finally:
+    release.set()
+    if worker:
+        worker.join(4)
+    driver.close()
+    driver.server.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
 async def check_native_controls():
     from nao_bridge.config import Settings
     from nao_bridge.errors import BridgeError
@@ -112,7 +175,10 @@ async def check_native_controls():
     state = {}
 
     async def observe(kind, value):
-        state[kind] = value
+        if kind == "sample":
+            state.setdefault(kind, {"groups": {}})["groups"].update(value["groups"])
+        else:
+            state[kind] = value
 
     backend = AgentBackend(Settings(backend="native-fixture"))
     await backend.start(observe)
@@ -265,6 +331,7 @@ try:
     assert "pynaoqi-python2.7-2.1.4.13-linux64/libqi" not in agent_maps
     assert "/opt/legacy/" not in api_maps and "/nao-bridge/lib/" not in api_maps
     check_legacy_bundle()
+    check_native_sampling()
     asyncio.run(check_native_controls())
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")

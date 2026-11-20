@@ -56,8 +56,6 @@ class NativeDriver(object):
         self.safety_posture = None
         self.autonomy = None
         self.motion_events = None
-        self.sample_windows = {}
-        self.sample_errors = {}
         self._connected = threading.Event()
 
     def call(self, service, method, *args):
@@ -137,31 +135,28 @@ class NativeDriver(object):
     def connected(self):
         return self._connected.is_set()
 
-    def sample(self):
-        self.sample_windows, self.sample_errors = {}, {}
-        start = monotonic()
-        values = self.call(self.memory, "getListData", MEMORY_KEYS + [BATTERY_KEY])
-        groups = {"sensors": contact_values(values)}
-        groups["sensors"]["battery"] = battery_value(values[len(MEMORY_KEYS)] if len(values) > len(MEMORY_KEYS) else None)
-        self.sample_windows["sensors"] = [start, monotonic()]
-        for group in ("joints", "motion"):
-            start = monotonic()
-            try:
-                if not self.motion:
-                    raise ValueError("motion_service_unavailable")
-                if group == "joints":
-                    groups[group] = self.motion.sample_joints()
-                else:
-                    groups[group] = self.motion.sample_motion()
-                    groups[group]["posture"] = self.posture.sample() if self.posture else None
-            except Exception:
-                groups[group] = None
-                self.sample_errors[group] = "native_sample_unavailable"
-            self.sample_windows[group] = [start, monotonic()]
-        start = monotonic()
-        groups["autonomy"] = self.autonomy.sample()
-        self.sample_windows["autonomy"] = [start, monotonic()]
-        return groups
+    def sample_sensors(self, memory):
+        values = self.call(memory, "getListData", MEMORY_KEYS + [BATTERY_KEY])
+        value = contact_values(values)
+        value["battery"] = battery_value(values[len(MEMORY_KEYS)] if len(values) > len(MEMORY_KEYS) else None)
+        return value
+
+    def sample_readers(self):
+        # Capture this connection's adapters, never mutable driver fields inside a read.
+        memory, motion, posture, autonomy = self.memory, self.motion, self.posture, self.autonomy
+
+        def unavailable():
+            raise ValueError("native_service_unavailable")
+
+        def motion_state():
+            value = motion.sample_motion()
+            value["posture"] = posture.sample() if posture else None
+            return value
+
+        return {"sensors": lambda: self.sample_sensors(memory),
+                "joints": motion.sample_joints if motion else unavailable,
+                "motion": motion_state if motion else unavailable,
+                "autonomy": autonomy.sample if autonomy else unavailable}
 
     def speak(self, payload):
         # Voice changes are a later capability; do not mutate global voice preferences silently.
@@ -395,7 +390,7 @@ class FixtureDriver(NativeDriver):
         result.update(name="Native SDK fixture", model="simulated", naoqi_version="fixture")
         return result
 
-    def sample(self):
+    def sample_sensors(self, memory):
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
             self.memory_impl.toggle(self.contact_index // 2)
@@ -404,4 +399,4 @@ class FixtureDriver(NativeDriver):
             event, value = observations[self.contact_index % len(observations)]
             self.memory_impl.sources[event].signal(value)
             self.contact_index += 1
-        return super(FixtureDriver, self).sample()
+        return super(FixtureDriver, self).sample_sensors(memory)

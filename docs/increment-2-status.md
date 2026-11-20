@@ -15,7 +15,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Owned latest-value setpoints, TTL, cancellation/hold | HTTP lifecycle, native/fake backends, bounded forwarding and sync/async Python scopes implemented | Hold must remain unadvertised until verified |
 | Same-session validated finite-motion replacement | Implemented; validation, bounded admission and reserved handoff | Physical stop before replacement pending |
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
-| Shared joint/touch/battery sampling; posture/fall events | Battery and optional native posture/fall events implemented; independent sampling-group workers pending | Rate/skew and source behavior pending |
+| Shared joint/touch/battery sampling; posture/fall events | Implemented with independent bounded acquisition workers and connection fencing | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | Pending | Pending |
 | Bounded sample recordings and finalized assets/checksums/ranges | Pending | Real acquisition pending |
 | Public-API Recorder example and raw-HTTP acceptance scenario | Pending | Three-pose replay pending |
@@ -31,7 +31,17 @@ SDK signals and public HTTP/SSE. Tests cover legacy/modern fall names, partial e
 availability, missing/invalid battery readings, late callbacks after close, strict
 client payload validation and explicit sample-rate downgrade. Rates above 10 Hz
 cannot be advertised. No physical robot was contacted; independent sampling-group
-workers and source rate/skew measurements remain outstanding.
+workers were implemented in the following step; source rate/skew measurements
+remain outstanding.
+
+Sampler isolation validation: `make check` passed 262 server/integration and 41
+client tests plus lint/types. The production native container suite passed after
+separating acquisition into four fixed workers. A deliberately blocked real SDK
+joint read leaves sensor, motion and autonomy reads working; an in-flight result
+is discarded after generation change, and a fresh read then succeeds. Unit tests
+also cover errors after reconnect, acquisition windows, adapter capture and
+per-group failure. Existing native motion, controls, observations, stream load and
+process-recovery checks still pass. No robot was contacted.
 
 Contact foundation validation: `make check` passed 93 server/integration and 23
 client tests, lint, and type checks. The compatibility guard passed for additive

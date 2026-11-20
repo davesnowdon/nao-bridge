@@ -23,6 +23,8 @@ def agent_module(monkeypatch):
     sys.modules.pop("motion", None)
     sys.modules.pop("autonomy", None)
     sys.modules.pop("controls", None)
+    sys.modules.pop("sampling", None)
+    sys.modules.pop("observations", None)
 
 
 class DrainQueue:
@@ -507,3 +509,29 @@ def test_stop_checks_native_cancellation_even_when_stop_reply_times_out(
     assert ("stopAll did not confirm" in caplog.text) == stop_times_out
     if stop_times_out:
         assert caplog.records[-1].exc_info is not None
+
+
+def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_module):
+    import native
+
+    driver = native.NativeDriver("fixture", lambda *_: None)
+    old_memory = object()
+    driver.memory = old_memory
+    driver.motion = types.SimpleNamespace(
+        sample_joints=lambda: {"source": "old"},
+        sample_motion=lambda: {"awake": True},
+    )
+    driver.posture = types.SimpleNamespace(sample=lambda: "StandInit")
+    driver.autonomy = types.SimpleNamespace(sample=lambda: {"life_state": "disabled"})
+    driver.sample_sensors = lambda memory: {"old_connection": memory is old_memory}
+    readers = driver.sample_readers()
+    driver.memory = object()
+    driver.motion = driver.posture = driver.autonomy = None
+    assert readers["sensors"]() == {"old_connection": True}
+    assert readers["joints"]() == {"source": "old"}
+    assert readers["motion"]() == {"awake": True, "posture": "StandInit"}
+    assert readers["autonomy"]() == {"life_state": "disabled"}
+    unavailable = driver.sample_readers()
+    for group in ("joints", "motion", "autonomy"):
+        with pytest.raises(ValueError, match="native_service_unavailable"):
+            unavailable[group]()

@@ -96,6 +96,19 @@ Start the video-format experiment with MJPEG in one explicitly selected containe
 
 Write sample recordings in the modern process from the same acquisition feed as `/state` and `state.sample`, before per-viewer coalescing or drops. A recording has its own bounded writer queue and explicit loss markers; it must not depend on an SSE subscriber keeping up.
 
+The native shared sampler has four permanent, supervised workers: sensors
+(contacts/battery), joints, motion/posture, and autonomy. Each runs one acquisition
+at a time with a requested 10 Hz cadence; a slow group cannot occupy another
+group's worker. Native call timeouts remain bounded. A failed group reports its
+own unavailable reading without discarding unrelated services. Discovery and
+connection monitoring run separately. Reconnect changes the sampler generation
+and captures new service adapters; old in-flight results are discarded before
+publication. Workers are reused across reconnects, so failures cannot accumulate
+threads or a queued backlog of acquisition requests. The modern cache combines
+per-group updates with their original acquisition windows, not a claimed atomic
+snapshot. Native service serialization and actual source rates still need hardware
+measurement.
+
 Recordings require bounded files and retained asset metadata; select the metadata storage implementation during recording delivery rather than requiring a database now. Compute checksums incrementally while writing. Finalize/flush the file before publishing immutable metadata and a checksum-derived ETag. Handle interrupted recording files and quota accounting before admitting new recordings. Active recording files are not downloadable assets; finalized partial recordings remain explicitly partial and immutable. This storage is for requested recordings, not operation recovery.
 
 ## Retain HTTP commands and SSE events

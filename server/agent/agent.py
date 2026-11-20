@@ -19,6 +19,7 @@ from native import FixtureDriver, NativeDriver
 from motion import valid_trajectory, valid_motion_action
 from autonomy import valid_autonomy, TransitionStopped
 from controls import JointControls, ControlError
+from sampling import GROUPS, GroupSampler
 from wire import VERSION, encode, frames, monotonic
 
 
@@ -47,6 +48,7 @@ class Agent(object):
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
         self.driver = FixtureDriver(self.observe) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe)
+        self.sampler = GroupSampler(self.observe, monotonic)
         self.controls = JointControls(self.driver, self.lock, monotonic,
                                       lambda function, *args: background(self.run_control, function, *args),
                                       lambda request: self.valid(request, initial=False) is None, self.observe)
@@ -287,17 +289,16 @@ class Agent(object):
         while True:
             try:
                 if not self.driver.connected():
+                    self.sampler.configure({})
                     if self.description.get("connection") == "connected":
                         self.lose_authority("robot_connection_lost")
                         self.observe("connection", {"connection": "disconnected", "reason": "native_connection_lost"})
                     self.description = self.driver.connect()
                     self.observe("connection", self.description)
-                start = monotonic()
-                groups = self.driver.sample()
-                self.observe("sample", {"groups": groups, "started": start, "finished": monotonic(),
-                                        "windows": self.driver.sample_windows, "errors": self.driver.sample_errors})
-                time.sleep(max(0.001, 0.1 - (monotonic() - start)))
+                    self.sampler.configure(self.driver.sample_readers())
+                time.sleep(0.1)
             except Exception:
+                self.sampler.configure({})
                 logging.exception("Native discovery/sampling unavailable")
                 if self.description.get("connection") == "connected":
                     self.lose_authority("robot_sample_failed")
@@ -459,6 +460,8 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
+        for group in GROUPS:
+            background(self.run_critical, self.sampler.run, group)
         for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling):
             background(self.run_critical, worker)
         for lane in ("priority", "command", "controls", "events"):
