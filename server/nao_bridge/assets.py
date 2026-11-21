@@ -6,6 +6,7 @@ import copy
 import fcntl
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -22,6 +23,7 @@ from .contract import parse_json
 from .errors import BridgeError
 
 ASSET_ID = re.compile(r"^[0-9a-f]{32}$")
+LOG = logging.getLogger(__name__)
 
 
 def timestamp(value: float) -> str:
@@ -107,9 +109,13 @@ class AssetStore:
         return size, digest.hexdigest()
 
     def _recover(self) -> None:
-        paths = list(self.root.iterdir())
-        for path in paths:
+        paths = []
+        ignored = 0
+        for path in self.root.iterdir():
             if path.name == ".lock":
+                continue
+            if not ASSET_ID.fullmatch(path.stem.lower()):
+                ignored += 1
                 continue
             if (
                 path.is_symlink()
@@ -118,6 +124,9 @@ class AssetStore:
                 or path.suffix not in {".json", ".tmp", ".part", ".bin"}
             ):
                 raise ValueError("Unexpected entry in asset directory: " + path.name)
+            paths.append(path)
+        if ignored:
+            LOG.info("Ignoring %d entries outside the asset namespace", ignored)
         manifests = [path for path in paths if path.suffix == ".json"]
         if len(manifests) > self.max_assets:
             raise ValueError("Retained assets exceed configured count limit")
@@ -167,10 +176,12 @@ class AssetStore:
                 if size != record["asset"]["size_bytes"] or digest != record["asset"]["sha256"]:
                     raise ValueError("Finalized asset checksum mismatch: " + aid)
             self.records[aid] = record
-        for path in self.root.iterdir():
+        for path in paths:
             if path.suffix == ".tmp":
-                path.unlink()
-            elif path.suffix in {".part", ".bin"} and path.stem not in self.records:
+                path.unlink(missing_ok=True)
+            elif (
+                path.suffix in {".part", ".bin"} and path.stem not in self.records and path.exists()
+            ):
                 raise ValueError("Unaccounted asset content: " + path.name)
         self.sweep()
 

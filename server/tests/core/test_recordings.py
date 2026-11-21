@@ -409,7 +409,8 @@ async def test_expired_session_drains_recording_without_waiting_for_native_work(
 
 
 async def test_storage_initialization_failure_does_not_disable_robot_control(rig, tmp_path):
-    (tmp_path / "unaccounted-file").write_text("Keep this data")
+    orphan = tmp_path / ("a" * 32 + ".part")
+    orphan.write_text("Keep this data")
     async with rig(asset_directory=tmp_path) as (client, core, backend):
         assert (await client.get("/health/ready")).status_code == 200
         assert (await client.get("/api/assets")).status_code == 503
@@ -418,7 +419,7 @@ async def test_storage_initialization_failure_does_not_disable_robot_control(rig
             "/api/speech/utterances", headers=headers, json={"text": "Control is available"}
         )
         assert (await wait_operation(client, op.json()["id"], headers))["status"] == "succeeded"
-        assert (tmp_path / "unaccounted-file").read_text() == "Keep this data"
+        assert orphan.read_text() == "Keep this data"
 
 
 async def test_write_failure_retains_downloadable_partial_and_blocks_new_admission(

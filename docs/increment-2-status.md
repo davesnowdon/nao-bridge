@@ -315,3 +315,14 @@ coalescing, cancellation, client closure, local expiry, late acknowledgements,
 session loss, unconfirmed holds and closure during creation/update. The server and
 native agent were unchanged by this client step; the preceding native container
 results remain the software evidence for that boundary. Physical hold is unverified.
+
+The PR review follow-up keeps unrelated files and directories on mounted asset
+volumes out of recovery. Asset-shaped entries still require canonical names and
+regular files. Vocabulary callbacks decode UTF-8 before matching the configured
+phrases, including accented words. An unreadable recognizer state blocks the
+configuration before its first write and permits a later retry. An unconfirmed
+write still requires recovery.
+
+Whether native recognition subscriptions survive an agent restart remains a
+hardware question on both firmware generations. Verify ownership and cleanup
+when testing recovery. The bridge only unsubscribes names it owns.

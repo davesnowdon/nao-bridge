@@ -286,7 +286,33 @@ def test_uncertain_admission_stops_new_reservations_until_restart(tmp_path, monk
         recovered.close()
 
 
-@pytest.mark.parametrize("corruption", ["checksum", "manifest", "orphan", "symlink"])
+def test_recovers_assets_alongside_unrelated_volume_entries(tmp_path):
+    storage = store(tmp_path)
+    writer = begin(storage)
+    writer.write(b"{}\n")
+    retained = writer.finalize()
+    storage.close()
+    (tmp_path / ".DS_Store").write_bytes(b"Finder metadata")
+    (tmp_path / "lost+found").mkdir()
+    (tmp_path / "notes.json").write_text("{}")
+    (tmp_path / "external.tmp").write_bytes(b"keep")
+
+    recovered = store(tmp_path)
+    try:
+        assert recovered.get(writer.id) == retained
+        assert len(recovered.list()) == 1
+        begin(recovered).finalize()
+    finally:
+        recovered.close()
+    assert (tmp_path / "lost+found").is_dir()
+    assert (tmp_path / ".DS_Store").read_bytes() == b"Finder metadata"
+    assert (tmp_path / "notes.json").read_text() == "{}"
+    assert (tmp_path / "external.tmp").read_bytes() == b"keep"
+
+
+@pytest.mark.parametrize(
+    "corruption", ["checksum", "manifest", "orphan", "symlink", "unexpected_suffix", "directory"]
+)
 def test_corrupt_or_unaccounted_storage_fails_before_admission(tmp_path, corruption):
     storage = store(tmp_path)
     writer = begin(storage)
@@ -299,8 +325,12 @@ def test_corrupt_or_unaccounted_storage_fails_before_admission(tmp_path, corrupt
         (tmp_path / (writer.id + ".json")).write_text(json.dumps({"version": 999}))
     elif corruption == "orphan":
         (tmp_path / ("a" * 32 + ".part")).write_bytes(b"orphan")
-    else:
+    elif corruption == "symlink":
         (tmp_path / ("a" * 32 + ".bin")).symlink_to(tmp_path / (writer.id + ".bin"))
+    elif corruption == "unexpected_suffix":
+        (tmp_path / ("a" * 32 + ".invalid")).write_bytes(b"unknown")
+    else:
+        (tmp_path / ("a" * 32 + ".bin")).mkdir()
     with pytest.raises(ValueError):
         store(tmp_path)
     assert (tmp_path / (writer.id + ".bin")).exists()
