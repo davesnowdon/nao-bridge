@@ -17,7 +17,7 @@ are unchanged. This document tracks further robot-free work against the full
 | Camera discovery and still capture | Native adapter, bounded RGB transfer, PNG assets, HTTP and both Python SDKs implemented | Both firmware generations pending |
 | Managed face observation | Owned native source, shared HTTP lifecycle, SSE and both Python SDKs implemented | Both firmware generations pending |
 | Owned velocity controls, independent expiry and controlled stop | Agent, private IPC, HTTP lifecycle, raw conformance and both Python SDKs implemented | Native hardware remains gated pending measured stop and expiry |
-| Public-API Wanderer reference application | Pending | Pending |
+| Public-API Wanderer reference application | Terminal app with bounded steps, local map/path, stop handling, reconnect and timestamped photos | Physical movement, sonar and camera acceptance pending |
 
 The passive adapter discovers native memory keys once per connection, then adds
 only available keys to the existing shared sensor batch. Missing keys and invalid
@@ -143,3 +143,29 @@ The final fixture adjustments passed 46 focused HTTP and control tests. The
 native suite verified the HTTP expiry result, the agent heartbeat watchdog
 and controlled stop with occupied command workers. The schema compatibility
 guard passed against the preceding contract and the PR #37 base.
+
+The [Wanderer example](../examples/wanderer/README.md) uses the public async
+SDK for bounded steps and maintains its own map and recent path. The terminal
+workflow exercises forward, side and turning moves, reports cancellation
+outcomes, and downloads checksummed PNGs with a pose and capture-time offset
+when a matching pose is available. Its fixture tests also exercise a separate
+monitor client and deliberate resumption after reconnect.
+
+| Fixture outcome | Wanderer behavior |
+| --- | --- |
+| Bumper press, nearby obstacle, detected face, stale observation or operator stop | Cancel the current move and disarm repeat mode. |
+| Lost move acknowledgement or unconfirmed stop | Display the uncertainty and require acknowledgement with a fresh idle observation before accepting another drive command. The server retains ownership and recovery authority. |
+| Stream reset or connection generation change | Stop driving and rebuild observation. Discard the previous map when the pose origin changes. |
+| Sonar remains quarantined after a connection change | Resume passive observations. Wait for explicit bridge recovery and an observer reconnect before accepting another drive command. |
+
+`make check` passed lint, types, 600 server/integration tests (including 12
+Wanderer workflow cases) and 47 SDK tests. The native-container suite and the
+contract guard against PR #37 passed. The native suite checks raw HTTP fresh
+and stale observations and a new odometry origin after agent loss and recovery.
+Expected results and client decisions are in the
+[portable scenarios](../contracts/fixtures/scenarios.json).
+
+The physical exit gate remains open for NAO6 and NAOv5, including stop distance
+and latency, sonar and bumper behavior while moving, odometry, camera/face
+concurrency and source cleanup. Velocity operation stays disabled on physical
+hardware.

@@ -432,6 +432,10 @@ def run(url):
     state = probe.request(
         "GET", "/api/state?include=joints,motion&wait_for_fresh_ms=1000", schema="State"
     )
+    assert state["groups"]["motion"]["quality"] == "fresh"
+    stale = probe.request("GET", "/api/state?include=motion,sensors&max_age_ms=0", schema="State")
+    for group in stale["groups"].values():
+        assert group["quality"] == "stale" and group["reason"] == "sample_too_old"
     probe.validate("JointStateValue", state["groups"]["joints"]["value"])
     probe.validate("MotionStateValue", state["groups"]["motion"]["value"])
     assert state["groups"]["joints"]["value"]["measured"]["HeadYaw"] == 0.1
@@ -602,6 +606,7 @@ def run(url):
         "checks": [
             "discovery",
             "state",
+            "observation_freshness",
             "shared_sonar_observers",
             "passive_threshold_subscription",
             "session",

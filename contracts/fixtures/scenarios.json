@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.6.0",
+  "contract_version": "1.9.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -9,7 +9,9 @@
     "recording_id",
     "asset_id",
     "sensor_observer_id",
-    "threshold_id"
+    "threshold_id",
+    "origin_id",
+    "control_id"
   ],
   "scenarios": [
     {
@@ -162,6 +164,26 @@
       ]
     },
     {
+      "name": "motion freshness and odometry origin after agent recovery",
+      "steps": [
+        "GET /api/state?include=motion&wait_for_fresh_ms=1000",
+        "GET /api/state?include=motion,sensors&max_age_ms=0",
+        "terminate or freeze the fixture agent and await a new connected generation",
+        "read fresh motion state again"
+      ],
+      "expected": [
+        "motion group is fresh and contains an odometry origin ID",
+        "both groups are stale with reason sample_too_old",
+        "connection_generation increases",
+        "fresh odometry reports a new origin_id"
+      ],
+      "client_decisions": [
+        "Refuse a move while required observations are stale or unavailable.",
+        "Reset or explicitly relocalize the map after an origin change.",
+        "Resume observation after reconnect and require a deliberate drive command."
+      ]
+    },
+    {
       "name": "finite walking and planar odometry",
       "steps": [
         "read fresh motion state and retain odometry origin",
@@ -249,9 +271,10 @@
       "steps": [
         "check motion.velocity capability and fresh joint and motion state",
         "PUT sequence zero with a complete robot-frame target",
-        "PUT a newer sequence, repeat it, then send an older sequence",
-        "leave the session live and stop sending targets",
-        "read the terminal operation and try to renew its control ID"
+        "PUT a newer sequence, then repeat it",
+        "send an older sequence",
+        "leave the session live, stop sending targets and read the terminal operation",
+        "try to renew the ended control_id"
       ],
       "expected": [
         "software fixtures advertise velocity; hardware remains gated",
@@ -260,6 +283,10 @@
         "the older update is rejected with stale_sequence",
         "velocity_expired succeeds only after confirmed controlled stop",
         "the ended ID is rejected with control_ended"
+      ],
+      "client_decisions": [
+        "Check the retained operation after control_ended to distinguish confirmed stop from unknown.",
+        "If the stop outcome is unknown, recover explicitly before issuing more motion."
       ],
       "nondeterminism": [
         "opaque operation ID and accepted expiry timestamp",

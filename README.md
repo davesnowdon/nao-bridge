@@ -25,6 +25,8 @@ ground-contact and joint-temperature observations to the shared sensor state, pl
 explicit sonar observers and battery/sonar thresholds with sync/async SDK support.
 It adds finite walking, local planar odometry, scoped motion stop, still
 camera capture as downloadable PNG assets, and managed face detection events.
+The [Wanderer reference app](examples/wanderer/README.md) demonstrates short
+finite moves, live stop handling, a local occupancy map and pose-associated stills.
 Velocity leases are available in software fixtures. Hardware velocity remains
 disabled pending measured stop and expiry tests. Physical walking, stopping,
 camera and sensor acceptance remain pending.

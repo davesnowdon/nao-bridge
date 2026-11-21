@@ -1154,6 +1154,7 @@ try:
     print("Native blocked-call cancellation confirmed through priority fixture service", flush=True)
     for fault in (signal.SIGKILL, signal.SIGSTOP):
         before = until(connected)
+        previous_origin = motion_state()["odometry"]["origin_id"]
         session = probe.request("POST", "/api/sessions", {"name": "fault-fixture"}, status=201)
         probe.session = session["id"]
         operation = probe.request(
@@ -1180,6 +1181,7 @@ try:
             probe.request("GET", "/api/robot")["connection_generation"]
             > before["connection_generation"]
         )
+        assert motion_state()["odometry"]["origin_id"] != previous_origin
         recovery_probe.session = session["id"]
         recovery = recovery_probe.request(
             "POST",

@@ -4,11 +4,13 @@ install:
 	$(MAKE) -C server install
 	$(MAKE) -C clients/python install
 	$(MAKE) -C examples/recorder install
+	$(MAKE) -C examples/wanderer install
 
 fmt lint typecheck:
 	$(MAKE) -C server $@
 	$(MAKE) -C clients/python $@
 	$(MAKE) -C examples/recorder $@
+	$(MAKE) -C examples/wanderer $@
 
 test:
 	$(MAKE) -C server test

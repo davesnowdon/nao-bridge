@@ -14,4 +14,5 @@ async def test_sdk_independent_http_conformance(socket_rig, tmp_path):
         assert "camera_capture_and_download" in result["checks"]
         assert "vision_observer_sharing_and_detections" in result["checks"]
         assert "ordered_velocity_expiry" in result["checks"]
+        assert "observation_freshness" in result["checks"]
         assert not core.resources
