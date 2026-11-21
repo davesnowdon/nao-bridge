@@ -1,6 +1,7 @@
 """Conservative CI guard for the language-neutral wire contract."""
 
 import argparse
+import copy
 import json
 import subprocess
 from pathlib import Path
@@ -8,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = Path("server/nao_bridge/contract")
 ANNOTATIONS = {"description", "summary", "title", "examples", "example", "externalDocs"}
+REQUEST_FIELDS = ("requestBody", "parameters")
+SCHEMA_REFS = ("schemas.json#/$defs/", "#/$defs/", "#/components/schemas/")
 
 
 def shape(value):
@@ -18,7 +21,7 @@ def shape(value):
     return value
 
 
-def request_definitions(openapi, schemas):
+def referenced_definitions(openapi, schemas, operation_fields):
     names, visited = set(), set()
 
     def visit(value):
@@ -29,7 +32,7 @@ def request_definitions(openapi, schemas):
             ref = value.get("$ref")
             if ref and ref not in visited:
                 visited.add(ref)
-                if ref.startswith(("schemas.json#/$defs/", "#/$defs/", "#/components/schemas/")):
+                if ref.startswith(SCHEMA_REFS):
                     name = ref.rsplit("/", 1)[-1]
                     names.add(name)
                     visit(schemas["$defs"][name])
@@ -45,16 +48,39 @@ def request_definitions(openapi, schemas):
                 visit(item)
 
     for methods in openapi["paths"].values():
-        visit(methods.get("parameters", []))
+        if "parameters" in operation_fields:
+            visit(methods.get("parameters", []))
         for operation in methods.values():
             if isinstance(operation, dict):
-                visit(operation.get("requestBody", {}))
-                visit(operation.get("parameters", []))
+                for field in operation_fields:
+                    visit(operation.get(field, {}))
     return names
 
 
-def optional_response_addition(before, after):
-    if not isinstance(after, dict) or before.get("additionalProperties") is not True:
+def direct_request_bodies(openapi, schemas):
+    # Inline direct body references so a second traversal sees only indirect uses.
+    spec = copy.deepcopy(openapi)
+    roots = set()
+    for methods in spec["paths"].values():
+        for operation in methods.values():
+            if not isinstance(operation, dict):
+                continue
+            for media in operation.get("requestBody", {}).get("content", {}).values():
+                schema = media.get("schema", {})
+                if isinstance(schema, dict) and set(schema) == {"$ref"}:
+                    ref = schema["$ref"]
+                    if ref.startswith(SCHEMA_REFS):
+                        name = ref.rsplit("/", 1)[-1]
+                        roots.add(name)
+                        media["schema"] = schemas["$defs"][name]
+    return roots - referenced_definitions(spec, schemas, REQUEST_FIELDS)
+
+
+def optional_addition(before, after, *, extensible):
+    if not isinstance(after, dict) or before.get("additionalProperties") is not extensible:
+        return False
+    if not extensible and before.get("patternProperties"):
+        # A new named property could narrow values an old matching pattern accepted.
         return False
     old_properties, new_properties = before.get("properties", {}), after.get("properties", {})
     if not old_properties.keys() < new_properties.keys():
@@ -71,13 +97,26 @@ def compare(previous, current, old_schemas, new_schemas):
     if after < before:
         raise ValueError("Contract version must not decrease")
     changes = []
-    requests = request_definitions(previous, old_schemas) | request_definitions(
-        current, new_schemas
-    )
+    requests = referenced_definitions(
+        previous, old_schemas, REQUEST_FIELDS
+    ) | referenced_definitions(current, new_schemas, REQUEST_FIELDS)
+    responses = referenced_definitions(
+        previous, old_schemas, ("responses",)
+    ) | referenced_definitions(current, new_schemas, ("responses",))
+    request_extensions = (
+        direct_request_bodies(previous, old_schemas) & direct_request_bodies(current, new_schemas)
+    ) - responses
     for name, definition in old_schemas["$defs"].items():
         new_definition = new_schemas["$defs"].get(name)
         if shape(definition) != shape(new_definition) and not (
-            name not in requests and optional_response_addition(definition, new_definition)
+            (
+                name not in requests
+                and optional_addition(definition, new_definition, extensible=True)
+            )
+            or (
+                name in request_extensions
+                and optional_addition(definition, new_definition, extensible=False)
+            )
         ):
             changes.append("schema " + name)
     for path, methods in previous["paths"].items():

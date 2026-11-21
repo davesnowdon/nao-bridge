@@ -13,7 +13,7 @@ are unchanged. This document tracks further robot-free work against the full
 | Demand-managed sonar, warm-up and stale/invalid handling | Native adapter, dedicated agent lane, HTTP lifecycle, shared sampling, sync/async SDK and conformance implemented | Pending |
 | Finite displacement/turn, speed mapping, priority stop | Native IPC, HTTP move operation, cancellation, locomotion/all-motion priority stop and both SDKs implemented | Pending |
 | Odometry, origin changes and observation frames | Planar adapter, shared motion state, schemas, raw HTTP and typed SDK observations implemented | Pending |
-| Threshold/hysteresis observations | Pending | Pending |
+| Threshold/hysteresis observations | Shared battery and sonar feed, per-subscription hysteresis, SSE schema and both SDKs implemented | Live source behavior pending |
 | Camera discovery/capture and managed face observation | Pending | Pending |
 | Owned velocity controls, independent expiry and controlled stop | Pending; must stay unavailable on hardware until its gate passes | Pending |
 | Public-API Wanderer reference application | Pending | Pending |
@@ -80,3 +80,9 @@ stop, then confirms native inactivity and the selected operation outcomes.
 All-motion stop also confirms the joint stop mechanism and any required
 joint holds. Unknown outcomes identify unresolved work. Hardware stop and
 hold behavior still require acceptance.
+
+Contract 1.6.0 adds battery and sonar crossings. The first valid observation
+sets a baseline. Rules use inclusive enter/exit bounds and reset on invalid
+samples, gaps and sonar producer changes. Thresholds use shared samples and
+never start a sonar producer. Robot-free tests cover both crossing directions,
+source lifecycle, stale data, reconnect, and the Python clients.

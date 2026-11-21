@@ -919,6 +919,7 @@ class Events:
         events: list[str] | None = None,
         samples: list[dict[str, Any]] | None = None,
         filters: dict[str, Any] | None = None,
+        thresholds: list[dict[str, Any]] | None = None,
         allow_lower_rate: bool = False,
     ) -> Subscription:
         return Subscription(
@@ -928,6 +929,7 @@ class Events:
                     events=events,
                     samples=samples,
                     filters=filters,
+                    thresholds=thresholds,
                     allow_lower_rate=allow_lower_rate,
                 )
             ),

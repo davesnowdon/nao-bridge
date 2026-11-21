@@ -284,6 +284,102 @@
         "reason": "stop"
       },
       "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 30
+          },
+          {
+            "sensor": "sonar.left",
+            "direction": "below",
+            "enter": 0.35,
+            "exit": 0.55
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 30
+          },
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 30
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": true,
+            "exit": 30
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 101
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "sonar.left",
+            "direction": "below",
+            "enter": 0.35,
+            "exit": 5
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "sonar.left",
+            "direction": "below",
+            "enter": 0.1,
+            "exit": 0.55
+          }
+        ]
+      },
+      "valid": false
     }
   ]
 }

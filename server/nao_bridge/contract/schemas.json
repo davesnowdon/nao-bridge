@@ -155,6 +155,15 @@
         "allow_lower_rate": {
           "type": "boolean",
           "default": false
+        },
+        "thresholds": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/ThresholdRule"
+          },
+          "description": "Optional sonar and battery rules. An active stream evaluates the shared sensor feed.",
+          "uniqueItems": true
         }
       },
       "required": [],
@@ -953,6 +962,14 @@
         },
         "connected": {
           "type": "boolean"
+        },
+        "thresholds": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/AcceptedThreshold"
+          },
+          "description": "Optional sonar and battery rules. An active stream evaluates the shared sensor feed."
         }
       },
       "required": [
@@ -3194,6 +3211,196 @@
         "unresolved_ids",
         "locomotion_confirmed",
         "joint_stop_confirmed"
+      ],
+      "additionalProperties": true
+    },
+    "ThresholdRule": {
+      "type": "object",
+      "properties": {
+        "sensor": {
+          "enum": [
+            "battery.charge",
+            "sonar.left",
+            "sonar.right"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "below",
+            "above"
+          ]
+        },
+        "enter": {
+          "type": "number"
+        },
+        "exit": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "sensor",
+        "direction",
+        "enter",
+        "exit"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sensor": {
+                "const": "battery.charge"
+              }
+            },
+            "required": [
+              "sensor"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enter": {
+                "minimum": 0,
+                "maximum": 100
+              },
+              "exit": {
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "enter": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              },
+              "exit": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "AcceptedThreshold": {
+      "type": "object",
+      "properties": {
+        "sensor": {
+          "enum": [
+            "battery.charge",
+            "sonar.left",
+            "sonar.right"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "below",
+            "above"
+          ]
+        },
+        "enter": {
+          "type": "number"
+        },
+        "exit": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "sensor",
+        "direction",
+        "enter",
+        "exit",
+        "id"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sensor": {
+                "const": "battery.charge"
+              }
+            },
+            "required": [
+              "sensor"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enter": {
+                "minimum": 0,
+                "maximum": 100
+              },
+              "exit": {
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "enter": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              },
+              "exit": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "SensorThresholdChanged": {
+      "type": "object",
+      "properties": {
+        "threshold_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sensor": {
+          "enum": [
+            "battery.charge",
+            "sonar.left",
+            "sonar.right"
+          ]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "quality": {
+          "enum": [
+            "measured",
+            "estimated"
+          ]
+        },
+        "sampled_bridge_time_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "threshold_id",
+        "sensor",
+        "active",
+        "value",
+        "quality",
+        "sampled_bridge_time_ms"
       ],
       "additionalProperties": true
     }

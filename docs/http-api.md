@@ -1,4 +1,4 @@
-# Using contract 1.5.0 over HTTP
+# Using contract 1.6.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -596,14 +596,51 @@ Socket close alone allows reattachment until session expiry. An invalidated sess
 cannot be closed as if it were still active; inspect retained operations and use
 explicit recovery where necessary.
 
+### Sensor threshold events
+
+To observe crossings on a shared sensor, add `thresholds` to the subscription
+request. A rule automatically subscribes to `sensor.threshold_changed`.
+
+```json
+{
+  "thresholds": [
+    {"sensor":"sonar.left","direction":"below","enter":0.35,"exit":0.55},
+    {"sensor":"battery.charge","direction":"below","enter":20,"exit":25}
+  ]
+}
+```
+
+The response includes each accepted rule and its opaque `id`. Up to eight rules
+are allowed. Sources are `sonar.left`, `sonar.right` in metres and
+`battery.charge` in percent. A `below` rule enters at or below `enter` and
+exits at or above `exit`. An `above` rule reverses both comparisons.
+The two thresholds must leave a nonzero band. When a reading stays in that band,
+the preceding state is retained. The subscription filters also apply to these
+events.
+
+Each crossing carries `threshold_id`, `sensor`, `active`, `value`, `quality`
+and `sampled_bridge_time_ms`. The value is the reading that changed the state.
+Sonar readings report `measured` or `estimated` quality. A missing echo or a
+too-close indication has no numeric distance and clears the baseline.
+
+Rules use the shared feed while a stream is attached, independently of any SSE
+sample rate. A rule does not activate sonar. Start an owned
+[sonar observer](#managed-sonar) when measurements are needed.
+The initial state sample includes sensors. The first usable sample establishes
+the baseline without an event. It starts inactive unless the reading meets the
+enter condition. Missing or stale readings, a new sonar producer, a stream gap,
+or a sampling gap beyond two sample intervals (at least 250 ms) reset the
+baseline. Inspect fresh sensor state at startup and after gaps. Threshold events
+do not replace the robot's native safeguards.
+
 ## Priority stop and explicit recovery
 
-`POST /api/robot/stop` with an active session and `{}` requests priority cancellation
-of implemented speech work, including other sessions. Stop admission does not
-depend on ordinary or cleanup history capacity. It retains the latest stop
-operation/key per session and coalesces calls while that stop is running. It is not an emergency-stop
-certification or a motion stop: this slice exposes no motion. Its Operation becomes
-unknown if affected native work cannot be confirmed stopped.
+`POST /api/robot/stop` with an active session and `{}` requests priority stop
+across bridge activities and sessions. Stop admission bypasses ordinary and
+cleanup history capacity. It retains the latest robot-stop operation/key per
+session and coalesces calls while that stop is running. Its Operation becomes
+unknown if affected native work cannot be confirmed stopped. For motion alone,
+use the [motion stop scopes](#finite-walking-and-odometry).
 
 ```bash
 curl -fsS "$BRIDGE/api/robot/diagnostics"

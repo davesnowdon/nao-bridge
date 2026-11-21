@@ -1095,15 +1095,18 @@ class AsyncEvents:
         events: list[str] | None = None,
         samples: list[dict[str, Any]] | None = None,
         filters: dict[str, Any] | None = None,
+        thresholds: list[dict[str, Any]] | None = None,
         allow_lower_rate: bool = False,
     ) -> AsyncSubscription:
         await self._nao._ensure_session()
-        body = {
+        body: dict[str, Any] = {
             "events": events or [],
             "samples": samples or [],
             "filters": filters or {},
             "allow_lower_rate": allow_lower_rate,
         }
+        if thresholds is not None:
+            body["thresholds"] = thresholds
         data = decode(
             SubscriptionData,
             await self._nao._request(

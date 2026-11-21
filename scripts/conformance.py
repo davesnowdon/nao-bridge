@@ -109,6 +109,23 @@ class Probe:
         state = self.request("GET", "/api/state?include=sensors", schema="State")
         assert state["groups"]["sensors"]["value"]["readings"]["sonar.left"]["value"] is None
 
+    def threshold_subscription(self):
+        rule = {"sensor": "sonar.left", "direction": "below", "enter": 0.35, "exit": 0.55}
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"thresholds": [rule]},
+            status=201,
+            schema="Subscription",
+        )
+        assert "sensor.threshold_changed" in sub["events"]
+        accepted = sub["thresholds"][0]
+        assert accepted == {"id": accepted["id"], **rule}
+        assert "sensor.threshold_changed" not in self.stream(sub)
+        state = self.request("GET", "/api/state?include=sensors", schema="State")
+        assert state["groups"]["sensors"]["value"]["readings"]["sonar.left"]["value"] is None
+        self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+
     def sample_recording(self):
         assert self.request("GET", "/api/robot")["backend"] in {"fake", "native-fixture"}
         recording = self.request(
@@ -298,6 +315,7 @@ def run(url):
     probe.session = session["id"]
     try:
         probe.sensor_observers()
+        probe.threshold_subscription()
         operation = probe.request(
             "POST",
             "/api/speech/utterances",
@@ -439,6 +457,7 @@ def run(url):
             "discovery",
             "state",
             "shared_sonar_observers",
+            "passive_threshold_subscription",
             "session",
             "idempotency",
             "speech",

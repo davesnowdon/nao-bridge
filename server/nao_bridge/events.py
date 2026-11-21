@@ -4,6 +4,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
+from .thresholds import Threshold
+
 
 @dataclass
 class EventBuffer:
@@ -72,6 +74,7 @@ class Subscription:
     attachments: int = 0
     sequence: int = 0
     last_sample: float = 0
+    thresholds: list[Threshold] = field(default_factory=list)
 
     def close(self, graceful: bool = False) -> None:
         self.public["status"] = "closed"

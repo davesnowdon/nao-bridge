@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.5.0",
-    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, finite walking and local odometry. Physical motion, hold and new sensor acceptance remain pending."
+    "version": "1.6.0",
+    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop and local odometry. Physical motion, hold and new sensor acceptance remain pending."
   },
   "servers": [
     {
@@ -2971,6 +2971,15 @@
       },
       "MotionStopResult": {
         "$ref": "schemas.json#/$defs/MotionStopResult"
+      },
+      "ThresholdRule": {
+        "$ref": "schemas.json#/$defs/ThresholdRule"
+      },
+      "AcceptedThreshold": {
+        "$ref": "schemas.json#/$defs/AcceptedThreshold"
+      },
+      "SensorThresholdChanged": {
+        "$ref": "schemas.json#/$defs/SensorThresholdChanged"
       }
     }
   }

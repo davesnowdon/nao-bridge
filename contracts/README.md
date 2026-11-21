@@ -1,4 +1,4 @@
-# HTTP/SSE contract 1.5.0
+# HTTP/SSE contract 1.6.0
 
 The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
 and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
@@ -35,6 +35,13 @@ The fake-server integration tests add expiry, resource conflicts, ambiguity,
 backpressure, retained history and explicit recovery. The production-container
 runner adds real SDK loopback callbacks, agent kill/freeze and restart fencing.
 Neither is evidence of physical stop or callback behavior on a robot.
+
+`ThresholdRule`, `AcceptedThreshold` and `SensorThresholdChanged` describe
+configured crossings. The raw runner checks passive subscription setup.
+Scripted sample tests exercise both crossings and reset behavior through the
+shared feed. Optional additions to closed schemas used only as direct request
+bodies are compatible when existing fields and their constraints are unchanged.
+The guard checks references and requires a version bump.
 
 With recording storage enabled, the direct runner also captures bounded shared
 joint/sensor samples and verifies NDJSON schemas, checksum and byte-range download.

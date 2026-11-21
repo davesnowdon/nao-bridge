@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.5.0",
+  "contract_version": "1.6.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -8,7 +8,8 @@
     "subscription_id",
     "recording_id",
     "asset_id",
-    "sensor_observer_id"
+    "sensor_observer_id",
+    "threshold_id"
   ],
   "scenarios": [
     {
@@ -197,6 +198,28 @@
       ],
       "nondeterminism": [
         "opaque operation IDs and timing of native completion"
+      ]
+    },
+    {
+      "name": "battery and sonar threshold crossings",
+      "steps": [
+        "subscribe with a battery below rule and a sonar below rule",
+        "attach SSE with fresh battery above the exit threshold",
+        "feed battery exactly at enter, inside band, and exactly at exit",
+        "check inactive sonar until a separate observer starts it",
+        "feed valid sonar values, then a no-echo value and a valid baseline",
+        "reattach after a socket or observation gap"
+      ],
+      "expected": [
+        "201 maps accepted rules to opaque IDs and declares sensor.threshold_changed",
+        "initial sensor snapshot and no synthetic crossing",
+        "two battery events with correct active flags and acquisition times",
+        "no implicit sonar activation",
+        "no false crossing due to missing echo or resumed readings",
+        "stream.reset and a new baseline with no replay"
+      ],
+      "nondeterminism": [
+        "opaque rule and subscription IDs, acquisition timestamps"
       ]
     }
   ]

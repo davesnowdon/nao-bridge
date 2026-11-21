@@ -25,6 +25,7 @@ from .errors import (
 )
 from .listeners import AsyncListener
 from .models import (
+    AcceptedThreshold,
     AssetData,
     AssetsPage,
     Capabilities,
@@ -40,6 +41,7 @@ from .models import (
     RobotInfo,
     SensorObserverConfiguration,
     SensorObserverData,
+    SensorThresholdChangedData,
     SessionData,
     SpeechHypothesis,
     SpeechRecognizedData,
@@ -52,6 +54,8 @@ from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "AcceptedThreshold",
+    "SensorThresholdChangedData",
     "Odometry",
     "OdometrySample",
     "PlanarVector",

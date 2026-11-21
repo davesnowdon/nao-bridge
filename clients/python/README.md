@@ -1,6 +1,6 @@
 # NAO Bridge Python client
 
-The replacement client provides `Nao` and `AsyncNao` for the version 1.5 HTTP/SSE
+The replacement client provides `Nao` and `AsyncNao` for the version 1.6 HTTP/SSE
 contract. Package version 0.2 removes the old `NAOBridgeClient` API. Python 3.10+
 is supported; a NAOqi installation is unnecessary on the client.
 
@@ -115,6 +115,22 @@ explicit `stop()` or context exit requests cleanup. Unknown cleanup raises
 `SensorObserverError` and is retained in `cleanup_error`. Handles stay pinned to
 the original session/generation and never resume themselves after reconnection.
 See the [HTTP lifecycle](../../docs/http-api.md#managed-sonar) for recovery.
+
+### Battery and sonar crossings
+
+```python
+rule = {"sensor": "battery.charge", "direction": "below", "enter": 20, "exit": 25}
+with Nao() as nao, nao.events.subscribe(thresholds=[rule]) as events:
+    threshold_id = events.data.thresholds[0].id
+    for event in events:
+        if event.type == "sensor.threshold_changed" and event.data["threshold_id"] == threshold_id:
+            print(event.data["active"], event.data["value"])
+```
+
+The async client uses `async with await nao.events.subscribe(thresholds=[rule])`
+and `async for`. A sonar rule needs an active owner from `nao.sensors.observe`.
+Read fresh state initially and after stream resets. See the
+[threshold contract](../../docs/http-api.md#sensor-threshold-events).
 
 ## Finite walking
 

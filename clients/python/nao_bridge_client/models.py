@@ -289,6 +289,14 @@ class OdometrySample(StateGroup):
     acquisition_finished_bridge_time_ms: float | None
 
 
+class AcceptedThreshold(WireModel):
+    id: str = Field(min_length=1, max_length=128)
+    sensor: Literal["battery.charge", "sonar.left", "sonar.right"]
+    direction: Literal["below", "above"]
+    enter: float
+    exit: float
+
+
 class SubscriptionData(WireModel):
     id: str
     session_id: str
@@ -300,6 +308,7 @@ class SubscriptionData(WireModel):
     replay_supported: Literal[False]
     queue_limits: dict[str, int]
     connected: bool
+    thresholds: list[AcceptedThreshold] = Field(default_factory=list, max_length=8)
 
 
 class Event(WireModel):
@@ -338,6 +347,15 @@ class StreamResetData(WireModel):
 class TouchChangedData(WireModel):
     sensor: str
     pressed: bool
+
+
+class SensorThresholdChangedData(WireModel):
+    threshold_id: str = Field(min_length=1, max_length=128)
+    sensor: Literal["battery.charge", "sonar.left", "sonar.right"]
+    active: bool
+    value: float = Field(ge=0, le=100)
+    quality: Literal["measured", "estimated"]
+    sampled_bridge_time_ms: float = Field(ge=0)
 
 
 class MotionPostureChangedData(WireModel):

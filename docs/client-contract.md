@@ -89,6 +89,14 @@ behavior are in the [client README](../clients/python/README.md#joint-controls).
 6. On reset, reconcile state and retained operation outcomes through GET. Telemetry coalescing with skipped samples is distinct from lost discrete events; a snapshot cannot recover transient missed events. A missing/expired subscription requires explicit gap handling and a fresh subscription/session as applicable. Operation waiting must re-read its status after every stream reset, not wait indefinitely for an already-missed completion event.
 7. Explicitly delete the subscription when finished. Closing a socket alone leaves it available for reconnection until session expiry; it is not the unsubscribe operation.
 
+Threshold rules are optional subscription configuration. The accepted rule ID
+correlates `sensor.threshold_changed` events with their configuration. A stream
+starts with a sensor snapshot and establishes a fresh baseline. On reset or a
+source gap, reconcile current observations instead of waiting for an event
+asserting the initial state. Rules never activate native sonar demand. The
+[sensor threshold contract](http-api.md#sensor-threshold-events) defines bounds,
+quality and hysteresis independently of the Python SDK.
+
 The consumer boundary must be documented by each SDK: transport delivery does not guarantee that arbitrary application side effects completed. There is no exactly-once application-action guarantee. Include fixtures for normal delivery, duplicate IDs, unknown event types, malformed frames, coalesced samples, queue overflow, reconnect reset, and expired/restarted streams. Historical replay is outside the four-increment plan; durable sample/media recordings remain available independently.
 
 ## Vocabulary listener lifecycle

@@ -22,6 +22,8 @@ from .motion import compile_trajectory, stiffness_targets
 from .recordings import KIND as RECORDING_KIND
 from .recordings import Recordings
 from .sensor_observers import SONAR_IDS, SensorObservers
+from .thresholds import EVENT as THRESHOLD_EVENT
+from .thresholds import MAX_RULES, Threshold
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -53,6 +55,7 @@ EVENT_TYPES = {
     "speech.recognized": "SpeechRecognized",
     "speech.listener_changed": "Listener",
     "sensor.observer_changed": "SensorObserver",
+    THRESHOLD_EVENT: "SensorThresholdChanged",
     "recording.changed": "Recording",
     "asset.created": "Asset",
 }
@@ -262,6 +265,8 @@ class Core:
                 }
             self.sample_changed.set()
             self.recordings.sample(set(data["groups"]))
+            if "sensors" in data["groups"]:
+                self.emit_threshold_crossings()
             for sub in self.subscriptions.values():
                 requests = sub.public["samples"]
                 if not requests or not sub.buffer or sub.buffer.closed:
@@ -332,6 +337,7 @@ class Core:
                 "sensors.observers": feature(
                     available and self.info.get("sonar", {}).get("available", False)
                 ),
+                THRESHOLD_EVENT: feature(True),
                 "motion.moves": feature(
                     available and self.info.get("locomotion", {}).get("available", False)
                 ),
@@ -412,6 +418,7 @@ class Core:
             | {
                 "session_lease_seconds": self.settings.lease_seconds,
                 "max_native_operations": 4,
+                "max_thresholds_per_subscription": MAX_RULES,
                 "max_joint_controls": 4,
                 "max_joint_control_ids": 4096,
                 "joint_control_default_ttl": 0.5,
@@ -1665,9 +1672,16 @@ class Core:
     def create_subscription(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         if len(self.subscriptions) >= self.settings.max_subscriptions:
             raise BridgeError("limit_exceeded", "Subscription capacity exhausted", 429)
-        events = body.get("events", [])
+        events = list(body.get("events", []))
         if set(events) - EVENT_TYPES.keys():
             raise BridgeError("unsupported", "Unknown or unavailable event type", 422)
+        thresholds = [
+            Threshold({"id": identifier(), **rule}) for rule in body.get("thresholds", [])
+        ]
+        if thresholds and THRESHOLD_EVENT not in events:
+            events.append(THRESHOLD_EVENT)
+        if THRESHOLD_EVENT in events and not thresholds:
+            raise BridgeError("invalid_request", "Threshold events require at least one rule")
         samples = []
         for request in body.get("samples", []):
             if set(request["groups"]) - {"sensors", "joints", "motion", "autonomy"}:
@@ -1700,8 +1714,36 @@ class Core:
             },
             "connected": False,
         }
-        self.subscriptions[sid] = Subscription(value)
+        if thresholds:
+            value["thresholds"] = [rule.configuration for rule in thresholds]
+        self.subscriptions[sid] = Subscription(value, thresholds=thresholds)
         return copy.deepcopy(value)
+
+    def threshold_source(self) -> tuple[Any, Any] | None:
+        raw = self.samples.get("sensors", {}).get("value") or {}
+        tag = raw.get("_sonar") or {}
+        if tag.get("enabled") is True and tag.get("producer_id") is not None:
+            return tag["producer_id"], tag.get("revision")
+        return None
+
+    def emit_threshold_crossings(self) -> None:
+        group = None
+        source = None
+        gap_ms = max(250, 2000 / self.settings.sample_rate_hz)
+        for sub in self.subscriptions.values():
+            if not sub.thresholds or not sub.buffer or sub.buffer.closed:
+                continue
+            filters = sub.public["filters"]
+            if filters.get("operation_id"):
+                continue
+            if group is None:
+                group = self.state(["sensors"])["groups"]["sensors"]
+                source = self.threshold_source()
+            for rule in sub.thresholds:
+                if filters.get("sensor") and filters["sensor"] != rule.configuration["sensor"]:
+                    continue
+                if crossing := rule.observe(group, source, gap_ms):
+                    sub.buffer.put(self.event(THRESHOLD_EVENT, crossing))
 
     def subscription(self, sid: str, session_id: str | None) -> Subscription:
         self.session(session_id)
@@ -1753,10 +1795,16 @@ class Core:
                     {"reason": "reattached_without_replay", "recover": recover},
                 )
             )
-        groups = sub.public["samples"][0]["groups"] if sub.public["samples"] else ["sensors"]
-        initial.append(
-            self.event("state.sample", {"state": self.state(groups), "skipped_samples": 0})
-        )
+        groups = list(sub.public["samples"][0]["groups"]) if sub.public["samples"] else ["sensors"]
+        if sub.thresholds and "sensors" not in groups:
+            groups.append("sensors")
+        state = self.state(groups)
+        if sub.thresholds:
+            source = self.threshold_source()
+            for rule in sub.thresholds:
+                rule.reset()
+                rule.observe(state["groups"]["sensors"], source, 0)
+        initial.append(self.event("state.sample", {"state": state, "skipped_samples": 0}))
         for event in initial:
             buffer.put(event)
         if buffer.closed:

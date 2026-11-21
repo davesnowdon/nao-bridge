@@ -135,3 +135,40 @@ def test_guard_does_not_treat_request_reachable_definitions_as_response_only(loc
         )
     with pytest.raises(ValueError, match="major bump"):
         compare(api, new_api, schemas, new_schemas)
+
+
+@pytest.mark.parametrize("change", ["optional", "required", "mixed_use", "pattern", "nested"])
+def test_guard_only_allows_safe_optional_fields_in_schema_for_direct_request_body(change):
+    api, new_api, schemas, new_schemas = bundles()
+    definition = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"events": {"type": "array"}},
+    }
+    ref = {"$ref": "schemas.json#/$defs/SubscriptionCreate"}
+    for spec, bundle in [(api, schemas), (new_api, new_schemas)]:
+        bundle["$defs"]["SubscriptionCreate"] = copy.deepcopy(definition)
+        spec["paths"]["/subscriptions"] = {
+            "post": {"requestBody": {"content": {"application/json": {"schema": ref}}}}
+        }
+        if change == "mixed_use":
+            spec["paths"]["/subscriptions"]["post"]["responses"] = {
+                "201": {"content": {"application/json": {"schema": ref}}}
+            }
+        if change == "pattern":
+            bundle["$defs"]["SubscriptionCreate"]["patternProperties"] = {
+                "^threshold": {"type": "string"}
+            }
+        if change == "nested":
+            spec["paths"]["/subscriptions"]["patch"] = {
+                "requestBody": {"content": {"application/json": {"schema": {"not": ref}}}}
+            }
+    new = new_schemas["$defs"]["SubscriptionCreate"]
+    new["properties"]["thresholds"] = {"type": "array"}
+    if change == "required":
+        new["required"] = ["thresholds"]
+    if change == "optional":
+        compare(api, new_api, schemas, new_schemas)
+    else:
+        with pytest.raises(ValueError, match="major bump"):
+            compare(api, new_api, schemas, new_schemas)
