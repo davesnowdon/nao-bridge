@@ -1,4 +1,4 @@
-# Using contract 1.7.0 over HTTP
+# Using contract 1.8.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -708,6 +708,47 @@ after its native reply and cleanup. Once publication begins, `cancellable` is
 `false` and the operation settles to success or storage failure. Scoped motion stop
 allows a capture to continue. Incomplete PNGs are discarded on restart. Completed
 images share the quota, retention and download routes with other assets.
+
+## Managed face observations
+
+Check `features.vision.observers` for availability. The `faces` capability
+metadata reports the detector's camera at discovery and supported delivery rates
+in `rates_hz`. Creating an event subscription alone does not start the detector.
+
+```http
+POST /api/vision/observers
+X-Session-ID: <session-id>
+Idempotency-Key: faces-1
+Content-Type: application/json
+
+{"faces":true,"rate_hz":2}
+```
+
+The defaults are face detection at up to 2 Hz on the native detector's current
+camera. Choose `rate_hz` of 1, 2 or 5 and optionally request `camera: "top"` or
+`"bottom"`. An explicit camera must match the detector's current camera. A
+failed camera probe or unavailable configuration appears in the observer's
+`error`. Compatible observers share one native producer; conflicting requests
+during an active or pending configuration receive `resource_busy`.
+
+Creation returns 201 with a `VisionObserver` and a status URL. Poll
+`GET /api/vision/observers/{id}` or use `vision.observer_changed` to follow
+`starting`, `active`, `stopping`, and the final outcome. An active observer's
+configuration gives the accepted camera. The session can subscribe to
+`vision.detections`. Each event includes its `observer_id`, camera frame,
+image timestamp and up to 16 faces with angular centres and extents in radians.
+Face IDs identify detections in a frame. Detector output supplies geometry only.
+Silence may mean the detector has not delivered a usable observation, so it
+cannot establish that an area is clear. A `stream.ready` for this event type
+includes `source_readiness["vision.faces"]` for the owning session.
+
+`POST /api/vision/observers/{id}/stop` takes `{}` and returns 202. Closing or
+expiring a session releases its observers; the last release ends the native
+subscription. Robot-wide stop requests cleanup and reports unresolved observer
+IDs. Scoped motion stop leaves face observation running. An unknown cleanup
+requires agent recovery and explicit release of old-generation ownership. After
+an SSE gap, query the observer's status and use future events. Reconnecting
+does not replay detections or recreate an observer.
 
 ## Sample recordings and retained assets
 

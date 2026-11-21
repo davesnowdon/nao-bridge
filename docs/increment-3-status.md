@@ -15,7 +15,7 @@ are unchanged. This document tracks further robot-free work against the full
 | Odometry, origin changes and observation frames | Planar adapter, shared motion state, schemas, raw HTTP and typed SDK observations implemented | Pending |
 | Threshold/hysteresis observations | Shared battery and sonar feed, per-subscription hysteresis, SSE schema and both SDKs implemented | Live source behavior pending |
 | Camera discovery and still capture | Native adapter, bounded RGB transfer, PNG assets, HTTP and both Python SDKs implemented | Both firmware generations pending |
-| Managed face observation | Pending | Pending |
+| Managed face observation | Owned native source, shared HTTP lifecycle, SSE and both Python SDKs implemented | Both firmware generations pending |
 | Owned velocity controls, independent expiry and controlled stop | Pending; must stay unavailable on hardware until its gate passes | Pending |
 | Public-API Wanderer reference application | Pending | Pending |
 
@@ -103,3 +103,18 @@ workers blocked, and PNG download through raw HTTP. `make check` passed 546
 server/integration and 47 client tests, plus lint and types. The final cleanup
 adjustments passed 39 focused tests, the full native-container run and the
 contract compatibility guard against PR #37.
+
+Contract 1.8.0 adds demand-managed face observations. Compatible observers share
+one named extractor subscription, and the last stop releases only that name.
+Events are session-scoped and rate-capped. Geometry uses the reported camera
+frame and native image timestamp. A requested camera must match the native
+extractor's current camera, which the bridge reads without reconfiguring it.
+The private pinned SDK test exercised a real callback, concurrent stills and
+ordered teardown while the four ordinary workers were occupied.
+
+`make check` passed lint, types, 560 server/integration tests and 47 SDK tests.
+The native container passed raw HTTP observer sharing, source readiness and
+SSE detections, as well as the private IPC and fault-recovery scenarios.
+The contract guard passed against both the camera commit and the PR #37 base.
+On physical NAO6 and NAOv5, face mode, event payloads, concurrent consumers and
+cleanup after sudden agent loss still need verification.

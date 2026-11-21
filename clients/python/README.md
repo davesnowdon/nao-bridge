@@ -39,6 +39,7 @@ asyncio.run(main())
 | `sensors.list()`, `.state(...)` | Sensor units/paths/source availability and shared touch, battery, inertial, foot-load/contact and temperature readings |
 | `sensors.observe(["sonar"])`, `.get_observer(id)` | Owned demand sharing one native sonar producer; readiness and explicit stop |
 | `vision.cameras()`, `.capture(camera=..., resolution=...)` | Passive camera discovery and a still image operation that produces a PNG asset |
+| `vision.observe(faces=True, ...)`, `.get_observer(id)` | Owned face observations with shared activation, typed events and scoped cleanup |
 | `speech.say(text, wait=True, ...)` | Server-defaulted plain speech; returns an Operation |
 | `speech.listen(vocabulary, ...)`, `.get_listener(id)` | Owned vocabulary listener and current readiness |
 | `listener.configure(...)`, `.pause()`, `.resume()`, `.stop()` | Accepted configuration changes and explicit cleanup |
@@ -283,6 +284,28 @@ before capture. The defaults are top camera and 320×240. Capture waits for a
 completed asset by default. Use `wait=False` to get an operation handle
 immediately and wait or cancel separately. An operation wait timeout leaves the
 capture running. The async client exposes the same methods with `await`.
+
+## Face observations
+
+```python
+from nao_bridge_client import Nao, VisionDetections
+
+with Nao("http://localhost:3000") as nao:
+    with nao.vision.observe(rate_hz=2) as observer:
+        observer.wait_ready()
+        with nao.events.subscribe(events=["vision.detections"]) as stream:
+            for event in stream:
+                if event.type == "vision.detections":
+                    frame = VisionDetections.model_validate(event.data)
+                    if frame.observer_id == observer.id and frame.faces:
+                        print(frame.frame, frame.faces[0].alpha_rad)
+                        break
+```
+
+Check `features["vision.observers"]` before starting. Leave `camera` omitted to
+use the detector's current camera. `wait_ready()` confirms activation; a client
+timeout leaves the observer running. Context exit requests cleanup. Use
+`async with await nao.vision.observe(...)` and `async for` with `AsyncNao`.
 
 ## Sample recordings and assets
 

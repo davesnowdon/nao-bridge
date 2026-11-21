@@ -310,6 +310,42 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.post("/api/vision/observers")
+    async def create_vision_observer(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "VisionObserverCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/observers",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.face_observers.create(owner, value),
+        )
+        return created(result, "vision/observers", 201)
+
+    @app.get("/api/vision/observers/{observer_id}")
+    async def get_vision_observer(request: Request, observer_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.face_observers.get(observer_id, session(request, False).public["id"]).public
+        )
+
+    @app.post("/api/vision/observers/{observer_id}/stop")
+    async def stop_vision_observer(request: Request, observer_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.face_observers.get(observer_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/observers/" + observer_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.face_observers.stop(item),
+        )
+        return created(result, "vision/observers", 202)
+
     @app.get("/api/assets")
     async def list_assets(request: Request) -> dict[str, Any]:
         query(request, {"cursor", "limit"})
@@ -646,6 +682,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     if name in {"speech.recognized", "speech.listener_changed"}
                     else core.capabilities()["features"]["sensors.observers"]
                     if name == "sensor.observer_changed"
+                    else core.capabilities()["features"]["vision.observers"]
+                    if name in {"vision.observer_changed", "vision.detections"}
                     else core.capabilities()["features"]["recordings"]
                     if name == "recording.changed"
                     else core.capabilities()["features"]["assets"]

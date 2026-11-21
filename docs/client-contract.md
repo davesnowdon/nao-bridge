@@ -139,6 +139,22 @@ events, without replaying missed samples. The [HTTP guide](http-api.md#managed-s
 and [Python guide](../clients/python/README.md#managed-sonar) describe implemented
 status, cleanup and recovery behavior independently of any client language.
 
+## Vision observer lifecycle
+
+Create the observer under a live session and keep its ID with the accepted
+camera and rate. Compatible observers share one detector. Use GET to confirm
+`active` before expecting observations. `stream.ready` reports
+`source_readiness["vision.faces"]` for the session attached to the stream.
+Each `vision.detections` event includes the observer ID, frame, native image
+timestamp and angular face bounds. Use the frame and generation when associating
+its geometry with other observations. Never treat silence as an empty frame.
+
+Stop only the observer the client owns. The final release waits for native
+cleanup. Client wait cancellation leaves the observer's lifetime unchanged.
+Scope exit and session closure request cleanup. Reconcile with GET after a gap
+and consume future observations without historical replay. An unknown outcome
+requires explicit recovery and a new observer after a generation change.
+
 ## Portable motion, media, and sequences
 
 Sample-recording clients create an owned Recording and track its associated

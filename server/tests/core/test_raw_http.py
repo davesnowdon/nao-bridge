@@ -12,4 +12,5 @@ async def test_sdk_independent_http_conformance(socket_rig, tmp_path):
         result = await asyncio.to_thread(module.run, url)
         assert "reconnect_without_replay" in result["checks"]
         assert "camera_capture_and_download" in result["checks"]
+        assert "vision_observer_sharing_and_detections" in result["checks"]
         assert not core.resources

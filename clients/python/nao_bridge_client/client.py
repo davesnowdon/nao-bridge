@@ -4,7 +4,7 @@ import asyncio
 import os
 import threading
 from collections.abc import Coroutine
-from typing import Any, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
 from .controls import AsyncJointControl
@@ -27,12 +27,14 @@ from .models import (
     State,
     StreamNotice,
     SubscriptionData,
+    VisionObserverData,
 )
 from .recordings import AsyncRecording
-from .sensor_observers import AsyncSensorObserver
+from .sensor_observers import AsyncObserver, ObserverData
 from .trajectory import Trajectory
 
 T = TypeVar("T")
+SyncObserver = TypeVar("SyncObserver", bound="_Observer[Any]")
 
 
 class Nao:
@@ -456,6 +458,31 @@ class Vision:
     def cameras(self) -> CamerasData:
         return self._nao._run(self._nao._async.vision.cameras())
 
+    def observe(
+        self,
+        *,
+        faces: bool = True,
+        camera: str | None = None,
+        rate_hz: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> VisionObserver:
+        return VisionObserver(
+            self._nao,
+            self._nao._run(
+                self._nao._async.vision.observe(
+                    faces=faces,
+                    camera=camera,
+                    rate_hz=rate_hz,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def get_observer(self, observer_id: str) -> VisionObserver:
+        return VisionObserver(
+            self._nao, self._nao._run(self._nao._async.vision.get_observer(observer_id))
+        )
+
     def capture(
         self,
         camera: str | None = None,
@@ -655,8 +682,8 @@ class Listener:
         self._nao._run(self._async.close())
 
 
-class SensorObserver:
-    def __init__(self, nao: Nao, observer: AsyncSensorObserver):
+class _Observer(Generic[ObserverData]):
+    def __init__(self, nao: Nao, observer: AsyncObserver[ObserverData]):
         self._nao = nao
         self._async = observer
 
@@ -665,7 +692,7 @@ class SensorObserver:
         return self._async.id
 
     @property
-    def data(self) -> SensorObserverData:
+    def data(self) -> ObserverData:
         return self._async.data
 
     @property
@@ -676,31 +703,41 @@ class SensorObserver:
     def cleanup_error(self) -> Exception | None:
         return self._async.cleanup_error
 
-    def __enter__(self) -> SensorObserver:
+    def __enter__(self: SyncObserver) -> SyncObserver:
         self._nao._run(self._async.__aenter__())
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
 
-    def refresh(self) -> SensorObserver:
+    def refresh(self: SyncObserver) -> SyncObserver:
         self._nao._run(self._async.refresh())
         return self
 
-    def wait_ready(self, *, timeout: float | None = 10) -> SensorObserver:
+    def wait_ready(self: SyncObserver, *, timeout: float | None = 10) -> SyncObserver:
         self._nao._run(self._async.wait_ready(timeout=timeout))
         return self
 
-    def wait_configured(self, *, timeout: float | None = 10) -> SensorObserver:
+    def wait_configured(self: SyncObserver, *, timeout: float | None = 10) -> SyncObserver:
         self._nao._run(self._async.wait_configured(timeout=timeout))
         return self
 
-    def stop(self, *, wait: bool = True, timeout: float | None = None) -> SensorObserver:
+    def stop(
+        self: SyncObserver, *, wait: bool = True, timeout: float | None = None
+    ) -> SyncObserver:
         self._nao._run(self._async.stop(wait=wait, timeout=timeout))
         return self
 
     def close(self) -> None:
         self._nao._run(self._async.close())
+
+
+class SensorObserver(_Observer[SensorObserverData]):
+    pass
+
+
+class VisionObserver(_Observer[VisionObserverData]):
+    pass
 
 
 class Recordings:

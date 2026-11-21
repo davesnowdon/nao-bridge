@@ -34,6 +34,7 @@ class Backend(Protocol):
     ) -> dict[str, Any]: ...
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]: ...
@@ -85,6 +86,10 @@ class FakeBackend:
         self.sonar_ready_at = 0.0
         self.sonar_calls: list[dict[str, Any]] = []
         self.sonar_failure: str | None = None
+        self.faces: dict[str, Any] | None = None
+        self.face_calls: list[dict[str, Any]] = []
+        self.face_failure: str | None = None
+        self.next_face = 0.0
         self.chains = {
             "Head": ["HeadYaw", "HeadPitch"],
             "LArm": ["LShoulderPitch", "LHand"],
@@ -173,6 +178,7 @@ class FakeBackend:
 
     async def connection(self, connected: bool) -> None:
         self.connected = connected
+        self.faces = None
         self.motion_state["odometry"] = {
             "origin_id": uuid.uuid4().hex,
             "origin_reason": "connection_started",
@@ -253,6 +259,11 @@ class FakeBackend:
                         for camera in ("top", "bottom")
                         if connected
                     ],
+                    "faces": {
+                        "available": connected,
+                        "camera": "top" if connected else None,
+                        "rates_hz": [1, 2, 5] if connected else [],
+                    },
                     "locomotion": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -270,6 +281,8 @@ class FakeBackend:
         while True:
             if self.connected and self.sink:
                 now = time.monotonic()
+                if self.faces and now >= self.next_face:
+                    await self.sample_face(now)
                 if (
                     self.sonar["enabled"]
                     and self.sonar["status"] == "warming"
@@ -348,6 +361,54 @@ class FakeBackend:
         if self.sink:
             await self.sink("sonar.state", dict(self.sonar))
         return dict(self.sonar)
+
+    async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.face_calls.append(copy.deepcopy(payload))
+        if not self.connected or self.face_failure == "unknown":
+            raise BackendUnknown("Face detector acknowledgement lost")
+        config = payload["configuration"]
+        if config and (config["camera"] not in ("top", None) or self.face_failure == "rejected"):
+            raise BridgeError(
+                "unsupported", "Requested camera is not configured on the detector", 422
+            )
+        accepted = {**config, "camera": "top"} if config is not None else None
+        value = {
+            **payload,
+            "configuration": accepted,
+            "status": "active" if accepted else "stopped",
+        }
+        self.faces = value if accepted else None
+        self.next_face = 0
+        return value
+
+    async def sample_face(self, now: float) -> None:
+        if self.sink is None or self.faces is None:
+            return
+        self.next_face = now + 1 / self.faces["configuration"]["rate_hz"]
+        usecs = int((now % 1) * 1_000_000)
+        await self.sink(
+            "faces.detections",
+            {
+                "producer_id": self.faces["producer_id"],
+                "revision": self.faces["revision"],
+                "camera": "top",
+                "frame": "camera.top",
+                "source_time": {
+                    "clock": "naoqi_camera",
+                    "seconds": int(now),
+                    "microseconds": usecs,
+                },
+                "faces": [
+                    {
+                        "id": f"top-{int(now)}-{usecs}-0",
+                        "alpha_rad": -0.15,
+                        "beta_rad": 0.08,
+                        "width_rad": 0.4,
+                        "height_rad": 0.3,
+                    }
+                ],
+            },
+        )
 
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]:
         import copy

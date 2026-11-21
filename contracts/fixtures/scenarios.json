@@ -221,6 +221,28 @@
       "nondeterminism": [
         "opaque rule and subscription IDs, acquisition timestamps"
       ]
+    },
+    {
+      "name": "owned face observation and camera coexistence",
+      "steps": [
+        "attach vision.detections before creating an observer",
+        "create two compatible observers and await activation",
+        "request a conflicting rate from a second session",
+        "capture a still while the detector is active",
+        "stop the first observer and receive detections for the second",
+        "stop the last observer and reconnect the event stream"
+      ],
+      "expected": [
+        "stream.ready reports inactive face observations",
+        "201 returns observer IDs and GET returns accepted camera and rate",
+        "conflicting configuration returns resource_busy",
+        "still capture produces an independent PNG asset",
+        "detection geometry includes observer ID, camera frame and source timestamp",
+        "last observer reaches stopped and no observations are replayed"
+      ],
+      "nondeterminism": [
+        "opaque IDs, native image timestamps, and callback ordering"
+      ]
     }
   ]
 }

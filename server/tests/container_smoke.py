@@ -569,6 +569,21 @@ async def check_native_controls():
             "Native sonar IPC: start, shared samples and stop with four blocked workers passed",
             flush=True,
         )
+        assert info["faces"]["available"] and info["faces"]["camera"] == "top"
+        face_request = {
+            "producer_id": "blocked-workers-faces",
+            "revision": 1,
+            "configuration": {"camera": "top", "rate_hz": 5},
+        }
+        faces = await backend.configure_faces(face_request)
+        assert faces["status"] == "active"
+        async with asyncio.timeout(3):
+            while "faces.detections" not in state:
+                await asyncio.sleep(0.01)
+        first_face = state["faces.detections"]
+        assert first_face["frame"] == "camera.top" and first_face["revision"] == 1
+        assert first_face["faces"][0]["alpha_rad"] == -0.15
+        assert "fixture label" not in str(first_face)
         assert [camera["id"] for camera in info["cameras"]] == ["top", "bottom"]
         for camera, size, color in (
             ("top", "320x240", b"\x00\x80\xff"),
@@ -590,6 +605,19 @@ async def check_native_controls():
         assert cancelled == {"cancelled": True, "dispatched": False} and not rgb
         print(
             "Native camera IPC: full frames with blocked workers and fenced IDs passed", flush=True
+        )
+        async with asyncio.timeout(3):
+            while state["faces.detections"]["observed"] <= first_face["observed"]:
+                await asyncio.sleep(0.01)
+        stopped_faces = await backend.configure_faces(
+            {**face_request, "revision": 2, "configuration": None}
+        )
+        assert stopped_faces["status"] == "stopped" and all(not task.done() for task in blocked)
+        last_face = state["faces.detections"]
+        await asyncio.sleep(0.3)
+        assert state["faces.detections"] == last_face
+        print(
+            "Native face IPC: observations, concurrent stills and owned teardown passed", flush=True
         )
         payload = {
             "operation_id": "control-one",

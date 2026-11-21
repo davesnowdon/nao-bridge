@@ -638,7 +638,7 @@ def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_mo
             unavailable[group]()
 
 
-@pytest.mark.parametrize("producer", ["recognition", "sonar"])
+@pytest.mark.parametrize("producer", ["recognition", "sonar", "faces"])
 def test_priority_stop_leaves_internal_producer_transition_to_ordered_cleanup(
     agent_module, producer
 ):
@@ -658,7 +658,7 @@ def test_priority_stop_leaves_internal_producer_transition_to_ordered_cleanup(
 
 
 @pytest.mark.parametrize("poisoned,status", [(False, "rejected"), (True, "unknown")])
-@pytest.mark.parametrize("producer", ["recognition", "sonar"])
+@pytest.mark.parametrize("producer", ["recognition", "sonar", "faces"])
 def test_recognition_rpc_does_not_turn_uncertain_mutation_into_known_rejection(
     agent_module, poisoned, status, producer
 ):
@@ -675,7 +675,7 @@ def test_recognition_rpc_does_not_turn_uncertain_mutation_into_known_rejection(
     assert record["status"] == status
 
 
-@pytest.mark.parametrize("producer", ["recognition", "sonar"])
+@pytest.mark.parametrize("producer", ["recognition", "sonar", "faces"])
 def test_authority_loss_fences_producer_without_waiting_for_native_cleanup(agent_module, producer):
     agent = bare_agent(agent_module)
     calls = []

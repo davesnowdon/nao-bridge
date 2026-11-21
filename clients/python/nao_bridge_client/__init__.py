@@ -1,7 +1,16 @@
 """NAO Bridge HTTP/SSE client. The replacement contract intentionally removes the v1 API."""
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .client import JointControl, Listener, Nao, Operation, Recording, SensorObserver, Subscription
+from .client import (
+    JointControl,
+    Listener,
+    Nao,
+    Operation,
+    Recording,
+    SensorObserver,
+    Subscription,
+    VisionObserver,
+)
 from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
@@ -22,6 +31,8 @@ from .errors import (
     SensorObserverTimeout,
     SessionLost,
     StaleState,
+    VisionObserverError,
+    VisionObserverTimeout,
 )
 from .listeners import AsyncListener
 from .models import (
@@ -49,13 +60,23 @@ from .models import (
     SpeechRecognizedData,
     State,
     StreamNotice,
+    VisionDetections,
+    VisionObserverConfiguration,
+    VisionObserverData,
 )
 from .recordings import AsyncRecording
-from .sensor_observers import AsyncSensorObserver
+from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
 from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "AsyncVisionObserver",
+    "VisionObserver",
+    "VisionObserverConfiguration",
+    "VisionObserverData",
+    "VisionObserverError",
+    "VisionObserverTimeout",
+    "VisionDetections",
     "Camera",
     "CamerasData",
     "AcceptedThreshold",

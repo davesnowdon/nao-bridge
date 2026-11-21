@@ -49,10 +49,11 @@ from .models import (
     State,
     StreamNotice,
     SubscriptionData,
+    VisionObserverData,
     WireModel,
 )
 from .recordings import AsyncRecordings
-from .sensor_observers import AsyncSensorObserver
+from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
 from .sse import SSEParser
 from .trajectory import Trajectory
 
@@ -511,6 +512,42 @@ class AsyncVision:
 
     async def cameras(self) -> CamerasData:
         return decode(CamerasData, await self._nao._request("GET", "/api/vision/cameras"))
+
+    async def observe(
+        self,
+        *,
+        faces: bool = True,
+        camera: str | None = None,
+        rate_hz: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncVisionObserver:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"faces": faces}
+        if camera is not None:
+            body["camera"] = camera
+        if rate_hz is not None:
+            body["rate_hz"] = rate_hz
+        value = await self._nao._request(
+            "POST",
+            "/api/vision/observers",
+            body=body,
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        return AsyncVisionObserver(self._nao, decode(VisionObserverData, value))
+
+    async def get_observer(self, observer_id: str) -> AsyncVisionObserver:
+        if self._nao.session_id is None:
+            raise SessionLost("A vision observer must belong to the current client session")
+        data = decode(
+            VisionObserverData,
+            await self._nao._request(
+                "GET",
+                "/api/vision/observers/" + observer_id,
+            ),
+        )
+        if data.id != observer_id:
+            raise ProtocolError("Vision observer ID does not match the request")
+        return AsyncVisionObserver(self._nao, data)
 
     async def capture(
         self,

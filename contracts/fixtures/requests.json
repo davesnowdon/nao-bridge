@@ -380,6 +380,34 @@
         ]
       },
       "valid": false
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {},
+      "valid": true
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {
+        "faces": true,
+        "camera": "top",
+        "rate_hz": 5
+      },
+      "valid": true
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {
+        "rate_hz": 3
+      },
+      "valid": false
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {
+        "camera": null
+      },
+      "valid": false
     }
   ]
 }

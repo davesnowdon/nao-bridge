@@ -23,7 +23,12 @@ from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
 from camera import CameraError, CameraUnknown, handoff, valid_capture, valid_capture_id
+from faces import valid_configuration as valid_faces
 from wire import VERSION, encode, frames, monotonic
+
+PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
+COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
+                autonomy=valid_autonomy, camera_capture=valid_capture)
 
 
 def valid_stop(request):
@@ -60,6 +65,7 @@ class Agent(object):
         self.work = queue.Queue(16)
         self.recognition_work = queue.Queue(1)
         self.sonar_work = queue.Queue(1)
+        self.faces_work = queue.Queue(1)
         self.camera_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
@@ -68,6 +74,7 @@ class Agent(object):
         self.dropped = 0
         self.recognition_cleanup = None
         self.sonar_cleanup = None
+        self.faces_cleanup = None
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
         self.driver = FixtureDriver(self.observe, self.lock) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe, self.lock)
@@ -93,14 +100,11 @@ class Agent(object):
         with self.lock:
             self.heartbeat = 0
             self.epoch += 1
-            recognition = getattr(self.driver, "recognition", None)
-            if recognition:
-                recognition.invalidate()
-                self.recognition_cleanup = recognition
-            sonar = getattr(self.driver, "sonar", None)
-            if sonar:
-                sonar.invalidate()
-                self.sonar_cleanup = sonar
+            for name in PRODUCERS:
+                adapter = getattr(self.driver, name, None)
+                if adapter:
+                    adapter.invalidate()
+                    setattr(self, name + "_cleanup", adapter)
             camera = getattr(self.driver, "camera", None)
             if camera:
                 camera.invalidate()
@@ -180,7 +184,7 @@ class Agent(object):
             self.reply(replies, request, "accepted")
             future = None
             try:
-                if request["action"] in ("recognition", "sonar"):
+                if request["action"] in PRODUCERS:
                     self.run_producer(request, record, replies)
                     continue
                 if request["action"] == "autonomy":
@@ -368,7 +372,7 @@ class Agent(object):
                     already_ended.append(key)
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
-                        and (record.get("action") not in ("recognition", "sonar") or key == oid)
+                        and (record.get("action") not in PRODUCERS or key == oid)
                         and (record.get("action") != "camera_capture" or record["status"] != "unknown" or key == oid)
                         and (not scope
                              or scope == "locomotion" and record.get("motion_kind") == "walk"
@@ -422,7 +426,7 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if record.get("action") in ("autonomy", "recognition", "sonar", "camera_capture") and record["phase"] != "queued":
+            if (record.get("action") in PRODUCERS or record.get("action") in ("autonomy", "camera_capture")) and record["phase"] != "queued":
                 # A completed individual setter does not finish a multi-setting transition.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
                 continue
@@ -625,20 +629,22 @@ class Agent(object):
                                 self.reply(replies, request, result=value)
                             except ValueError as error:
                                 self.reply(replies, request, "rejected", code=getattr(error, "code", "invalid_request"), message=str(error))
-                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition", "sonar", "camera_capture"):
+                        elif lane == "command" and (action == "speak" or action in COMMANDS):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration, "sonar": valid_sonar, "camera_capture": valid_capture}[action](request.get("payload")) and (action in ("recognition", "sonar") or bool(request.get("session_id")))):
+                            elif not (self.validate_speech(request) if action == "speak"
+                                      else COMMANDS[action](request.get("payload"))
+                                      and (action in PRODUCERS or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
                             elif action == "camera_capture" and not valid_capture_id(rid):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid capture operation ID")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
-                                requests = {"recognition": self.recognition_work, "sonar": self.sonar_work,
-                                            "camera_capture": self.camera_work}.get(action, self.work)
+                                requests = (getattr(self, action + "_work") if action in PRODUCERS
+                                            else self.camera_work if action == "camera_capture" else self.work)
                                 try:
                                     requests.put_nowait((request, replies))
                                 except queue.Full:
@@ -677,10 +683,9 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
-        background(self.run_critical, self.worker, self.recognition_work)
-        background(self.run_critical, self.worker, self.sonar_work)
         background(self.run_critical, self.worker, self.camera_work)
-        for name in ("recognition", "sonar"):
+        for name in PRODUCERS:
+            background(self.run_critical, self.worker, getattr(self, name + "_work"))
             background(self.run_critical, self.producer_recovery, name)
         for group in GROUPS:
             background(self.run_critical, self.sampler.run, group)

@@ -55,6 +55,7 @@ class Capabilities(WireModel):
     motion_events: dict[str, list[str]] = Field(default_factory=dict)
     recognition: dict[str, Any] = Field(default_factory=dict)
     sonar: dict[str, Any] = Field(default_factory=dict)
+    faces: dict[str, Any] = Field(default_factory=dict)
     locomotion: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -207,6 +208,50 @@ class SensorObserverData(WireModel):
     error: ErrorDetail | None
 
 
+class VisionObserverConfiguration(WireModel):
+    faces: Literal[True]
+    camera: Literal["top", "bottom"] | None
+    rate_hz: int = Field(ge=1, le=5)
+
+
+class VisionObserverData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    configuration: VisionObserverConfiguration
+    status: Literal["starting", "active", "stopping", "stopped", "failed", "unknown"]
+    error: ErrorDetail | None
+
+
+class CameraTimestamp(WireModel):
+    clock: Literal["naoqi_camera"]
+    seconds: int = Field(ge=0, le=9007199254740991)
+    microseconds: int = Field(ge=0, le=999999)
+
+
+class FaceBounds(WireModel):
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    alpha_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
+    beta_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
+    width_rad: float = Field(gt=0, le=3.141592653589793)
+    height_rad: float = Field(gt=0, le=3.141592653589793)
+
+
+class VisionDetections(WireModel):
+    observer_id: str = Field(min_length=1, max_length=128)
+    camera: Literal["top", "bottom"]
+    frame: Literal["camera.top", "camera.bottom"]
+    source_time: CameraTimestamp
+    faces: list[FaceBounds] = Field(max_length=16)
+
+    @model_validator(mode="after")
+    def matching_frame(self) -> VisionDetections:
+        if self.frame != "camera." + self.camera:
+            raise ValueError("Vision frame does not match the camera")
+        return self
+
+
 class SpeechHypothesis(WireModel):
     text: str
     confidence: float = Field(ge=0, le=1)
@@ -351,6 +396,9 @@ class StreamNotice(WireModel):
 class StreamReadyData(WireModel):
     subscription_id: str
     replay_supported: Literal[False]
+    source_readiness: dict[str, Literal["ready", "inactive", "unavailable", "unknown"]] = Field(
+        default_factory=dict
+    )
 
 
 class StreamResetData(WireModel):

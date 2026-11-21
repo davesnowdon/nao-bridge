@@ -308,3 +308,22 @@ with the four ordinary command workers occupied. The acquisition window covers
 the native read. Firmware-specific source clock behavior, actual exposure time,
 camera geometry and concurrent physical consumers remain acceptance work.
 
+## Face observations
+
+Both target firmware references specify a native timestamp, a camera ID,
+camera-relative face centres and angular size in `FaceDetected`. The recognition
+score belongs to identity matching. The bridge publishes the angular geometry
+and ignores the recognition metadata. It accepts explicit timestamped empty
+frames, discards malformed frames, and caps published detections at 16 per frame.
+[NAOqi 2.1 face detection](https://doc.aldebaran.com/2-1/naoqi/peopleperception/alfacedetection.html)
+and [NAOqi 2.8 face detection](https://doc.aldebaran.com/2-8/naoqi/peopleperception/alfacedetection.html).
+
+The extractor camera setting is shared. The bridge probes it at activation and
+uses the extractor's named period-based subscription, without global camera,
+pause, or recognition setters. Events from a different camera or a stale
+revision are suppressed. An unfinished activation must settle before owned
+unsubscribe can be confirmed. Physical acceptance still covers availability,
+camera identity, frame rate/age, concurrent consumers and stale subscriptions
+following sudden agent loss. [ALExtractor API](https://doc.aldebaran.com/2-8/naoqi/core/alextractor-api.html)
+and [ALVisionExtractor API](https://doc.aldebaran.com/2-8/naoqi/core/alvisionextractor-api.html).
+

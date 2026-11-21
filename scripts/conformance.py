@@ -228,6 +228,75 @@ class Probe:
             assert error["error"]["code"] == "resource_busy" and time.monotonic() < deadline, error
             time.sleep(0.02)
 
+    def vision_observers(self):
+        collection = "/api/vision/observers"
+        observers = [
+            self.request(
+                "POST",
+                collection,
+                {"faces": True, "rate_hz": 5},
+                status=201,
+                schema="VisionObserver",
+                headers={"Idempotency-Key": key},
+            )
+            for key in ("face-first", "face-second")
+        ]
+
+        def wait(item, status):
+            deadline = time.monotonic() + 5
+            path = collection + "/" + item["id"]
+            while True:
+                latest = self.request("GET", path, schema="VisionObserver")
+                if latest["status"] == status:
+                    return latest
+                assert time.monotonic() < deadline and latest["status"] not in {
+                    "unknown",
+                    "failed",
+                }, latest
+                time.sleep(0.02)
+
+        def stop(item):
+            self.request("POST", collection + "/" + item["id"] + "/stop", {}, status=202)
+            return wait(item, "stopped")
+
+        for item in observers:
+            assert wait(item, "active")["configuration"] == {
+                "faces": True,
+                "camera": "top",
+                "rate_hz": 5,
+            }
+        stop(observers[0])
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"events": ["vision.detections"]},
+            status=201,
+            schema="Subscription",
+        )
+        try:
+            self.stream(
+                sub,
+                observations=[
+                    (
+                        "stream.ready",
+                        "StreamReady",
+                        lambda data: data["source_readiness"]["vision.faces"] == "ready",
+                    ),
+                    (
+                        "vision.detections",
+                        "VisionDetections",
+                        lambda data: (
+                            data["observer_id"] == observers[1]["id"]
+                            and data["frame"] == "camera.top"
+                            and bool(data["faces"])
+                        ),
+                    ),
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+        stop(observers[1])
+
     def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
         conn = self.connection(timeout=3)
         headers = {
@@ -272,7 +341,9 @@ class Probe:
                     seen.add(event["type"])
                     for expected in pending_observations[:]:
                         kind, schema, data = expected
-                        if event["type"] == kind and event["data"] == data:
+                        if event["type"] == kind and (
+                            data(event["data"]) if callable(data) else event["data"] == data
+                        ):
                             self.validate(schema, event["data"])
                             pending_observations.remove(expected)
                     if event["type"] == "touch.changed":
@@ -311,6 +382,7 @@ def run(url):
         robot = probe.request("GET", "/api/robot", schema="Robot")
     capabilities = probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
     captures = capabilities["features"]["vision.captures"]["status"] == "available"
+    faces = capabilities["features"]["vision.observers"]["status"] == "available"
     sensor_state = probe.request(
         "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
     )
@@ -362,6 +434,8 @@ def run(url):
         probe.threshold_subscription()
         if captures:
             probe.camera_capture()
+        if faces:
+            probe.vision_observers()
         operation = probe.request(
             "POST",
             "/api/speech/utterances",
@@ -514,7 +588,8 @@ def run(url):
             "reconnect_without_replay",
             "cleanup",
         ]
-        + (["camera_capture_and_download"] if captures else []),
+        + (["camera_capture_and_download"] if captures else [])
+        + (["vision_observer_sharing_and_detections"] if faces else []),
     }
 
 

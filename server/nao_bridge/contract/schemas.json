@@ -1036,6 +1036,17 @@
         },
         "replay_supported": {
           "const": false
+        },
+        "source_readiness": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "ready",
+              "inactive",
+              "unavailable",
+              "unknown"
+            ]
+          }
         }
       },
       "required": [
@@ -3668,6 +3679,277 @@
       "required": [
         "asset_id",
         "capture"
+      ],
+      "additionalProperties": true
+    },
+    "VisionObserverCreate": {
+      "type": "object",
+      "properties": {
+        "faces": {
+          "const": true,
+          "default": true
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ],
+          "default": 2
+        }
+      },
+      "additionalProperties": false
+    },
+    "VisionObserverConfiguration": {
+      "type": "object",
+      "properties": {
+        "faces": {
+          "const": true
+        },
+        "camera": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ]
+        }
+      },
+      "required": [
+        "faces",
+        "camera",
+        "rate_hz"
+      ],
+      "additionalProperties": true
+    },
+    "VisionObserver": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configuration": {
+          "$ref": "#/$defs/VisionObserverConfiguration"
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "active",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "configuration",
+        "status",
+        "error"
+      ],
+      "additionalProperties": true,
+      "description": "Session-owned demand for shared sensor producers. Active means the native subscription is confirmed and its software settling interval elapsed; it does not guarantee valid readings or a new native producer update. Stop removes this observer only."
+    },
+    "FaceBounds": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "alpha_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "beta_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "width_rad": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3.141592653589793
+        },
+        "height_rad": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3.141592653589793
+        }
+      },
+      "required": [
+        "id",
+        "alpha_rad",
+        "beta_rad",
+        "width_rad",
+        "height_rad"
+      ],
+      "additionalProperties": true
+    },
+    "FaceFrame": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "faces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FaceBounds"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "source_time",
+        "faces"
+      ],
+      "additionalProperties": true
+    },
+    "VisionDetections": {
+      "type": "object",
+      "properties": {
+        "observer_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "faces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FaceBounds"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "observer_id",
+        "camera",
+        "frame",
+        "source_time",
+        "faces"
       ],
       "additionalProperties": true
     }

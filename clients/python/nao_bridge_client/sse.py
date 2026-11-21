@@ -25,6 +25,8 @@ from .models import (
     StreamReadyData,
     StreamResetData,
     TouchChangedData,
+    VisionDetections,
+    VisionObserverData,
 )
 
 PAYLOADS = {
@@ -33,6 +35,8 @@ PAYLOADS = {
     "touch.changed": TouchChangedData,
     "speech.listener_changed": ListenerData,
     "sensor.observer_changed": SensorObserverData,
+    "vision.observer_changed": VisionObserverData,
+    "vision.detections": VisionDetections,
     "sensor.threshold_changed": SensorThresholdChangedData,
     "speech.recognized": SpeechRecognizedData,
     "recording.changed": RecordingData,

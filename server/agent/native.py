@@ -16,6 +16,7 @@ from locomotion import Locomotion, Odometry, LocomotionError
 from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 from camera import VideoDevice, FixtureVideo
+from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -65,6 +66,7 @@ class NativeDriver(object):
         self.recognition = None
         self.sonar = None
         self.camera = None
+        self.faces = None
         self.passive_sensors = None
         self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
@@ -142,6 +144,8 @@ class NativeDriver(object):
         self.description["sonar"] = self.sonar.catalog
         self.camera = VideoDevice(self.session, monotonic)
         self.description["cameras"] = self.camera.items
+        self.faces = FaceDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
+        self.description["faces"] = self.faces.catalog
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -328,6 +332,9 @@ class NativeDriver(object):
     def close(self):
         self._connected.clear()
         self.locomotion = self.odometry = None
+        if self.faces:
+            self.faces.close()
+            self.faces = None
         if self.camera:
             self.camera.invalidate()
             self.camera.cleanup()
@@ -397,7 +404,7 @@ class FixtureMemory(object):
     def __init__(self):
         self.sources = dict((event, FixtureTouch()) for event in TOUCH)
         self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
-        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening"])
+        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT])
         self.values = dict((key, 0) for key in MEMORY_KEYS)
         self.values[BATTERY_KEY] = 76
         self.values.update(zip(SONAR_KEYS, [0.4, 1.2]))
@@ -444,6 +451,8 @@ class FixtureDriver(NativeDriver):
         self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
         self.sonar_impl = qi.multiThreaded()(FixtureSonar)()
         self.video_impl = qi.multiThreaded()(FixtureVideo)()
+        self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
+        self.face_sequence = 0
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
@@ -454,6 +463,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALSpeechRecognition", self.recognition_impl)
         self.server.registerService("ALSonar", self.sonar_impl)
         self.server.registerService("ALVideoDevice", self.video_impl)
+        self.server.registerService("ALFaceDetection", self.faces_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 
@@ -464,6 +474,8 @@ class FixtureDriver(NativeDriver):
         return result
 
     def sample_sensors(self, memory, passive_sensors, sonar=None):
+        self.face_sequence += 1
+        self.faces_impl.sample(self.face_sequence)
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
             self.memory_impl.toggle(self.contact_index // 2)

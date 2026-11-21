@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.7.0",
-    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry and still camera capture. Physical motion, hold and new sensor acceptance remain pending."
+    "version": "1.8.0",
+    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending."
   },
   "servers": [
     {
@@ -2829,6 +2829,204 @@
         "summary": "Acquire one camera frame as a PNG asset",
         "description": "On success the operation result is a CameraCaptureResult with the asset ID and acquisition metadata."
       }
+    },
+    "/vision/observers": {
+      "post": {
+        "operationId": "createVisionObserver",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionObserver"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionObserverCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/vision/observers/{observer_id}": {
+      "get": {
+        "operationId": "getVisionObserver",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionObserver"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "observer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ]
+      }
+    },
+    "/vision/observers/{observer_id}/stop": {
+      "post": {
+        "operationId": "stopVisionObserver",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionObserver"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "observer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3090,6 +3288,18 @@
       },
       "CameraCaptureMetadata": {
         "$ref": "schemas.json#/$defs/CameraCaptureMetadata"
+      },
+      "VisionObserver": {
+        "$ref": "schemas.json#/$defs/VisionObserver"
+      },
+      "VisionObserverCreate": {
+        "$ref": "schemas.json#/$defs/VisionObserverCreate"
+      },
+      "VisionObserverConfiguration": {
+        "$ref": "schemas.json#/$defs/VisionObserverConfiguration"
+      },
+      "VisionDetections": {
+        "$ref": "schemas.json#/$defs/VisionDetections"
       }
     }
   }

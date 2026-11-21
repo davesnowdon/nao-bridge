@@ -15,6 +15,8 @@ from .config import Settings
 from .contract import CONTACTS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
+from .face_observers import CHANGED as FACE_OBSERVER_CHANGED
+from .face_observers import DETECTIONS, MAX_HISTORY, MAX_OBSERVERS, FaceObservers
 from .joint_controls import KIND as CONTROL_KIND
 from .joint_controls import JointControls
 from .listeners import Listeners
@@ -57,6 +59,8 @@ EVENT_TYPES = {
     "speech.recognized": "SpeechRecognized",
     "speech.listener_changed": "Listener",
     "sensor.observer_changed": "SensorObserver",
+    FACE_OBSERVER_CHANGED: "VisionObserver",
+    DETECTIONS: "VisionDetections",
     THRESHOLD_EVENT: "SensorThresholdChanged",
     "recording.changed": "Recording",
     "asset.created": "Asset",
@@ -125,6 +129,7 @@ class Core:
         self.joint_controls = JointControls(self)
         self.listeners = Listeners(self)
         self.sensor_observers = SensorObservers(self)
+        self.face_observers = FaceObservers(self)
         self.recordings = Recordings(self)
         self.vision = Vision(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
@@ -212,6 +217,7 @@ class Core:
             self.generation += 1
             self.listeners.connection_changed()
             self.sensor_observers.connection_changed()
+            self.face_observers.connection_changed()
             self.samples.clear()
             self.sample_changed.set()
             self.emit(
@@ -247,6 +253,8 @@ class Core:
             self.listeners.observation(kind, data)
         elif kind == "sonar.state":
             self.sensor_observers.observation(data)
+        elif kind == "faces.detections":
+            self.face_observers.observation(data)
         elif kind == "sample":
             if self.connection != "connected":
                 return
@@ -387,6 +395,7 @@ class Core:
                 "recordings": feature(available and self.recordings.available()),
                 "assets": feature(self.recordings.store is not None),
                 "vision.cameras": feature(available and bool(self.info.get("cameras"))),
+                "vision.observers": feature(self.face_observers.available()),
                 "vision.captures": feature(
                     available and bool(self.info.get("cameras")) and self.recordings.available()
                 ),
@@ -429,6 +438,8 @@ class Core:
                 "session_lease_seconds": self.settings.lease_seconds,
                 "max_native_operations": 4,
                 "max_camera_captures": 1,
+                "max_vision_observers": MAX_OBSERVERS,
+                "max_vision_observer_history": MAX_HISTORY,
                 "max_thresholds_per_subscription": MAX_RULES,
                 "max_joint_controls": 4,
                 "max_joint_control_ids": 4096,
@@ -441,6 +452,7 @@ class Core:
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
             "recognition": copy.deepcopy(self.info.get("recognition", {})),
             "sonar": copy.deepcopy(self.info.get("sonar", {})),
+            "faces": copy.deepcopy(self.info.get("faces", {})),
             "locomotion": copy.deepcopy(self.info.get("locomotion", {})),
             "motion_events": copy.deepcopy(
                 self.info.get("motion_events", {"posture_fields": [], "fall_phases": []})
@@ -764,6 +776,8 @@ class Core:
                     if result["id"] in self.listeners.items
                     else "sensor_observer"
                     if result["id"] in self.sensor_observers.items
+                    else "vision_observer"
+                    if result["id"] in self.face_observers.items
                     else "recording"
                     if result["id"] in self.recordings.items
                     else "subscription"
@@ -1380,6 +1394,7 @@ class Core:
         self.emit("session.changed", session.public, session.public["id"])
         self.listeners.stop_session(session.public["id"])
         self.sensor_observers.stop_session(session.public["id"])
+        self.face_observers.stop_session(session.public["id"])
         self.recordings.stop_session(session.public["id"], status)
         self.vision.stop(session.public["id"])
         for sub in list(self.subscriptions.values()):
@@ -1457,6 +1472,7 @@ class Core:
         unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
         unresolved_listeners = await self.listeners.cleanup(sid, force, fenced)
         unresolved_observers = await self.sensor_observers.cleanup(sid, force, fenced)
+        unresolved_vision = await self.face_observers.cleanup(sid, force, fenced)
         unresolved_recordings = await self.recordings.settle(sid)
         unresolved.extend(unresolved_recordings)
         unresolved_captures = await self.vision.settle(capture)
@@ -1467,17 +1483,22 @@ class Core:
         observers_released = not self.sensor_observers.owns(sid)
         if not observers_released:
             unresolved_resources.append("sensors.sonar")
+        vision_released = not self.face_observers.owns(sid)
+        if not vision_released:
+            unresolved_resources.append("vision.faces")
         return {
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
             "unresolved_resources": unresolved_resources,
             "unresolved_listener_ids": unresolved_listeners,
             "unresolved_sensor_observer_ids": unresolved_observers,
+            "unresolved_vision_observer_ids": unresolved_vision,
             "force_release": force
             and fenced
             and controls_released
             and listeners_released
             and observers_released
+            and vision_released
             and not unresolved_recordings
             and not unresolved_captures,
         }
@@ -1554,6 +1575,7 @@ class Core:
     async def stop_all(self) -> dict[str, Any]:
         self.listeners.stop_all()
         self.sensor_observers.stop_all()
+        self.face_observers.stop_session()
         self.recordings.stop_all()
         capture = self.vision.stop()
         for op in list(self.operations.values()):
@@ -1585,12 +1607,14 @@ class Core:
         )
         await self.listeners.settled()
         await self.sensor_observers.settled()
+        await self.face_observers.settled()
         stopped["unresolved_sensor_observer_ids"] = [
             item.public["id"] for item in self.sensor_observers.items.values() if not item.released
         ]
         stopped["unresolved_listener_ids"] = [
             item.public["id"] for item in self.listeners.items.values() if not item.released
         ]
+        stopped["unresolved_vision_observer_ids"] = self.face_observers.unresolved()
         stopped["unresolved_ids"].extend(await self.recordings.settle())
         if capture is not None:
             oid = capture.operation.public["id"]
@@ -1686,6 +1710,7 @@ class Core:
                 if result["unresolved_ids"]
                 or result["unresolved_listener_ids"]
                 or result["unresolved_sensor_observer_ids"]
+                or result["unresolved_vision_observer_ids"]
                 else "succeeded",
                 result,
             )
@@ -1801,11 +1826,13 @@ class Core:
         sub.buffer = buffer
         self.streams[sub.public["id"]] = (sub, buffer)
         sub.public["connected"] = True
-        initial = [
-            self.event(
-                "stream.ready", {"subscription_id": sub.public["id"], "replay_supported": False}
-            )
-        ]
+        events = set(sub.public["events"])
+        ready = {"subscription_id": sub.public["id"], "replay_supported": False}
+        if DETECTIONS in events:
+            ready["source_readiness"] = {
+                "vision.faces": self.face_observers.readiness(sub.public["session_id"])
+            }
+        initial = [self.event("stream.ready", ready)]
         if sub.attachments or last_event_id:
             recover = ["state", "operations"]
             if {"speech.recognized", "speech.listener_changed"} & set(sub.public["events"]):
@@ -1814,6 +1841,8 @@ class Core:
                 recover.append("recordings")
             if "sensor.observer_changed" in sub.public["events"]:
                 recover.append("sensor_observers")
+            if {DETECTIONS, FACE_OBSERVER_CHANGED} & events:
+                recover.append("vision_observers")
             if "asset.created" in sub.public["events"]:
                 recover.append("assets")
             initial.append(
@@ -1896,6 +1925,9 @@ class Core:
         ]
         if unknown_observers:
             quarantined["sensors.sonar"] = unknown_observers
+        unknown_vision = self.face_observers.unresolved(unknown_only=True)
+        if unknown_vision:
+            quarantined["vision.faces"] = unknown_vision
         return {
             "bridge_instance_id": self.instance,
             "connection_generation": self.generation,
@@ -1915,6 +1947,7 @@ class Core:
             "subscriptions": len(self.subscriptions),
             "listeners": len(self.listeners.items),
             "sensor_observers": len(self.sensor_observers.items),
+            "vision_observers": len(self.face_observers.items),
             "recordings": len(self.recordings.items),
             "active_recordings": len(self.recordings.active()),
             "streams": len(self.streams),
@@ -1979,6 +2012,7 @@ class Core:
                 or sid in self.configuration_owners.values()
                 or self.listeners.owns(sid)
                 or self.sensor_observers.owns(sid)
+                or self.face_observers.owns(sid)
                 or self.recordings.owns(sid)
             ):
                 continue
@@ -1989,6 +2023,7 @@ class Core:
         now = self.clock()
         self.listeners.sweep()
         self.sensor_observers.sweep()
+        self.face_observers.sweep()
         self.recordings.tick()
         for session in list(self.sessions.values()):
             if session.public["status"] == "active" and session.deadline <= now:
@@ -1999,6 +2034,7 @@ class Core:
                 and session.public["id"] not in self.configuration_owners.values()
                 and not self.listeners.owns(session.public["id"])
                 and not self.sensor_observers.owns(session.public["id"])
+                and not self.face_observers.owns(session.public["id"])
                 and not self.recordings.owns(session.public["id"])
                 and not any(
                     o.public["session_id"] == session.public["id"] and not o.released
@@ -2033,6 +2069,10 @@ class Core:
                     continue
             elif record.resource_kind == "sensor_observer":
                 observer = self.sensor_observers.items.get(rid)
+                if observer and (not observer.released or (observer.retained_until or 0) > now):
+                    continue
+            elif record.resource_kind == "vision_observer":
+                observer = self.face_observers.items.get(rid)
                 if observer and (not observer.released or (observer.retained_until or 0) > now):
                     continue
             elif record.resource_kind == "recording":

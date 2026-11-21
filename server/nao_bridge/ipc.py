@@ -326,6 +326,9 @@ class AgentBackend:
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._rpc("command", "sonar", payload, timeout=3)
 
+    async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("command", "faces", payload, timeout=5)
+
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]:
