@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from contextlib import suppress
 from pathlib import Path
 
@@ -234,6 +235,252 @@ finally:
     print(result.strip(), flush=True)
 
 
+def check_native_sonar():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys, threading, time
+sys.path.insert(0, '/opt/nao-bridge/agent')
+import qi
+from sonar import Sonar, KEYS
+from wire import monotonic
+
+class Memory(object):
+    def getDataListName(self):
+        return KEYS
+    def getListData(self, keys):
+        return [0.4 if key == KEYS[0] else 1.2 for key in keys]
+
+class Source(object):
+    def __init__(self):
+        self.names = set(['other-application'])
+        self.blocked = False
+        self.release = threading.Event()
+    def subscribe(self, name):
+        if self.blocked and not self.release.wait(5):
+            raise RuntimeError('fixture deadline')
+        self.names.add(name)
+    def unsubscribe(self, name):
+        self.names.discard(name)
+
+server, client = qi.Session(), qi.Session()
+server.listenStandalone('tcp://127.0.0.1:0')
+source = qi.multiThreaded()(Source)()
+server.registerService('ALMemory', Memory())
+server.registerService('ALSonar', source)
+client.connect(server.endpoints()[0])
+memory = client.service('ALMemory')
+def call(service, method, *args):
+    return getattr(service, method)(*args, **{'_async': True}).value(1000)
+adapter = Sonar(client, memory, call, lambda *args: None, monotonic)
+late = None
+try:
+    assert adapter.catalog['available'] and source.names == set(['other-application'])
+    body = {'producer_id': 'probe', 'revision': 1, 'enabled': True}
+    assert adapter.configure(body)['status'] == 'warming'
+    token, keys = adapter.sample_request()
+    warming = adapter.readings(token, keys, call(memory, 'getListData', keys))
+    assert warming['sonar.left']['reason'] == 'warming'
+    time.sleep(0.55)
+    values = adapter.readings(token, keys, call(memory, 'getListData', keys))
+    assert values['sonar.left']['quality'] == 'measured'
+    assert values['sonar.right']['quality'] == 'estimated'
+    assert adapter.close() and source.names == set(['other-application'])
+    late = Sonar(client, memory, call, lambda *args: None, monotonic)
+    source.blocked = True
+    try:
+        late.configure(body)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError('delayed subscribe falsely completed')
+    assert late.poisoned and not late.close()
+    assert not late.pending_write.isFinished()
+    source.release.set()
+    late.pending_write.value(3000)
+    assert late.subscription in source.names
+    assert late.close() and source.names == set(['other-application'])
+    print('Native sonar adapter: warm-up, distance quality, own cleanup and late subscribe passed')
+finally:
+    source.release.set()
+    adapter.close()
+    if late:
+        late.close()
+    client.close()
+    server.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
+def check_native_locomotion():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys, threading, time
+sys.path.insert(0, '/opt/nao-bridge/agent')
+import qi
+from locomotion import Locomotion, Odometry
+from wire import monotonic
+
+class Motion(object):
+    def __init__(self):
+        self.pose = [0., 0., 0.]
+        self.active = False
+        self.stop_event = threading.Event()
+        self.calls = []
+    def getMoveConfig(self, which):
+        return [['MaxStepFrequency', 0. if which == 'Min' else 1.]]
+    def robotIsWakeUp(self):
+        return True
+    def getStiffnesses(self, names):
+        return [0.5] * len(names)
+    def moveIsActive(self):
+        return self.active
+    def getRobotPosition(self, sensors):
+        assert sensors
+        return self.pose
+    def getRobotVelocity(self):
+        return [0.1 if self.active else 0., 0., 0.]
+    def moveTo(self, x, y, yaw, config):
+        self.calls.append([x, y, yaw, config])
+        self.stop_event.clear()
+        self.active = True
+        try:
+            if not self.stop_event.wait(0.25):
+                self.pose = [self.pose[0] + x, self.pose[1] + y, self.pose[2] + yaw]
+        finally:
+            self.active = False
+    def stopMove(self):
+        self.stop_event.set()
+
+server = qi.Session()
+server.listenStandalone('tcp://127.0.0.1:0')
+source = qi.multiThreaded()(Motion)()
+server.registerService('ALMotion', source)
+client, safety = qi.Session(), qi.Session()
+client.connect(server.endpoints()[0])
+safety.connect(server.endpoints()[0])
+try:
+    motion, stop_motion = client.service('ALMotion'), safety.service('ALMotion')
+    call = lambda obj, method, *args: getattr(obj, method)(*args, **{'_async': True}).value(1000)
+    adapter = Locomotion(motion, stop_motion, ['LLeg', 'RLeg'], call, monotonic)
+    observation = Odometry(motion, call)
+    before = observation.sample()
+    assert before['pose'] == {'x': 0., 'y': 0., 'yaw': 0.}
+    payload = {'x': 0.2, 'y': 0., 'yaw': 0., 'speed': 0.3}
+    adapter.prepare(payload)
+    adapter.dispatch(payload).value(2000)
+    after = observation.sample()
+    assert abs(after['pose']['x'] - 0.2) < 1e-6
+    assert before['origin_id'] == after['origin_id']
+    assert source.calls[0][3] == [['MaxStepFrequency', 0.3]]
+    future = adapter.dispatch(payload)
+    deadline = monotonic() + 1
+    while not source.active:
+        assert monotonic() < deadline
+        time.sleep(0.005)
+    result = adapter.stop()
+    future.value(1000)
+    assert result['native_inactive'] and not source.active
+    assert abs(observation.sample()['pose']['x'] - 0.2) < 1e-6
+    print('Native locomotion: finite move, speed mapping, odometry and controlled stop passed')
+finally:
+    source.stop_event.set()
+    client.close()
+    safety.close()
+    server.close()
+
+from agent import Agent, background
+agent = Agent()
+agent.driver.connect()
+try:
+    agent.api = 'velocity-watchdog'
+    agent.heartbeat = monotonic()
+    now = monotonic()
+    request = {
+        'api': agent.api, 'agent': agent.instance, 'epoch': agent.epoch,
+        'action': 'velocity_setpoint', 'session_id': u'watchdog-session', 'deadline': now + 1,
+        'payload': {'operation_id': u'watchdog-move', 'control_id': u'watchdog-lease',
+                    'sequence': 0, 'x': 0.05, 'y': 0., 'yaw': 0., 'expires': now + 1},
+    }
+    controls = agent.velocity_controls
+    controls.submit(request)
+    while controls.snapshot(u'watchdog-move')['dispatched_sequence'] != 0:
+        assert monotonic() < now + 0.8
+        time.sleep(0.005)
+    assert agent.driver.motion_impl.moveIsActive()
+    agent.heartbeat = monotonic() - 1.1
+    background(agent.watchdog)
+    while controls.snapshot(u'watchdog-move')['status'] != 'cancelled':
+        assert monotonic() < now + 2.0
+        time.sleep(0.005)
+    outcome = controls.snapshot(u'watchdog-move')
+    assert outcome['reason'] == 'authority_lost' and outcome['stop']['confirmed']
+    assert not agent.driver.motion_impl.moveIsActive()
+    print('Native velocity watchdog: authority loss confirmed stop in the pinned SDK fixture')
+finally:
+    agent.driver.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
+def check_native_camera():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys
+sys.path.insert(0, '/opt/nao-bridge/agent')
+import qi
+from camera import FixtureVideo, VideoDevice
+from wire import monotonic
+
+server = qi.Session()
+server.listenStandalone('tcp://127.0.0.1:0')
+fixture = qi.multiThreaded()(FixtureVideo)()
+foreign = fixture.subscribeCamera('another-consumer', 0, 1, 11, 5)
+server.registerService('ALVideoDevice', fixture)
+client = qi.Session()
+client.connect(server.endpoints()[0])
+try:
+    adapter = VideoDevice(client, monotonic)
+    assert [item['id'] for item in adapter.items] == ['top', 'bottom']
+    assert fixture.getSubscribers() == [foreign]
+    for camera, size, expected in [
+        ('top', '320x240', b'\\x00\\x80\\xff'),
+        ('bottom', '640x480', b'\\xff\\x10\\x00'),
+    ]:
+        metadata, pixels = adapter.capture({'camera': camera, 'resolution': size})
+        assert metadata['camera'] == camera and metadata['pixel_format'] == 'rgb8'
+        assert metadata['source_time']['clock'] == 'naoqi_camera'
+        assert metadata['acquisition_started'] <= metadata['acquisition_finished']
+        assert pixels == expected * (metadata['width'] * metadata['height'])
+        assert fixture.getSubscribers() == [foreign]
+    print('Native cameras: passive discovery, full RGB frames and owned cleanup passed')
+finally:
+    client.close()
+    server.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
 async def check_native_controls():
     from nao_bridge.config import Settings
     from nao_bridge.errors import BridgeError
@@ -330,6 +577,79 @@ async def check_native_controls():
         )
         assert stopped_recognition["status"] == "stopped"
         assert all(not task.done() for task in blocked)
+        sonar = await backend.configure_sonar(
+            {"producer_id": "blocked-workers-sonar", "revision": 1, "enabled": True}
+        )
+        assert sonar["status"] == "warming"
+        async with asyncio.timeout(3):
+            while (
+                state.get("sample", {})
+                .get("groups", {})
+                .get("sensors", {})
+                .get("readings", {})
+                .get("sonar.left", {})
+                .get("value")
+                != 0.4
+            ):
+                await asyncio.sleep(0.01)
+        stopped_sonar = await backend.configure_sonar(
+            {"producer_id": "blocked-workers-sonar", "revision": 2, "enabled": False}
+        )
+        assert stopped_sonar["status"] == "stopped" and all(not task.done() for task in blocked)
+        print(
+            "Native sonar IPC: start, shared samples and stop with four blocked workers passed",
+            flush=True,
+        )
+        assert info["faces"]["available"] and info["faces"]["camera"] == "top"
+        face_request = {
+            "producer_id": "blocked-workers-faces",
+            "revision": 1,
+            "configuration": {"camera": "top", "rate_hz": 5},
+        }
+        faces = await backend.configure_faces(face_request)
+        assert faces["status"] == "active"
+        async with asyncio.timeout(3):
+            while "faces.detections" not in state:
+                await asyncio.sleep(0.01)
+        first_face = state["faces.detections"]
+        assert first_face["frame"] == "camera.top" and first_face["revision"] == 1
+        assert first_face["faces"][0]["alpha_rad"] == -0.15
+        assert "fixture label" not in str(first_face)
+        assert [camera["id"] for camera in info["cameras"]] == ["top", "bottom"]
+        for camera, size, color in (
+            ("top", "320x240", b"\x00\x80\xff"),
+            ("bottom", "640x480", b"\xff\x10\x00"),
+        ):
+            frame, rgb = await backend.capture_image(
+                uuid.uuid4().hex, "fixture-camera", {"camera": camera, "resolution": size}
+            )
+            assert frame["camera"] == camera
+            assert frame["frame"] == "camera." + camera
+            assert frame["acquisition_started"] <= frame["acquisition_finished"]
+            assert rgb == color * (frame["width"] * frame["height"])
+            assert all(not task.done() for task in blocked)
+        cancelled_id = uuid.uuid4().hex
+        await backend.stop(operation_id=cancelled_id)
+        cancelled, rgb = await backend.capture_image(
+            cancelled_id, "fixture-camera", {"camera": "top", "resolution": "320x240"}
+        )
+        assert cancelled == {"cancelled": True, "dispatched": False} and not rgb
+        print(
+            "Native camera IPC: full frames with blocked workers and fenced IDs passed", flush=True
+        )
+        async with asyncio.timeout(3):
+            while state["faces.detections"]["observed"] <= first_face["observed"]:
+                await asyncio.sleep(0.01)
+        stopped_faces = await backend.configure_faces(
+            {**face_request, "revision": 2, "configuration": None}
+        )
+        assert stopped_faces["status"] == "stopped" and all(not task.done() for task in blocked)
+        last_face = state["faces.detections"]
+        await asyncio.sleep(0.3)
+        assert state["faces.detections"] == last_face
+        print(
+            "Native face IPC: observations, concurrent stills and owned teardown passed", flush=True
+        )
         payload = {
             "operation_id": "control-one",
             "control_id": "fixture-control",
@@ -400,6 +720,65 @@ async def check_native_controls():
             "ended IDs and fencing passed",
             flush=True,
         )
+        assert info["velocity_control"]["available"]
+        velocity = {
+            "operation_id": "velocity-one",
+            "control_id": "velocity-lease",
+            "sequence": 0,
+            "x": 0.05,
+            "y": 0.02,
+            "yaw": 0.15,
+            "expires": time.monotonic() + 0.8,
+        }
+
+        async def velocity_at(oid, predicate):
+            report = await backend.velocity_control_status("walking", oid)
+            return report if predicate(report) else None
+
+        await backend.velocity_setpoint("walking", velocity)
+        velocity = {**velocity, "sequence": 1, "x": 0.07}
+        await backend.velocity_setpoint("walking", velocity)
+        await poll(
+            lambda: velocity_at("velocity-one", lambda report: report["dispatched_sequence"] == 1)
+        )
+        assert (await backend.velocity_setpoint("walking", velocity))["expires"] == velocity[
+            "expires"
+        ]
+        report = await poll(
+            lambda: velocity_at("velocity-one", lambda value: value["status"] == "succeeded")
+        )
+        assert report["reason"] == "velocity_expired" and report["stop"]["confirmed"]
+        expired = {**velocity, "sequence": 2, "expires": time.monotonic() + 0.7}
+        try:
+            await backend.velocity_setpoint("walking", expired)
+        except BridgeError as exc:
+            assert exc.code == "control_ended"
+        else:
+            raise AssertionError("Expired velocity lease reopened")
+
+        second = {
+            **expired,
+            "operation_id": "velocity-two",
+            "control_id": "velocity-peer",
+            "sequence": 0,
+        }
+        await backend.velocity_setpoint("walking", second)
+        await poll(
+            lambda: velocity_at("velocity-two", lambda value: value["dispatched_sequence"] == 0)
+        )
+        stop = await backend.stop(motion_scope="locomotion", operation_ids=["velocity-two"])
+        assert (
+            stop["locomotion_confirmed"]
+            and stop["velocity_controls"]["velocity-two"]["stop"]["confirmed"]
+        )
+        assert (await backend.velocity_control_status("walking", "velocity-two"))[
+            "status"
+        ] == "cancelled"
+        assert all(not task.done() for task in blocked)
+        print(
+            "Native velocity: ordered expiry and scoped stop with four blocked workers passed",
+            flush=True,
+        )
     finally:
         with suppress(Exception):
             await backend.stop()
@@ -424,6 +803,9 @@ try:
     check_legacy_bundle()
     check_native_sampling()
     check_native_recognition()
+    check_native_sonar()
+    check_native_locomotion()
+    check_native_camera()
     asyncio.run(check_native_controls())
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")
@@ -466,6 +848,8 @@ try:
             latencies.append((time.monotonic() - start) * 1000)
             assert observers[0].wait(op)["status"] == "succeeded"
         assert max(latencies) < 250, latencies
+        observers[0].velocity_control()
+        print("Native HTTP velocity expiry passed with eight attached SSE streams", flush=True)
         print(
             json.dumps({"native_fixture_streams": 8, "command_acceptance_ms": latencies}),
             flush=True,
@@ -692,6 +1076,56 @@ try:
         flush=True,
     )
     retained_asset = probe.sample_recording()
+
+    def motion_state():
+        state = probe.request("GET", "/api/state?include=motion&wait_for_fresh_ms=1000")
+        return state["groups"]["motion"]["value"]
+
+    initial = motion_state()["odometry"]
+    walk = probe.request("POST", "/api/motion/moves", {"x": 0.2, "y": 0.1}, status=202)
+    assert probe.wait(walk)["status"] == "succeeded"
+    current = motion_state()["odometry"]
+    assert current["origin_id"] == initial["origin_id"]
+    assert abs(current["pose"]["x"] - initial["pose"]["x"] - 0.2) < 1e-5
+    assert abs(current["pose"]["y"] - initial["pose"]["y"] - 0.1) < 1e-5
+    walk = probe.request("POST", "/api/motion/moves", {"yaw": 0.2}, status=202)
+    until(lambda: motion_state()["locomotion_active"], timeout=2)
+    probe.request("POST", "/api/operations/" + walk["id"] + "/cancel", {}, status=202)
+    assert probe.wait(walk)["status"] == "cancelled"
+    assert until(lambda: not motion_state()["locomotion_active"])
+    assert motion_state()["odometry"]["pose"] == current["pose"]
+    print(
+        "Native HTTP walking: displacement, origin and controlled cancellation passed", flush=True
+    )
+    speech = probe.request(
+        "POST", "/api/speech/utterances", {"text": "[fixture:block]"}, status=202
+    )
+    walk = probe.request("POST", "/api/motion/moves", {"yaw": 0.2}, status=202)
+    until(lambda: motion_state()["locomotion_active"], timeout=2)
+    stop = probe.request("POST", "/api/motion/stop", {}, status=202)
+    stopped = probe.wait(stop)
+    assert stopped["status"] == "succeeded", stopped
+    probe.validate("MotionStopResult", stopped["result"])
+    assert stopped["result"]["scope"] == "locomotion"
+    assert probe.wait(walk)["status"] == "cancelled"
+    assert until(lambda: not motion_state()["locomotion_active"])
+    joint = probe.request(
+        "POST",
+        "/api/motion/joint_moves",
+        {"positions": {"HeadYaw": 0.4}, "duration": 2},
+        status=202,
+    )
+    until(lambda: probe.request("GET", "/api/operations/" + joint["id"])["status"] == "running")
+    time.sleep(0.1)
+    stop = probe.request("POST", "/api/motion/stop", {"scope": "all"}, status=202)
+    stopped = probe.wait(stop)
+    assert stopped["status"] == "succeeded", stopped
+    assert stopped["result"]["joint_stop_confirmed"] is True
+    assert probe.wait(joint)["status"] == "cancelled"
+    assert probe.request("GET", "/api/operations/" + speech["id"])["status"] == "running"
+    probe.request("POST", "/api/operations/" + speech["id"] + "/cancel", {}, status=202)
+    assert probe.wait(speech)["status"] == "cancelled"
+    print("Native HTTP motion stop: walking and joint scopes preserve speech", flush=True)
     print(
         "Native sample recording: measured state, NDJSON, checksum and range download passed",
         flush=True,
@@ -720,6 +1154,7 @@ try:
     print("Native blocked-call cancellation confirmed through priority fixture service", flush=True)
     for fault in (signal.SIGKILL, signal.SIGSTOP):
         before = until(connected)
+        previous_origin = motion_state()["odometry"]["origin_id"]
         session = probe.request("POST", "/api/sessions", {"name": "fault-fixture"}, status=201)
         probe.session = session["id"]
         operation = probe.request(
@@ -746,6 +1181,7 @@ try:
             probe.request("GET", "/api/robot")["connection_generation"]
             > before["connection_generation"]
         )
+        assert motion_state()["odometry"]["origin_id"] != previous_origin
         recovery_probe.session = session["id"]
         recovery = recovery_probe.request(
             "POST",

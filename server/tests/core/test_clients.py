@@ -15,6 +15,40 @@ from nao_bridge_client import (  # noqa: E402
 )
 
 
+@pytest.mark.parametrize("synchronous", [False, True])
+async def test_passive_sensor_metadata_and_values_keep_the_shared_state_envelope(
+    socket_rig, synchronous
+):
+    async with socket_rig() as (url, _, _):
+        if synchronous:
+
+            def work():
+                with Nao(url) as nao:
+                    items = nao.sensors.list()
+                    state = nao.sensors.state(require_fresh=True, wait_for_fresh_ms=1000)
+                    assert nao.session_id is None
+                    return items, state
+
+            sensors, state = await asyncio.to_thread(work)
+        else:
+            async with AsyncNao(url) as nao:
+                sensors = await nao.sensors.list()
+                state = await nao.sensors.state(require_fresh=True, wait_for_fresh_ms=1000)
+                assert nao.session_id is None
+        sensor = next(item for item in sensors if item.id == "inertial.angle.x")
+        assert sensor.state_path == ["readings", "inertial.angle.x", "value"]
+        assert sensor.unit == "rad" and sensor.frame == "torso"
+        assert sensor.source.status == "available"
+        assert sensor.value_type == "number"
+        assert state.groups["sensors"].quality == "fresh"
+        assert state.acquisition_started_bridge_time_ms is not None
+        assert state.connection_generation >= 1
+        assert state.groups["sensors"].value["readings"][sensor.id] == {
+            "value": 0.0,
+            "reason": None,
+        }
+
+
 async def event_of(sub, kind):
     async with asyncio.timeout(3):
         async for event in sub:
@@ -153,7 +187,12 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
 async def test_all_contacts_discovery_state_and_filtered_events(socket_rig):
     async with socket_rig() as (url, core, backend), AsyncNao(url) as nao:
         sensors = await nao.sensors.list()
-        assert len(sensors) == 12
+        assert {
+            "battery.charge",
+            "inertial.angle.x",
+            "foot.contact",
+            "joint.HeadYaw.temperature",
+        } <= {item.id for item in sensors}
         sensors = [item for item in sensors if item.event_type == "touch.changed"]
         assert len(sensors) == 11
         assert all(item.events.status == "available" for item in sensors)

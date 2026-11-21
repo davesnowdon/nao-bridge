@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import re
+import stat
 import sys
 import tempfile
 import time
@@ -10,11 +12,32 @@ from pathlib import Path
 from typing import Any
 
 from .backend import EventSink
+from .camera_frames import CAMERA_SIZES
 from .config import Settings
 from .errors import BackendUnknown, BridgeError
 
 LOG = logging.getLogger(__name__)
 MAX_FRAME = 16384
+
+
+def read_camera_slot(path: Path, operation_id: str, size: int) -> bytes:
+    try:
+        with open(
+            path,
+            "rb",
+            opener=lambda name, flags: os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK),
+        ) as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size != 32 + size:
+                raise ValueError("Unexpected camera slot size")
+            value = source.read(32 + size + 1)
+            if len(value) != 32 + size or value[:32] != operation_id.encode("ascii"):
+                raise ValueError("Camera slot did not belong to this capture")
+            return value[32:]
+    except (OSError, ValueError) as exc:
+        raise BridgeError(
+            "capture_transfer_failed", "Private camera frame unavailable", 503
+        ) from exc
 
 
 class AgentBackend:
@@ -68,6 +91,8 @@ class AgentBackend:
     async def _spawn(self) -> None:
         assert self.root is not None
         for path in Path(self.root.name).glob("*.sock"):
+            path.unlink()
+        for path in Path(self.root.name).glob("camera-*.rgb*"):
             path.unlink()
         env = {
             key: value
@@ -298,6 +323,38 @@ class AgentBackend:
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._rpc("command", "recognition", payload, timeout=8)
 
+    async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("command", "sonar", payload, timeout=3)
+
+    async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("command", "faces", payload, timeout=5)
+
+    async def capture_image(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], bytes]:
+        instance, epoch = self.instance, self.epoch
+        if self.root is None or instance is None or re.fullmatch(r"[0-9a-f]{32}", instance) is None:
+            raise BackendUnknown("Agent generation is unavailable")
+        result = await self._rpc("command", "camera_capture", payload, session_id, operation_id, 5)
+        if result.get("cancelled"):
+            return result, b""
+        width, height = CAMERA_SIZES[payload["resolution"]]
+        if (
+            result.get("camera") != payload["camera"]
+            or result.get("pixel_format") != "rgb8"
+            or (result.get("width"), result.get("height")) != (width, height)
+        ):
+            raise BridgeError("invalid_camera_frame", "Agent returned an unexpected image", 503)
+        value = await asyncio.to_thread(
+            read_camera_slot,
+            Path(self.root.name) / f"camera-{instance}.rgb",
+            operation_id,
+            width * height * 3,
+        )
+        if (instance, epoch) != (self.instance, self.epoch) or not self.connected.is_set():
+            raise BackendUnknown("Agent generation changed during image transfer")
+        return result, value
+
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]:
         return await self._rpc("priority", "release_controls", {}, session_id)
 
@@ -306,10 +363,29 @@ class AgentBackend:
             "controls", "control_status", {"operation_id": operation_id}, session_id
         )
 
+    async def velocity_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("controls", "velocity_setpoint", payload, session_id)
+
+    async def velocity_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]:
+        return await self._rpc(
+            "controls", "velocity_status", {"operation_id": operation_id}, session_id
+        )
+
+    async def release_velocity_controls(self, session_id: str) -> dict[str, Any]:
+        return await self._rpc("priority", "release_velocity_controls", {}, session_id)
+
     async def stop(
-        self, operation_id: str | None = None, session_id: str | None = None
+        self,
+        operation_id: str | None = None,
+        session_id: str | None = None,
+        *,
+        motion_scope: str | None = None,
+        operation_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        return await self._rpc("priority", "stop", {"operation_id": operation_id}, session_id)
+        payload: dict[str, Any] = {"operation_id": operation_id}
+        if motion_scope is not None:
+            payload.update(motion_scope=motion_scope, operation_ids=operation_ids or [])
+        return await self._rpc("priority", "stop", payload, session_id)
 
     async def fence(self, session_id: str) -> bool:
         return (await self._rpc("priority", "fence", {}, session_id)).get("fenced", False)

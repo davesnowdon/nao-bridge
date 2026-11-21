@@ -11,8 +11,13 @@ import qi
 from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture, valid_trajectory, valid_motion_action
 from wire import monotonic
 from autonomy import Autonomy, FixtureAutonomy
-from observations import BATTERY_KEY, MotionEvents, battery_value
+from observations import BATTERY_KEY, MotionEvents, PassiveSensors, passive_definitions, battery_value
+from locomotion import Locomotion, Odometry, LocomotionError
 from recognition import Recognition, FixtureRecognition
+from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
+from camera import VideoDevice, FixtureVideo
+from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
+from velocity import MAX_ROTATION, MAX_TRANSLATION
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -40,6 +45,7 @@ def contact_values(values):
 
 class NativeDriver(object):
     joint_hold_verified = False
+    velocity_stop_verified = False
 
     def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
@@ -52,12 +58,18 @@ class NativeDriver(object):
         self.subscribers = []
         self.description = {}
         self.motion = None
+        self.locomotion = None
+        self.odometry = None
         self.safety_motion = None
         self.posture = None
         self.safety_posture = None
         self.autonomy = None
         self.motion_events = None
         self.recognition = None
+        self.sonar = None
+        self.camera = None
+        self.faces = None
+        self.passive_sensors = None
         self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
 
@@ -110,6 +122,11 @@ class NativeDriver(object):
         except Exception:
             self.motion = None
             self.safety_motion = None
+        if self.motion:
+            self.odometry = Odometry(self.motion.motion, self.call)
+            self.locomotion = Locomotion(self.motion.motion, self.safety_motion,
+                                         self.motion.names, self.call, monotonic)
+            self.description["locomotion"] = self.locomotion.catalog
         try:
             self.posture = PostureObservation(self.session, self.call)
             self.safety_posture = self.safety_session.service("ALRobotPosture", _async=True).value(1000)
@@ -123,10 +140,24 @@ class NativeDriver(object):
         self.description["motion_events"] = self.motion_events.support
         self.recognition = Recognition(self.session, self.memory, self.call, self.observe, self.adapter_lock)
         self.description["recognition"] = self.recognition.catalog
+        self.passive_sensors = PassiveSensors(self.memory, self.call, self.motion.names if self.motion else [])
+        self.description["sensor_catalog"] = self.passive_sensors.catalog
+        self.sonar = Sonar(self.session, self.memory, self.call, self.observe, monotonic, self.adapter_lock)
+        self.description["sonar"] = self.sonar.catalog
+        self.camera = VideoDevice(self.session, monotonic)
+        self.description["cameras"] = self.camera.items
+        self.faces = FaceDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
+        self.description["faces"] = self.faces.catalog
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
             "max_active": 4, "max_ttl": 1.0, "default_ttl": 0.5, "default_speed": 0.1,
+        }
+        self.description["velocity_control"] = {
+            "available": self.velocity_control_available(),
+            "reason": None if self.velocity_control_available() else "hardware_velocity_stop_unverified",
+            "frame": "robot", "max_ttl": 1.0, "default_ttl": 0.5,
+            "max_translation_m_s": MAX_TRANSLATION, "max_rotation_rad_s": MAX_ROTATION,
         }
         self._connected.set()
         return self.description
@@ -140,15 +171,28 @@ class NativeDriver(object):
     def connected(self):
         return self._connected.is_set()
 
-    def sample_sensors(self, memory):
-        values = self.call(memory, "getListData", MEMORY_KEYS + [BATTERY_KEY])
+    def sample_sensors(self, memory, passive_sensors, sonar=None):
+        token, sonar_keys = sonar.sample_request() if sonar else (None, [])
+        passive_keys = MEMORY_KEYS + [BATTERY_KEY] + passive_sensors.keys
+        keys = passive_keys + sonar_keys
+        values = self.call(memory, "getListData", keys)
+        if not isinstance(values, (list, tuple)) or len(values) != len(keys):
+            raise ValueError("Incomplete native sensor batch")
         value = contact_values(values)
-        value["battery"] = battery_value(values[len(MEMORY_KEYS)] if len(values) > len(MEMORY_KEYS) else None)
+        value["battery"] = battery_value(values[len(MEMORY_KEYS)])
+        value["readings"] = passive_sensors.normalize(values[len(MEMORY_KEYS) + 1:len(passive_keys)])
+        if sonar:
+            with sonar.lock:
+                value["readings"].update(sonar.readings(token, sonar_keys, values[len(passive_keys):]))
+                value["_sonar"] = sonar.snapshot()
         return value
 
     def sample_readers(self):
         # Capture this connection's adapters, never mutable driver fields inside a read.
         memory, motion, posture, autonomy = self.memory, self.motion, self.posture, self.autonomy
+        passive_sensors = self.passive_sensors
+        sonar = self.sonar
+        odometry = self.odometry
 
         def unavailable():
             raise ValueError("native_service_unavailable")
@@ -156,9 +200,11 @@ class NativeDriver(object):
         def motion_state():
             value = motion.sample_motion()
             value["posture"] = posture.sample() if posture else None
+            if odometry:
+                value["odometry"] = odometry.sample()
             return value
 
-        return {"sensors": lambda: self.sample_sensors(memory),
+        return {"sensors": lambda: self.sample_sensors(memory, passive_sensors, sonar),
                 "joints": motion.sample_joints if motion else unavailable,
                 "motion": motion_state if motion else unavailable,
                 "autonomy": autonomy.sample if autonomy else unavailable}
@@ -207,6 +253,9 @@ class NativeDriver(object):
     def joint_control_available(self):
         return bool(self.joint_hold_verified and self.motion and self.safety_motion)
 
+    def velocity_control_available(self):
+        return bool(self.velocity_stop_verified and self.locomotion and self.locomotion.catalog["available"])
+
     def validate_joint_target(self, payload):
         if not self.motion:
             raise ValueError("Motion service unavailable")
@@ -252,6 +301,10 @@ class NativeDriver(object):
         kind = payload["kind"]
         if kind != "stiffness" and names != set(self.motion.names):
             raise ValueError("Whole-body action must declare all joints")
+        if kind == "walk":
+            if not self.locomotion:
+                raise LocomotionError("unsupported", "Walking unavailable")
+            self.locomotion.prepare(payload["move"])
         if kind == "stiffness":
             for joint in self.motion.joints:
                 if joint["name"] in names and set(joint["coupled_with"]) & names:
@@ -263,6 +316,8 @@ class NativeDriver(object):
 
     def motion_action(self, payload):
         kind = payload["kind"]
+        if kind == "walk":
+            return self.locomotion.dispatch(payload["move"])
         if kind == "stiffness":
             return self.motion.motion.stiffnessInterpolation(payload["names"], payload["values"], [payload["duration"]] * len(payload["names"]), _async=True)
         if kind == "posture":
@@ -287,6 +342,17 @@ class NativeDriver(object):
 
     def close(self):
         self._connected.clear()
+        self.locomotion = self.odometry = None
+        if self.faces:
+            self.faces.close()
+            self.faces = None
+        if self.camera:
+            self.camera.invalidate()
+            self.camera.cleanup()
+            self.camera = None
+        if self.sonar:
+            self.sonar.close()
+            self.sonar = None
         if self.recognition:
             self.recognition.close()
             self.recognition = None
@@ -349,9 +415,16 @@ class FixtureMemory(object):
     def __init__(self):
         self.sources = dict((event, FixtureTouch()) for event in TOUCH)
         self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
-        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening"])
+        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT])
         self.values = dict((key, 0) for key in MEMORY_KEYS)
         self.values[BATTERY_KEY] = 76
+        self.values.update(zip(SONAR_KEYS, [0.4, 1.2]))
+        for item in passive_definitions(FixtureMotion().names):
+            self.values[item["memory_keys"][0]] = (1 if item["value_type"] == "boolean" else
+                35.0 if item["unit"] == "degC" else 0.5 if item["unit"] == "kg" else 0.0)
+
+    def getDataListName(self):
+        return list(self.values)
 
     def getEventList(self):
         return list(self.sources)
@@ -374,6 +447,7 @@ class FixtureMemory(object):
 
 class FixtureDriver(NativeDriver):
     joint_hold_verified = True
+    velocity_stop_verified = True
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
@@ -387,6 +461,10 @@ class FixtureDriver(NativeDriver):
         self.posture_impl = qi.multiThreaded()(FixturePosture)(self.motion_impl)
         self.autonomy_impl = qi.multiThreaded()(FixtureAutonomy)()
         self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
+        self.sonar_impl = qi.multiThreaded()(FixtureSonar)()
+        self.video_impl = qi.multiThreaded()(FixtureVideo)()
+        self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
+        self.face_sequence = 0
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
@@ -395,6 +473,9 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALRobotPosture", self.posture_impl)
         self.server.registerService("ALAutonomousLife", self.autonomy_impl)
         self.server.registerService("ALSpeechRecognition", self.recognition_impl)
+        self.server.registerService("ALSonar", self.sonar_impl)
+        self.server.registerService("ALVideoDevice", self.video_impl)
+        self.server.registerService("ALFaceDetection", self.faces_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 
@@ -404,7 +485,9 @@ class FixtureDriver(NativeDriver):
         result.update(name="Native SDK fixture", model="simulated", naoqi_version="fixture")
         return result
 
-    def sample_sensors(self, memory):
+    def sample_sensors(self, memory, passive_sensors, sonar=None):
+        self.face_sequence += 1
+        self.faces_impl.sample(self.face_sequence)
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
             self.memory_impl.toggle(self.contact_index // 2)
@@ -415,4 +498,4 @@ class FixtureDriver(NativeDriver):
             if self.recognition_impl.vocabulary:
                 self.recognition_impl.emit([self.recognition_impl.vocabulary[0], 0.9])
             self.contact_index += 1
-        return super(FixtureDriver, self).sample_sensors(memory)
+        return super(FixtureDriver, self).sample_sensors(memory, passive_sensors, sonar)

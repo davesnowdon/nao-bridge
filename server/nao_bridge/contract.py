@@ -11,6 +11,7 @@ ROOT = Path(__file__).parent / "contract"
 SCHEMAS = json.loads((ROOT / "schemas.json").read_text())
 OPENAPI = json.loads((ROOT / "openapi.json").read_text())
 CONTACTS = json.loads((ROOT / "contact-sensors.json").read_text())
+PASSIVE_SENSORS = json.loads((ROOT / "passive-sensors.json").read_text())
 VERSION = OPENAPI["info"]["version"]
 VALIDATORS = {
     name: Draft202012Validator(

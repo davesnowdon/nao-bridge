@@ -1,6 +1,6 @@
 # NAO Bridge Python client
 
-The replacement client provides `Nao` and `AsyncNao` for the version 1.1 HTTP/SSE
+The replacement client provides `Nao` and `AsyncNao` for the version 1.6 HTTP/SSE
 contract. Package version 0.2 removes the old `NAOBridgeClient` API. Python 3.10+
 is supported; a NAOqi installation is unnecessary on the client.
 
@@ -36,6 +36,10 @@ asyncio.run(main())
 | --- | --- |
 | `robot.info()`, `robot.capabilities()` | Discovery without creating a session |
 | `robot.state(include=..., require_fresh=True)` | Shared observations; raises `StaleState` for stale/unavailable requested groups |
+| `sensors.list()`, `.state(...)` | Sensor units/paths/source availability and shared touch, battery, inertial, foot-load/contact and temperature readings |
+| `sensors.observe(["sonar"])`, `.get_observer(id)` | Owned demand sharing one native sonar producer; readiness and explicit stop |
+| `vision.cameras()`, `.capture(camera=..., resolution=...)` | Passive camera discovery and a still image operation that produces a PNG asset |
+| `vision.observe(faces=True, ...)`, `.get_observer(id)` | Owned face observations with shared activation, typed events and scoped cleanup |
 | `speech.say(text, wait=True, ...)` | Server-defaulted plain speech; returns an Operation |
 | `speech.listen(vocabulary, ...)`, `.get_listener(id)` | Owned vocabulary listener and current readiness |
 | `listener.configure(...)`, `.pause()`, `.resume()`, `.stop()` | Accepted configuration changes and explicit cleanup |
@@ -44,8 +48,11 @@ asyncio.run(main())
 | `motion.joints()`, `.postures()`, `.state(...)` | Joint limits/chains/coupling and shared measured/commanded state |
 | `motion.wake()`, `.rest()`, `.set_stiffness(...)`, `.posture(...)` | Explicit preparation with session ownership |
 | `motion.move_joints(...)`, `.head(...)`, `.hand(...)`, `.play(...)` | Finite absolute targets and portable trajectories; optional same-session replacement |
+| `motion.move(x=..., y=..., yaw=...)`, `.odometry()` | Finite robot-relative walking and typed, timestamped planar observations |
+| `motion.stop(scope=...)` | Stops locomotion or all motion across sessions, leaving other activities running |
 | `motion.set_joint_targets(...)` | One ordered target update; no background refresh |
 | `motion.joint_control(...)` | Scoped latest-target refresh and cancellation on exit |
+| `motion.set_velocity(...)`, `motion.velocity(...)` | One-shot or scoped robot-frame velocity leases with controlled stop |
 | `autonomy.configure(...)`, `.state(...)` | Explicit discovered settings and observed values |
 | `operations.get(id)`, `operations.list(...)` | Retained operation history for this session |
 | `operation.refresh()`, `.wait(timeout=...)`, `.cancel(wait=...)` | Authoritative status, bounded local wait, explicit cancellation |
@@ -57,6 +64,100 @@ subscriptions use `async with await nao.events.subscribe(...)` and `async for`.
 Sync subscriptions use `with nao.events.subscribe(...)` and ordinary iteration.
 Joint-control factories return context managers directly: use `with` or `async with`
 without awaiting the factory.
+
+## Sensor readings
+
+Read-only sensor methods do not create a session or start a native producer.
+`require_fresh=True` checks group acquisition quality; an individual sensor may
+still be missing or invalid. Inspect its value and reason before acting.
+
+```python
+with Nao() as nao:
+    catalog = {sensor.id: sensor for sensor in nao.sensors.list()}
+    state = nao.sensors.state(require_fresh=True, wait_for_fresh_ms=1000)
+    reading = state.groups["sensors"].value["readings"]["foot.left.load"]
+    if reading["value"] is not None:
+        print(reading["value"], catalog["foot.left.load"].unit)  # Approximate kg.
+    else:
+        print(reading["reason"])
+```
+
+Async methods return the same objects. Catalog `state_path` is a list of literal
+keys relative to the group value, including IDs containing dots; `source` describes
+native discovery while `state` describes latest reading availability. Keep the
+state's connection generation and acquisition window when combining observations.
+See the [HTTP guide](../../docs/http-api.md#discovery-and-state) for all IDs, frames
+and units. Sensor samples also travel through SSE and bounded sample recordings.
+
+### Managed sonar
+
+Create an observer explicitly to activate sonar. Ordinary reads, SSE samples and
+sample recordings do not start it. Observers share a native subscription; closing
+one leaves the others running. Session expiry/close also releases its observers.
+
+```python
+with Nao() as nao:
+    with nao.sensors.observe(["sonar"]) as observer:
+        observer.wait_ready(timeout=5)
+        state = nao.sensors.state(require_fresh=True, wait_for_fresh_ms=1000)
+        reading = state.groups["sensors"].value["readings"]["sonar.left"]
+        print(reading["value"], reading["reason"], reading["quality"])
+```
+
+Use `async with await nao.sensors.observe(["sonar"])` with `AsyncNao`.
+`wait_configured()` accepts warming; `wait_ready()` waits for active. Active means
+subscription and the software settling window completed, not that every reading
+is usable or that the robot produced a new measurement. The next shared sample
+can still be pending. Inspect individual readings and group freshness each time.
+`quality` distinguishes measured, estimated, too-close and unavailable returns;
+null or no echo does not mean clear space.
+
+`refresh()` reconciles `sensor.observer_changed` events after a stream gap.
+`SensorObserverTimeout` and cancellation of a local wait leave the observer owned;
+explicit `stop()` or context exit requests cleanup. Unknown cleanup raises
+`SensorObserverError` and is retained in `cleanup_error`. Handles stay pinned to
+the original session/generation and never resume themselves after reconnection.
+See the [HTTP lifecycle](../../docs/http-api.md#managed-sonar) for recovery.
+
+### Battery and sonar crossings
+
+```python
+rule = {"sensor": "battery.charge", "direction": "below", "enter": 20, "exit": 25}
+with Nao() as nao, nao.events.subscribe(thresholds=[rule]) as events:
+    threshold_id = events.data.thresholds[0].id
+    for event in events:
+        if event.type == "sensor.threshold_changed" and event.data["threshold_id"] == threshold_id:
+            print(event.data["active"], event.data["value"])
+```
+
+The async client uses `async with await nao.events.subscribe(thresholds=[rule])`
+and `async for`. A sonar rule needs an active owner from `nao.sensors.observe`.
+Read fresh state initially and after stream resets. See the
+[threshold contract](../../docs/http-api.md#sensor-threshold-events).
+
+## Finite walking
+
+Prepare an awake, stiff robot in a standing posture before moving.
+For a connected fake fixture the software workflow can be exercised directly.
+
+```python
+with Nao() as nao:
+    if nao.robot.capabilities().features["motion.moves"].status == "available":
+        before = nao.motion.odometry(wait_for_fresh_ms=1000, require_fresh=True)
+        move = nao.motion.move(x=0.15, speed=0.3, timeout=15)
+        after = nao.motion.odometry(wait_for_fresh_ms=1000, require_fresh=True)
+        if before.value and after.value and before.value.origin_id == after.value.origin_id:
+            print(move.status, after.value.pose)
+```
+
+The async client uses the same methods with `await`. Use `wait=False` to
+retain the operation immediately and cancel it explicitly if needed. A local
+wait timeout leaves the move running. `motion.stop()` requests priority
+locomotion stop across sessions. Use `scope="all"` to include joint commands
+and joint controls. `odometry(require_fresh=True)` requires
+a fresh motion sample with a usable pose. Velocity may still be unavailable.
+See the [wire contract](../../docs/http-api.md#finite-walking-and-odometry)
+for axes, limits and stop confirmation.
 
 ## Joint controls
 
@@ -117,6 +218,26 @@ its ID and a greater sequence yourself. This path sends once and lets TTL expire
 it has no `wait` parameter. Use the returned operation's ordinary wait/refresh
 methods if needed. Identical duplicate updates never extend server expiry.
 
+## Velocity control
+
+```python
+from nao_bridge_client import Nao
+
+with Nao("http://localhost:3000") as nao:
+    if nao.robot.capabilities().features["motion.velocity"].status == "available":
+        with nao.motion.velocity(x=0.05, ttl=0.5) as drive:
+            drive.set_velocity(y=-0.03, yaw=0.15)
+```
+
+Velocity scopes manage the control ID, sequence, refresh and cancellation.
+Each setpoint is a complete target in robot-frame m/s and rad/s. The raw
+`motion.set_velocity(...)` sends one update, returning an operation handle.
+Use the same control ID and a greater sequence to update it. The scope's
+operation reports expiry, controlled stop, or an unknown result. A lost
+acknowledgement raises `BridgeError` with code `control_outcome_unknown`.
+With `AsyncNao` use `async with nao.motion.velocity(...)` and await updates.
+Check capabilities first. Physical velocity remains gated.
+
 ## Vocabulary listeners
 
 Check `robot.capabilities().features["speech.listeners"]` and the `recognition`
@@ -165,6 +286,47 @@ handle. PATCH has no automatic retry: refresh after a lost response to inspect t
 accepted configuration. `speech.listener_changed` and `speech.recognized` payloads
 are validated by the SSE reader. Filter recognized events by listener ID in the
 application; listener creation itself does not create an event subscription.
+
+## Camera stills
+
+```python
+from nao_bridge_client import Nao
+
+with Nao("http://localhost:3000") as nao:
+    cameras = nao.vision.cameras()
+    camera = cameras.items[0]
+    capture = nao.vision.capture(camera.id, resolution=camera.resolutions[0], timeout=5)
+    asset = nao.assets.download(capture.data.result["asset_id"], "still.png")
+    print(asset.metadata["frame"], asset.metadata["acquisition"])
+```
+
+Check `robot.capabilities().features["vision.captures"]` and the camera catalog
+before capture. The defaults are top camera and 320×240. Capture waits for a
+completed asset by default. Use `wait=False` to get an operation handle
+immediately and wait or cancel separately. An operation wait timeout leaves the
+capture running. The async client exposes the same methods with `await`.
+
+## Face observations
+
+```python
+from nao_bridge_client import Nao, VisionDetections
+
+with Nao("http://localhost:3000") as nao:
+    with nao.vision.observe(rate_hz=2) as observer:
+        observer.wait_ready()
+        with nao.events.subscribe(events=["vision.detections"]) as stream:
+            for event in stream:
+                if event.type == "vision.detections":
+                    frame = VisionDetections.model_validate(event.data)
+                    if frame.observer_id == observer.id and frame.faces:
+                        print(frame.frame, frame.faces[0].alpha_rad)
+                        break
+```
+
+Check `features["vision.observers"]` before starting. Leave `camera` omitted to
+use the detector's current camera. `wait_ready()` confirms activation; a client
+timeout leaves the observer running. Context exit requests cleanup. Use
+`async with await nao.vision.observe(...)` and `async for` with `AsyncNao`.
 
 ## Sample recordings and assets
 

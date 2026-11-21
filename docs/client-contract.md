@@ -79,6 +79,13 @@ errors to the application and on scope exit. Parent-client shutdown stops
 refreshers before closing its session or transport. Python examples and error
 behavior are in the [client README](../clients/python/README.md#joint-controls).
 
+Velocity uses the same sequence, lease and operation lifecycle as joint
+targets. The target names robot-relative `x` and `y` in m/s and `yaw` in rad/s.
+Always send the full vector on update. A lost PUT response leaves its outcome
+unknown. Stop refreshing on uncertain replies. If the operation ID is known,
+request cancellation and reconcile its status. An unknown stop retains
+ownership until same-generation confirmation or explicit fenced recovery.
+
 ## SSE recipe
 
 1. Create a subscription for exact event types and sample groups/rates. Inspect returned accepted rates and producer readiness; a stream does not automatically activate vision detection or a speech listener.
@@ -88,6 +95,14 @@ behavior are in the [client README](../clients/python/README.md#joint-controls).
 5. Reconnect with bounded exponential backoff and jitter while the session is valid. Notify the application of continuity loss immediately on disconnect. Reattachment emits `stream.ready`, `stream.reset`, and fresh or explicitly stale/unavailable samples before new live events. Never queue synthetic robot actions to compensate for missed touch/voice events.
 6. On reset, reconcile state and retained operation outcomes through GET. Telemetry coalescing with skipped samples is distinct from lost discrete events; a snapshot cannot recover transient missed events. A missing/expired subscription requires explicit gap handling and a fresh subscription/session as applicable. Operation waiting must re-read its status after every stream reset, not wait indefinitely for an already-missed completion event.
 7. Explicitly delete the subscription when finished. Closing a socket alone leaves it available for reconnection until session expiry; it is not the unsubscribe operation.
+
+Threshold rules are optional subscription configuration. The accepted rule ID
+correlates `sensor.threshold_changed` events with their configuration. A stream
+starts with a sensor snapshot and establishes a fresh baseline. On reset or a
+source gap, reconcile current observations instead of waiting for an event
+asserting the initial state. Rules never activate native sonar demand. The
+[sensor threshold contract](http-api.md#sensor-threshold-events) defines bounds,
+quality and hysteresis independently of the Python SDK.
 
 The consumer boundary must be documented by each SDK: transport delivery does not guarantee that arbitrary application side effects completed. There is no exactly-once application-action guarantee. Include fixtures for normal delivery, duplicate IDs, unknown event types, malformed frames, coalesced samples, queue overflow, reconnect reset, and expired/restarted streams. Historical replay is outside the four-increment plan; durable sample/media recordings remain available independently.
 
@@ -113,6 +128,39 @@ timeout or cancellation leaves the activity owned and running; explicit stop or
 session cleanup ends it. SDKs must document these independently from scope exit,
 which requests cleanup and surfaces uncertainty. See the
 [Python listener guide](../clients/python/README.md#vocabulary-listeners).
+
+## Sensor observer lifecycle
+
+A sensor observer owns demand for an active source; an SSE subscription owns event
+transport. They have independent lifetimes. For sonar, create the observer with
+`sources: ["sonar"]`, retain its identity, and reconcile its status through GET.
+`wait_configured` can finish while warming; `wait_ready` waits for active, which
+means the subscription and software settling policy completed. Still check group
+freshness, individual validity and distance quality before using a reading.
+
+A local timeout or cancellation does not stop demand. Explicit stop, scope exit or
+session cleanup releases the observer; shared demand from another observer remains.
+Unknown cleanup retains ownership and must be surfaced. Reconnection never resumes
+an observer or moves a handle to a new session/generation. Reconcile missed lifecycle
+events, without replaying missed samples. The [HTTP guide](http-api.md#managed-sonar)
+and [Python guide](../clients/python/README.md#managed-sonar) describe implemented
+status, cleanup and recovery behavior independently of any client language.
+
+## Vision observer lifecycle
+
+Create the observer under a live session and keep its ID with the accepted
+camera and rate. Compatible observers share one detector. Use GET to confirm
+`active` before expecting observations. `stream.ready` reports
+`source_readiness["vision.faces"]` for the session attached to the stream.
+Each `vision.detections` event includes the observer ID, frame, native image
+timestamp and angular face bounds. Use the frame and generation when associating
+its geometry with other observations. Never treat silence as an empty frame.
+
+Stop only the observer the client owns. The final release waits for native
+cleanup. Client wait cancellation leaves the observer's lifetime unchanged.
+Scope exit and session closure request cleanup. Reconcile with GET after a gap
+and consume future observations without historical replay. An unknown outcome
+requires explicit recovery and a new observer after a generation change.
 
 ## Portable motion, media, and sequences
 

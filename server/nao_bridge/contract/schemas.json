@@ -155,6 +155,15 @@
         "allow_lower_rate": {
           "type": "boolean",
           "default": false
+        },
+        "thresholds": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/ThresholdRule"
+          },
+          "description": "Optional sonar and battery rules. An active stream evaluates the shared sensor feed.",
+          "uniqueItems": true
         }
       },
       "required": [],
@@ -474,6 +483,17 @@
         "recognition": {
           "type": "object",
           "additionalProperties": true
+        },
+        "sonar": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "locomotion": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "velocity_control": {
+          "$ref": "#/$defs/VelocityControlCapability"
         }
       },
       "required": [
@@ -945,6 +965,14 @@
         },
         "connected": {
           "type": "boolean"
+        },
+        "thresholds": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/AcceptedThreshold"
+          },
+          "description": "Optional sonar and battery rules. An active stream evaluates the shared sensor feed."
         }
       },
       "required": [
@@ -1011,6 +1039,17 @@
         },
         "replay_supported": {
           "const": false
+        },
+        "source_readiness": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "ready",
+              "inactive",
+              "unavailable",
+              "unknown"
+            ]
+          }
         }
       },
       "required": [
@@ -1445,6 +1484,51 @@
             "string",
             "null"
           ]
+        },
+        "state_path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Literal object keys relative to the state_group value. IDs containing dots are single keys; do not split them."
+        },
+        "value_type": {
+          "enum": [
+            "number",
+            "boolean"
+          ]
+        },
+        "frame": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Coordinate frame for an axis reading, or null for a scalar."
+        },
+        "minimum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/Feature",
+          "description": "Native key discovery, distinct from freshness/validity in state. Not a hardware verification claim."
+        },
+        "producer": {
+          "type": "string"
+        },
+        "reliable_range": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "required": [
@@ -1653,6 +1737,9 @@
             "string",
             "null"
           ]
+        },
+        "odometry": {
+          "$ref": "#/$defs/Odometry"
         }
       },
       "required": [
@@ -2718,6 +2805,1247 @@
       "required": [
         "items",
         "next_cursor"
+      ],
+      "additionalProperties": true
+    },
+    "SensorReading": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quality": {
+          "enum": [
+            "measured",
+            "estimated",
+            "too_close",
+            "unavailable"
+          ],
+          "description": "Optional source-specific distance quality, independent of state-group acquisition freshness. Measured denotes the documented nominal ranging interval, not a hardware verification claim."
+        }
+      },
+      "required": [
+        "value",
+        "reason"
+      ],
+      "additionalProperties": true,
+      "description": "A normalized reading. Null means unavailable/invalid, never zero or clear space. Units/frame are in the sensor catalog. Group quality and acquisition window still apply.",
+      "if": {
+        "properties": {
+          "value": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "SensorStateValue": {
+      "type": "object",
+      "properties": {
+        "touch": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "touch_unavailable": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "battery": {
+          "$ref": "#/$defs/BatteryStateValue"
+        },
+        "readings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SensorReading"
+          }
+        }
+      },
+      "required": [
+        "touch",
+        "touch_unavailable",
+        "battery",
+        "readings"
+      ],
+      "additionalProperties": true,
+      "description": "Value of the sensors state group. Passive readings use stable catalog IDs; motion, touch and battery share the usual group freshness envelope. Numeric zero and boolean false are valid."
+    },
+    "SensorObserverCreate": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "sonar"
+            ]
+          }
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "SensorObserverConfiguration": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "sonar"
+            ]
+          }
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "additionalProperties": true
+    },
+    "SensorObserver": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configuration": {
+          "$ref": "#/$defs/SensorObserverConfiguration"
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "warming",
+            "active",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "configuration",
+        "status",
+        "reason",
+        "error"
+      ],
+      "additionalProperties": true,
+      "description": "Session-owned demand for shared sensor producers. Active means the native subscription is confirmed and its software settling interval elapsed; it does not guarantee valid readings or a new native producer update. Stop removes this observer only."
+    },
+    "MoveCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "default": 0,
+          "description": "Forward displacement in metres."
+        },
+        "y": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "default": 0,
+          "description": "Left displacement in metres."
+        },
+        "yaw": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793,
+          "default": 0,
+          "description": "Counterclockwise rotation in radians."
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.3,
+          "description": "Fraction of discovered default step frequency."
+        }
+      },
+      "description": "Relative to the robot at native execution start. At least one displacement component must be nonzero. The translation vector magnitude must be at most 1 metre.",
+      "anyOf": [
+        {
+          "required": [
+            "x"
+          ],
+          "properties": {
+            "x": {
+              "not": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "required": [
+            "y"
+          ],
+          "properties": {
+            "y": {
+              "not": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "required": [
+            "yaw"
+          ],
+          "properties": {
+            "yaw": {
+              "not": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PlanarVector": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "yaw": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "yaw"
+      ],
+      "additionalProperties": true
+    },
+    "Odometry": {
+      "type": "object",
+      "properties": {
+        "origin_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frame": {
+          "const": "odometry"
+        },
+        "velocity_frame": {
+          "const": "robot"
+        },
+        "pose": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanarVector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pose_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "velocity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanarVector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "velocity_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pose_source": {
+          "const": "joint_sensors"
+        },
+        "velocity_source": {
+          "const": "native_estimate"
+        }
+      },
+      "required": [
+        "origin_id",
+        "origin_reason",
+        "frame",
+        "velocity_frame",
+        "pose",
+        "pose_reason",
+        "velocity",
+        "velocity_reason",
+        "pose_source",
+        "velocity_source"
+      ],
+      "additionalProperties": true
+    },
+    "MotionStopRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "enum": [
+            "locomotion",
+            "all"
+          ],
+          "default": "locomotion"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MotionStopResult": {
+      "type": "object",
+      "description": "The result of a motion.stop Operation after a stop attempt. Confirmation is native execution evidence. Joint confirmation is null for the locomotion scope.",
+      "properties": {
+        "scope": {
+          "enum": [
+            "locomotion",
+            "all"
+          ]
+        },
+        "confirmed_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "unresolved_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "locomotion_confirmed": {
+          "type": "boolean"
+        },
+        "joint_stop_confirmed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "scope",
+        "confirmed_ids",
+        "unresolved_ids",
+        "locomotion_confirmed",
+        "joint_stop_confirmed"
+      ],
+      "additionalProperties": true
+    },
+    "ThresholdRule": {
+      "type": "object",
+      "properties": {
+        "sensor": {
+          "enum": [
+            "battery.charge",
+            "sonar.left",
+            "sonar.right"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "below",
+            "above"
+          ]
+        },
+        "enter": {
+          "type": "number"
+        },
+        "exit": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "sensor",
+        "direction",
+        "enter",
+        "exit"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sensor": {
+                "const": "battery.charge"
+              }
+            },
+            "required": [
+              "sensor"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enter": {
+                "minimum": 0,
+                "maximum": 100
+              },
+              "exit": {
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "enter": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              },
+              "exit": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "AcceptedThreshold": {
+      "type": "object",
+      "properties": {
+        "sensor": {
+          "enum": [
+            "battery.charge",
+            "sonar.left",
+            "sonar.right"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "below",
+            "above"
+          ]
+        },
+        "enter": {
+          "type": "number"
+        },
+        "exit": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "sensor",
+        "direction",
+        "enter",
+        "exit",
+        "id"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sensor": {
+                "const": "battery.charge"
+              }
+            },
+            "required": [
+              "sensor"
+            ]
+          },
+          "then": {
+            "properties": {
+              "enter": {
+                "minimum": 0,
+                "maximum": 100
+              },
+              "exit": {
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "enter": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              },
+              "exit": {
+                "minimum": 0.2,
+                "exclusiveMaximum": 5
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "SensorThresholdChanged": {
+      "type": "object",
+      "properties": {
+        "threshold_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sensor": {
+          "enum": [
+            "battery.charge",
+            "sonar.left",
+            "sonar.right"
+          ]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "quality": {
+          "enum": [
+            "measured",
+            "estimated"
+          ]
+        },
+        "sampled_bridge_time_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "threshold_id",
+        "sensor",
+        "active",
+        "value",
+        "quality",
+        "sampled_bridge_time_ms"
+      ],
+      "additionalProperties": true
+    },
+    "Camera": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "resolutions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "320x240",
+              "640x480"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "pixel_format": {
+          "const": "rgb8"
+        },
+        "horizontal_fov_rad": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 3.141592653589793
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vertical_fov_rad": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 3.141592653589793
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "frame",
+        "resolutions",
+        "pixel_format",
+        "horizontal_fov_rad",
+        "vertical_fov_rad"
+      ],
+      "additionalProperties": true
+    },
+    "Cameras": {
+      "type": "object",
+      "properties": {
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Camera"
+          }
+        }
+      },
+      "required": [
+        "connection_generation",
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "CameraCaptureCreate": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ],
+          "default": "320x240"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CameraCaptureMetadata": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pixel_format": {
+          "const": "rgb8"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "acquisition": {
+          "type": "object",
+          "properties": {
+            "started_bridge_time_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "finished_bridge_time_ms": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "started_bridge_time_ms",
+            "finished_bridge_time_ms"
+          ],
+          "additionalProperties": true
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "clock": {
+                  "const": "naoqi_camera"
+                },
+                "seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "microseconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 999999
+                }
+              },
+              "required": [
+                "clock",
+                "seconds",
+                "microseconds"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "angular_bounds_rad": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                },
+                "top": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                },
+                "right": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                },
+                "bottom": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                }
+              },
+              "required": [
+                "left",
+                "top",
+                "right",
+                "bottom"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "resolution",
+        "width",
+        "height",
+        "pixel_format",
+        "bridge_instance_id",
+        "connection_generation",
+        "acquisition",
+        "source_time",
+        "angular_bounds_rad"
+      ],
+      "additionalProperties": true
+    },
+    "CameraCaptureResult": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "capture": {
+          "$ref": "#/$defs/CameraCaptureMetadata"
+        }
+      },
+      "required": [
+        "asset_id",
+        "capture"
+      ],
+      "additionalProperties": true
+    },
+    "VisionObserverCreate": {
+      "type": "object",
+      "properties": {
+        "faces": {
+          "const": true,
+          "default": true
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ],
+          "default": 2
+        }
+      },
+      "additionalProperties": false
+    },
+    "VisionObserverConfiguration": {
+      "type": "object",
+      "properties": {
+        "faces": {
+          "const": true
+        },
+        "camera": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ]
+        }
+      },
+      "required": [
+        "faces",
+        "camera",
+        "rate_hz"
+      ],
+      "additionalProperties": true
+    },
+    "VisionObserver": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configuration": {
+          "$ref": "#/$defs/VisionObserverConfiguration"
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "active",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "configuration",
+        "status",
+        "error"
+      ],
+      "additionalProperties": true,
+      "description": "Session-owned demand for shared sensor producers. Active means the native subscription is confirmed and its software settling interval elapsed; it does not guarantee valid readings or a new native producer update. Stop removes this observer only."
+    },
+    "FaceBounds": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "alpha_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "beta_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "width_rad": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3.141592653589793
+        },
+        "height_rad": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3.141592653589793
+        }
+      },
+      "required": [
+        "id",
+        "alpha_rad",
+        "beta_rad",
+        "width_rad",
+        "height_rad"
+      ],
+      "additionalProperties": true
+    },
+    "FaceFrame": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "faces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FaceBounds"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "source_time",
+        "faces"
+      ],
+      "additionalProperties": true
+    },
+    "VisionDetections": {
+      "type": "object",
+      "properties": {
+        "observer_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "faces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FaceBounds"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "observer_id",
+        "camera",
+        "frame",
+        "source_time",
+        "faces"
+      ],
+      "additionalProperties": true
+    },
+    "VelocitySetpoint": {
+      "type": "object",
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "x": {
+          "type": "number",
+          "minimum": -0.1,
+          "maximum": 0.1,
+          "default": 0,
+          "description": "Forward velocity in metres per second."
+        },
+        "y": {
+          "type": "number",
+          "minimum": -0.1,
+          "maximum": 0.1,
+          "default": 0,
+          "description": "Leftward velocity in metres per second."
+        },
+        "yaw": {
+          "type": "number",
+          "minimum": -0.4,
+          "maximum": 0.4,
+          "default": 0,
+          "description": "Counterclockwise angular velocity in radians per second."
+        },
+        "ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        }
+      },
+      "required": [
+        "control_id",
+        "sequence"
+      ],
+      "additionalProperties": false
+    },
+    "VelocityControlCapability": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "frame": {
+          "const": "robot"
+        },
+        "max_ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "default_ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "max_translation_m_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_rotation_rad_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "frame",
+        "max_ttl",
+        "default_ttl",
+        "max_translation_m_s",
+        "max_rotation_rad_s"
       ],
       "additionalProperties": true
     }

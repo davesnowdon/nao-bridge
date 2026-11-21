@@ -140,6 +140,303 @@
         "max_bytes": 1
       },
       "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "sonar"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {},
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": []
+      },
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "sonar",
+          "sonar"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "all"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "sonar"
+        ],
+        "extra": true
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0.2
+      },
+      "valid": true
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "y": -0.1,
+        "yaw": 0.4,
+        "speed": 0.3
+      },
+      "valid": true
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": true
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "yaw": 4
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0.2,
+        "speed": 0
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0.2,
+        "gait": []
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0,
+        "speed": 0.3
+      },
+      "valid": false
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {},
+      "valid": true
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": "all"
+      },
+      "valid": true
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": "locomotion"
+      },
+      "valid": true
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": "speech"
+      },
+      "valid": false
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": null
+      },
+      "valid": false
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "reason": "stop"
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 30
+          },
+          {
+            "sensor": "sonar.left",
+            "direction": "below",
+            "enter": 0.35,
+            "exit": 0.55
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 30
+          },
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 30
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": true,
+            "exit": 30
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "battery.charge",
+            "direction": "below",
+            "enter": 20,
+            "exit": 101
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "sonar.left",
+            "direction": "below",
+            "enter": 0.35,
+            "exit": 5
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SubscriptionCreate",
+      "value": {
+        "thresholds": [
+          {
+            "sensor": "sonar.left",
+            "direction": "below",
+            "enter": 0.1,
+            "exit": 0.55
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {},
+      "valid": true
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {
+        "faces": true,
+        "camera": "top",
+        "rate_hz": 5
+      },
+      "valid": true
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {
+        "rate_hz": 3
+      },
+      "valid": false
+    },
+    {
+      "schema": "VisionObserverCreate",
+      "value": {
+        "camera": null
+      },
+      "valid": false
+    },
+    {
+      "schema": "VelocitySetpoint",
+      "value": {
+        "control_id": "turn",
+        "sequence": 0,
+        "yaw": -0.2
+      },
+      "valid": true
+    },
+    {
+      "schema": "VelocitySetpoint",
+      "value": {
+        "control_id": "turn",
+        "sequence": 1,
+        "x": 0.02,
+        "y": -0.02,
+        "ttl": 0.35
+      },
+      "valid": true
+    },
+    {
+      "schema": "VelocitySetpoint",
+      "value": {
+        "control_id": "turn",
+        "sequence": true,
+        "x": 0.02
+      },
+      "valid": false
     }
   ]
 }

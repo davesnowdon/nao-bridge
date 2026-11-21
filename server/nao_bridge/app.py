@@ -291,6 +291,61 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/vision/cameras")
+    async def cameras(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.vision.cameras()
+
+    @app.post("/api/vision/captures")
+    async def capture_image(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "CameraCaptureCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/captures",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.vision.capture(owner, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.post("/api/vision/observers")
+    async def create_vision_observer(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "VisionObserverCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/observers",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.face_observers.create(owner, value),
+        )
+        return created(result, "vision/observers", 201)
+
+    @app.get("/api/vision/observers/{observer_id}")
+    async def get_vision_observer(request: Request, observer_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.face_observers.get(observer_id, session(request, False).public["id"]).public
+        )
+
+    @app.post("/api/vision/observers/{observer_id}/stop")
+    async def stop_vision_observer(request: Request, observer_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.face_observers.get(observer_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/observers/" + observer_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.face_observers.stop(item),
+        )
+        return created(result, "vision/observers", 202)
+
     @app.get("/api/assets")
     async def list_assets(request: Request) -> dict[str, Any]:
         query(request, {"cursor", "limit"})
@@ -370,6 +425,42 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "recordings", 202)
 
+    @app.post("/api/sensors/observers")
+    async def create_sensor_observer(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "SensorObserverCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /sensors/observers",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.sensor_observers.create(owner, value),
+        )
+        return created(result, "sensors/observers", 201)
+
+    @app.get("/api/sensors/observers/{observer_id}")
+    async def get_sensor_observer(request: Request, observer_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.sensor_observers.get(observer_id, session(request, False).public["id"]).public
+        )
+
+    @app.post("/api/sensors/observers/{observer_id}/stop")
+    async def stop_sensor_observer(request: Request, observer_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.sensor_observers.get(observer_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /sensors/observers/" + observer_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.sensor_observers.stop(item),
+        )
+        return created(result, "sensors/observers", 202)
+
     @app.post("/api/speech/listeners")
     async def create_listener(request: Request) -> Response:
         query(request, set())
@@ -447,6 +538,13 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         result = core.joint_controls.submit(session(request), value)
         return created(result, "operations", 202)
 
+    @app.put("/api/motion/velocity")
+    async def velocity_setpoint(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "VelocitySetpoint")
+        result = core.velocity_controls.submit(session(request), value)
+        return created(result, "operations", 202)
+
     @app.post("/api/motion/wake")
     async def wake(request: Request) -> Response:
         return await submit_motion_action(request, "wake", "MotionTransitionCreate", "wake")
@@ -464,6 +562,11 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     @app.post("/api/motion/posture_changes")
     async def posture(request: Request) -> Response:
         return await submit_motion_action(request, "posture", "PostureCreate", "posture_changes")
+
+    @app.post("/api/motion/moves")
+    async def walk(request: Request) -> Response:
+        query(request, set())
+        return await submit_motion_action(request, "walk", "MoveCreate", "moves")
 
     @app.post("/api/motion/trajectory_runs")
     async def trajectory(request: Request) -> Response:
@@ -552,6 +655,21 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.post("/api/motion/stop")
+    async def stop_motion(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "MotionStopRequest")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /motion/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.priority_stop(item, scope=value.get("scope", "locomotion")),
+            recovery=True,
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/robot/diagnostics")
     async def diagnostics(request: Request) -> dict[str, Any]:
         return await core.diagnostics()
@@ -569,6 +687,10 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     if name in {"motion.posture_changed", "motion.fall_changed"}
                     else core.capabilities()["features"]["speech.listeners"]
                     if name in {"speech.recognized", "speech.listener_changed"}
+                    else core.capabilities()["features"]["sensors.observers"]
+                    if name == "sensor.observer_changed"
+                    else core.capabilities()["features"]["vision.observers"]
+                    if name in {"vision.observer_changed", "vision.detections"}
                     else core.capabilities()["features"]["recordings"]
                     if name == "recording.changed"
                     else core.capabilities()["features"]["assets"]

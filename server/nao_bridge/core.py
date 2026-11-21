@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import logging
+import math
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -14,26 +15,37 @@ from .config import Settings
 from .contract import CONTACTS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
+from .face_observers import CHANGED as FACE_OBSERVER_CHANGED
+from .face_observers import DETECTIONS, MAX_HISTORY, MAX_OBSERVERS, FaceObservers
 from .joint_controls import KIND as CONTROL_KIND
-from .joint_controls import JointControls
+from .joint_controls import VELOCITY_KIND, JointControls, VelocityControls
 from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
 from .recordings import KIND as RECORDING_KIND
 from .recordings import Recordings
+from .sensor_observers import SONAR_IDS, SensorObservers
+from .thresholds import EVENT as THRESHOLD_EVENT
+from .thresholds import MAX_RULES, Threshold
+from .vision import KIND as CAPTURE_KIND
+from .vision import Vision
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
 KNOWN_TERMINAL = TERMINAL - {"unknown"}
-RECOVERY_KINDS = {"session.close", "session.revoke", "robot.stop"}
+STOP_KINDS = {"robot.stop", "motion.stop"}
+STOP_ROUTES = {"POST /robot/stop", "POST /motion/stop"}
+RECOVERY_KINDS = {"session.close", "session.revoke"} | STOP_KINDS
 CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
-MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change"}
+MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change", "motion.move"}
 ORDINARY_KINDS = {
     "speech.utterance",
     "motion.joint_move",
     "motion.trajectory_run",
     "autonomy.transition",
 } | MOTION_ACTIONS
-NATIVE_KINDS = ORDINARY_KINDS | {CONTROL_KIND}
+CONTROL_KINDS = {CONTROL_KIND, VELOCITY_KIND}
+NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS
+MOTION_KINDS = NATIVE_KINDS - {"speech.utterance"}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -47,6 +59,10 @@ EVENT_TYPES = {
     "motion.fall_changed": "MotionFallChanged",
     "speech.recognized": "SpeechRecognized",
     "speech.listener_changed": "Listener",
+    "sensor.observer_changed": "SensorObserver",
+    FACE_OBSERVER_CHANGED: "VisionObserver",
+    DETECTIONS: "VisionDetections",
+    THRESHOLD_EVENT: "SensorThresholdChanged",
     "recording.changed": "Recording",
     "asset.created": "Asset",
 }
@@ -66,7 +82,7 @@ class Session:
     public: dict[str, Any]
     deadline: float
     retained_until: float | None = None
-    stop_operation_id: str | None = None
+    stop_operation_ids: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -78,6 +94,7 @@ class Operation:
     retained_resources: list[str] = field(default_factory=list)
     done: asyncio.Event = field(default_factory=asyncio.Event)
     cancel_task: asyncio.Task | None = None
+    stop_scope: str | None = None
 
 
 @dataclass
@@ -111,8 +128,16 @@ class Core:
         self.configuration_owners: dict[str, str] = {}
         self.pending_replacements: dict[str, str] = {}
         self.joint_controls = JointControls(self)
+        self.velocity_controls = VelocityControls(self)
+        self.control_lifetimes = {
+            CONTROL_KIND: self.joint_controls,
+            VELOCITY_KIND: self.velocity_controls,
+        }
         self.listeners = Listeners(self)
+        self.sensor_observers = SensorObservers(self)
+        self.face_observers = FaceObservers(self)
         self.recordings = Recordings(self)
+        self.vision = Vision(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -197,6 +222,8 @@ class Core:
             self.connection = data["connection"]
             self.generation += 1
             self.listeners.connection_changed()
+            self.sensor_observers.connection_changed()
+            self.face_observers.connection_changed()
             self.samples.clear()
             self.sample_changed.set()
             self.emit(
@@ -218,7 +245,10 @@ class Core:
                         ),
                     )
                     continue
-                if op.public["status"] not in TERMINAL and op.public["kind"] != RECORDING_KIND:
+                if op.public["status"] not in TERMINAL and op.public["kind"] not in {
+                    RECORDING_KIND,
+                    CAPTURE_KIND,
+                }:
                     self.finish(
                         op,
                         "unknown",
@@ -227,6 +257,14 @@ class Core:
 
         elif kind in {"recognition.state", "recognition.words"}:
             self.listeners.observation(kind, data)
+        elif kind == "sonar.state":
+            self.sensor_observers.observation(data)
+        elif kind == "faces.detections":
+            self.face_observers.observation(data)
+        elif kind == "velocity_control.changed":
+            operation = self.operations.get(data.get("operation_id", ""))
+            if operation and operation.public["kind"] == VELOCITY_KIND:
+                self.velocity_controls.reconcile(operation, data, stopping=True)
         elif kind == "sample":
             if self.connection != "connected":
                 return
@@ -251,6 +289,8 @@ class Core:
                 }
             self.sample_changed.set()
             self.recordings.sample(set(data["groups"]))
+            if "sensors" in data["groups"]:
+                self.emit_threshold_crossings()
             for sub in self.subscriptions.values():
                 requests = sub.public["samples"]
                 if not requests or not sub.buffer or sub.buffer.closed:
@@ -318,6 +358,24 @@ class Core:
                 "speech.listeners": feature(
                     available and self.info.get("recognition", {}).get("available", False)
                 ),
+                "sensors.observers": feature(
+                    available and self.info.get("sonar", {}).get("available", False)
+                ),
+                THRESHOLD_EVENT: feature(True),
+                "motion.moves": feature(
+                    available and self.info.get("locomotion", {}).get("available", False)
+                ),
+                "motion.velocity": {
+                    "status": "available"
+                    if available and self.info.get("velocity_control", {}).get("available")
+                    else "unavailable",
+                    "reason": None
+                    if available and self.info.get("velocity_control", {}).get("available")
+                    else self.info.get("velocity_control", {}).get(
+                        "reason", "not_connected_or_discovered"
+                    ),
+                },
+                "motion.stop": feature(available and bool(self.info.get("locomotion"))),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "motion.posture_changed": feature(
                     available and bool(self.info.get("motion_events", {}).get("posture_fields"))
@@ -356,6 +414,11 @@ class Core:
                 ),
                 "recordings": feature(available and self.recordings.available()),
                 "assets": feature(self.recordings.store is not None),
+                "vision.cameras": feature(available and bool(self.info.get("cameras"))),
+                "vision.observers": feature(self.face_observers.available()),
+                "vision.captures": feature(
+                    available and bool(self.info.get("cameras")) and self.recordings.available()
+                ),
                 "sequences": feature(False, False),
             },
             "limits": {
@@ -370,6 +433,8 @@ class Core:
                     "max_subscriptions",
                     "max_listeners",
                     "max_listener_history",
+                    "max_sensor_observers",
+                    "max_sensor_observer_history",
                     "asset_quota_bytes",
                     "max_assets",
                     "max_asset_downloads",
@@ -392,7 +457,12 @@ class Core:
             | {
                 "session_lease_seconds": self.settings.lease_seconds,
                 "max_native_operations": 4,
+                "max_camera_captures": 1,
+                "max_vision_observers": MAX_OBSERVERS,
+                "max_vision_observer_history": MAX_HISTORY,
+                "max_thresholds_per_subscription": MAX_RULES,
                 "max_joint_controls": 4,
+                "max_velocity_controls": 1,
                 "max_joint_control_ids": 4096,
                 "joint_control_default_ttl": 0.5,
                 "joint_control_max_ttl": 1.0,
@@ -402,6 +472,14 @@ class Core:
             "state_groups": ["sensors", "joints", "motion", "autonomy"],
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
             "recognition": copy.deepcopy(self.info.get("recognition", {})),
+            "sonar": copy.deepcopy(self.info.get("sonar", {})),
+            "faces": copy.deepcopy(self.info.get("faces", {})),
+            "locomotion": copy.deepcopy(self.info.get("locomotion", {})),
+            **(
+                {"velocity_control": copy.deepcopy(self.info["velocity_control"])}
+                if "velocity_control" in self.info
+                else {}
+            ),
             "motion_events": copy.deepcopy(
                 self.info.get("motion_events", {"posture_fields": [], "fall_phases": []})
             ),
@@ -433,6 +511,8 @@ class Core:
                     "unit": "boolean",
                     "state_group": "sensors",
                     "state_field": "touch",
+                    "state_path": ["touch", sensor],
+                    "value_type": "boolean",
                     "state": {
                         "status": "available" if available else "unavailable",
                         "reason": reason,
@@ -453,6 +533,8 @@ class Core:
                 "unit": "percent",
                 "state_group": "sensors",
                 "state_field": "battery.charge",
+                "state_path": ["battery", "charge"],
+                "value_type": "number",
                 "state": {
                     "status": "available" if charge_available else "unavailable",
                     "reason": None
@@ -463,6 +545,65 @@ class Core:
                 "event_type": None,
             }
         )
+        for metadata in self.info.get("sensor_catalog", []):
+            reading = value.get("readings", {}).get(metadata["id"], {})
+            available = sample["quality"] == "fresh" and reading.get("value") is not None
+            source = (
+                copy.deepcopy(metadata["source"])
+                if self.connection == "connected"
+                else {"status": "unknown", "reason": "not_connected"}
+            )
+            items.append(
+                {
+                    **copy.deepcopy(metadata),
+                    "source": source,
+                    "state_group": "sensors",
+                    "state_field": "readings",
+                    "state_path": ["readings", metadata["id"], "value"],
+                    "state": {
+                        "status": "available" if available else "unavailable",
+                        "reason": None
+                        if available
+                        else sample["reason"]
+                        or reading.get("reason")
+                        or source["reason"]
+                        or "not_sampled",
+                    },
+                    "events": {"status": "unsupported", "reason": "use_state_samples"},
+                    "event_type": None,
+                }
+            )
+        sonar = self.info.get("sonar", {})
+        for sensor in SONAR_IDS:
+            reading = value.get("readings", {}).get(sensor, {})
+            available = sample["quality"] == "fresh" and reading.get("value") is not None
+            supported = self.connection == "connected" and sensor in sonar.get("sensor_ids", [])
+            items.append(
+                {
+                    "id": sensor,
+                    "label": "Left sonar" if sensor.endswith("left") else "Right sonar",
+                    "unit": "m",
+                    "value_type": "number",
+                    "frame": None,
+                    "state_group": "sensors",
+                    "state_field": "readings",
+                    "state_path": ["readings", sensor, "value"],
+                    "producer": "sonar",
+                    "source": {
+                        "status": "available" if supported else "unavailable",
+                        "reason": None if supported else "not_connected_or_discovered",
+                    },
+                    "state": {
+                        "status": "available" if available else "unavailable",
+                        "reason": None
+                        if available
+                        else sample["reason"] or reading.get("reason") or "not_sampled",
+                    },
+                    "events": {"status": "unsupported", "reason": "use_state_samples"},
+                    "event_type": None,
+                    "reliable_range": sonar.get("reliable_range_m"),
+                }
+            )
         return {"items": items, "connection_generation": self.generation}
 
     def joint_catalog(self) -> dict[str, Any]:
@@ -514,7 +655,9 @@ class Core:
             starts.append((sample["started"] - self.origin) * 1000)
             ends.append((sample["finished"] - self.origin) * 1000)
             values[name] = {
-                "value": copy.deepcopy(sample["value"]),
+                "value": self.sensor_observers.project(copy.deepcopy(sample["value"]))
+                if name == "sensors"
+                else copy.deepcopy(sample["value"]),
                 "quality": "fresh" if age <= max_age_ms else "stale",
                 "reason": None if age <= max_age_ms else "sample_too_old",
                 "sampled_at": sample["sampled_at"],
@@ -608,7 +751,7 @@ class Core:
         create: Callable[[], dict[str, Any]],
         recovery: bool = False,
     ) -> dict[str, Any]:
-        stop = route == "POST /robot/stop"
+        stop = route in STOP_ROUTES
         async with self.admission:
             if self.closing:
                 raise BridgeError("dependency_unavailable", "Bridge is shutting down", 503)
@@ -636,7 +779,7 @@ class Core:
                     not stop
                     and sum(
                         record.recovery == recovery
-                        and not record.fingerprint.startswith("POST /robot/stop\n")
+                        and record.fingerprint.split("\n", 1)[0] not in STOP_ROUTES
                         for record in self.keys.values()
                     )
                     >= capacity
@@ -647,7 +790,7 @@ class Core:
             result = create()
             if stop:
                 for old_key, record in list(self.keys.items()):
-                    if old_key[0] == scope and record.fingerprint.startswith("POST /robot/stop\n"):
+                    if old_key[0] == scope and record.resource_id == result["id"]:
                         del self.keys[old_key]
             if key:
                 resource_kind = (
@@ -657,6 +800,10 @@ class Core:
                     if result["id"] in self.sessions
                     else "listener"
                     if result["id"] in self.listeners.items
+                    else "sensor_observer"
+                    if result["id"] in self.sensor_observers.items
+                    else "vision_observer"
+                    if result["id"] in self.face_observers.items
                     else "recording"
                     if result["id"] in self.recordings.items
                     else "subscription"
@@ -681,20 +828,23 @@ class Core:
     ) -> Operation:
         if "speech.recognition" in resources and self.listeners.busy():
             raise BridgeError("resource_busy", "Vocabulary listeners own recognition", 409)
-        if kind in NATIVE_KINDS and self.stop_pending():
-            raise BridgeError("resource_busy", "Robot stop is in progress", 409)
+        if kind in NATIVE_KINDS and self.stop_pending(kind):
+            message = (
+                "Robot stop is in progress" if self.stop_pending() else "Motion stop is in progress"
+            )
+            raise BridgeError("resource_busy", message, 409)
         recovery = kind in RECOVERY_KINDS
-        if recovery and kind != "robot.stop":
+        if recovery and kind not in STOP_KINDS:
             self.trim_recovery_history(self.settings.max_recovery_operations - 1)
         capacity = (
             self.settings.max_recovery_operations if recovery else self.settings.max_operations
         )
         if (
-            kind != "robot.stop"
+            kind not in STOP_KINDS
             and sum(
                 (o.public["kind"] in RECOVERY_KINDS) == recovery
                 for o in self.operations.values()
-                if o.public["kind"] != "robot.stop"
+                if o.public["kind"] not in STOP_KINDS
             )
             >= capacity
         ):
@@ -996,6 +1146,26 @@ class Core:
                     )
                 payload.update(name=body["name"], speed=body.get("speed", 0.4))
                 operation_kind = "motion.posture_change"
+            elif kind == "walk":
+                catalog = self.info.get("locomotion", {})
+                if not catalog.get("available"):
+                    raise BridgeError("unsupported", "Native walking unavailable", 422)
+                move = {axis: body.get(axis, 0.0) for axis in ("x", "y", "yaw")}
+                if (
+                    not any(move.values())
+                    or math.hypot(move["x"], move["y"]) > catalog["max_translation_m"]
+                ):
+                    raise BridgeError("invalid_request", "Expected a bounded nonzero displacement")
+                if abs(move["yaw"]) > catalog["max_rotation_rad"]:
+                    raise BridgeError("invalid_request", "Rotation exceeds available range")
+                move["speed"] = body.get("speed", catalog["default_speed"])
+                if move["speed"] < catalog["minimum_speed"]:
+                    raise BridgeError("unsupported", "Speed below native frequency range", 422)
+                self.require_joint_motion(resources[:-1])
+                if self.samples["motion"]["value"]["locomotion_active"]:
+                    raise BridgeError("resource_busy", "Native locomotion already active", 409)
+                payload["move"] = move
+                operation_kind = "motion.move"
         op = self.new_operation(session, operation_kind, resources)
         if operation_kind in CONFIGURATION_KINDS:
             op.retained_resources = [r for r in resources if r.startswith("joint.")]
@@ -1065,7 +1235,7 @@ class Core:
         if (
             session.public["status"] != "active"
             or session.deadline <= self.clock()
-            or self.stop_pending()
+            or self.stop_pending(op.public["kind"])
         ):
             self.finish(op, "cancelled", {"dispatched": False})
             return
@@ -1122,7 +1292,11 @@ class Core:
                     "failed",
                     result,
                     BridgeError(
-                        "native_execution_failed", "Requested posture was not reached", 422
+                        "native_execution_failed",
+                        "Requested displacement was not reached"
+                        if op.public["kind"] == "motion.move"
+                        else "Requested posture was not reached",
+                        422,
                     ),
                 )
                 return
@@ -1157,6 +1331,9 @@ class Core:
     async def cancel(self, op: Operation) -> dict[str, Any]:
         if op.public["status"] in TERMINAL:
             return copy.deepcopy(op.public)
+        if op.public["kind"] == CAPTURE_KIND:
+            self.vision.cancel(op)
+            return copy.deepcopy(op.public)
         if not op.public["cancellable"]:
             raise BridgeError("unsupported", "This operation cannot be cancelled", 422)
         if op.public["kind"] == RECORDING_KIND:
@@ -1175,7 +1352,7 @@ class Core:
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 result = await self.backend.stop(operation_id=op.public["id"])
-                result = await self.joint_controls.settle_stop(result, [op])
+                result = await self.settle_control_stops(result, [op])
             if self.stop_confirmed(op, result):
                 self.finish_stopped(op, result)
                 return True
@@ -1183,15 +1360,24 @@ class Core:
                 self.finish(
                     op,
                     "unknown",
+                    op.public.get("result"),
                     error=BridgeError("stop_unconfirmed", "Native cancellation unconfirmed", 503),
                 )
         except Exception:
             self.finish(
                 op,
                 "unknown",
+                op.public.get("result"),
                 error=BridgeError("stop_unconfirmed", "Cancellation response unavailable", 503),
             )
         return False
+
+    async def settle_control_stops(
+        self, stopped: dict[str, Any], operations: list[Operation]
+    ) -> dict[str, Any]:
+        for manager in self.control_lifetimes.values():
+            await manager.settle_stop(stopped, operations)
+        return stopped
 
     def stop_confirmed(self, op: Operation, stopped: dict[str, Any]) -> bool:
         # A fresh agent's early-stop tombstone cannot establish an old native outcome.
@@ -1201,21 +1387,20 @@ class Core:
         )
 
     def finish_stopped(self, op: Operation, stopped: dict[str, Any]) -> None:
-        control = stopped.get("controls", {}).get(op.public["id"])
-        if op.public["kind"] == CONTROL_KIND:
+        manager = self.control_lifetimes.get(op.public["kind"])
+        if manager:
+            control = stopped.get(manager.stop_field, {}).get(op.public["id"])
             if control:
-                self.joint_controls.reconcile(op, control, stopping=True)
+                manager.reconcile(op, control, stopping=True)
             else:
-                record = self.joint_controls.records[
-                    (op.public["session_id"], op.public["control"]["id"])
-                ]
+                record = manager.records[(op.public["session_id"], op.public["control"]["id"])]
                 self.finish(
                     op,
                     "succeeded" if record.expired else "cancelled",
                     {
-                        "reason": "joint_control_expired" if record.expired else "cancelled",
+                        "reason": manager.expiry_reason if record.expired else "cancelled",
                         "dispatched": False,
-                        "hold": {"required": False, "confirmed": True},
+                        manager.result_field: {"required": False, "confirmed": True},
                     },
                 )
             return
@@ -1242,7 +1427,10 @@ class Core:
         session.retained_until = self.clock() + self.settings.history_seconds
         self.emit("session.changed", session.public, session.public["id"])
         self.listeners.stop_session(session.public["id"])
+        self.sensor_observers.stop_session(session.public["id"])
+        self.face_observers.stop_session(session.public["id"])
         self.recordings.stop_session(session.public["id"], status)
+        self.vision.stop(session.public["id"])
         for sub in list(self.subscriptions.values()):
             if sub.public["session_id"] == session.public["id"]:
                 sub.close(graceful=True)
@@ -1258,37 +1446,36 @@ class Core:
 
     async def cleanup_native(self, session: Session, force: bool = False) -> dict[str, Any]:
         sid = session.public["id"]
+        capture = self.vision.stop(sid)
         affected = [
             op
             for op in self.operations.values()
             if op.public["session_id"] == sid
             and not op.released
-            and op.public["kind"] != RECORDING_KIND
+            and op.public["kind"] in NATIVE_KINDS
         ]
         for op in affected:
             if op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
-            elif op.public["kind"] == CONTROL_KIND and op.public["status"] == "running":
+            elif op.public["kind"] in CONTROL_KINDS and op.public["status"] == "running":
                 self.update(op, status="cancelling")
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 fenced = await self.backend.fence(sid)
                 stopped = await self.backend.stop(session_id=sid)
-                stopped = await self.joint_controls.settle_stop(stopped, affected)
+                stopped = await self.settle_control_stops(stopped, affected)
         except Exception:
             fenced = False
             stopped = {"confirmed_ids": [], "unresolved_ids": []}
-        controls_released = True
-        if (
-            force
-            and fenced
-            and any(op.public["kind"] == CONTROL_KIND and not op.released for op in affected)
-        ):
-            try:
-                async with asyncio.timeout(self.settings.backend_timeout_seconds):
-                    await self.backend.release_joint_controls(sid)
-            except Exception:
-                controls_released = False
+        unreleased_controls = set()
+        if force and fenced:
+            for kind, manager in self.control_lifetimes.items():
+                if any(op.public["kind"] == kind and not op.released for op in affected):
+                    try:
+                        async with asyncio.timeout(self.settings.backend_timeout_seconds):
+                            await manager.release(sid)
+                    except Exception:
+                        unreleased_controls.add(kind)
         unresolved = []
         for op in affected:
             if op.released or op.public["kind"] in ("session.close", "session.revoke"):
@@ -1302,7 +1489,7 @@ class Core:
                     "unknown",
                     error=BridgeError("cleanup_unconfirmed", "Native work may continue", 503),
                 )
-                if force and fenced and (op.public["kind"] != CONTROL_KIND or controls_released):
+                if force and fenced and op.public["kind"] not in unreleased_controls:
                     op.released = True
                     if op.public["kind"] == "speech.utterance":
                         self.listeners.end_output(op.public["id"])
@@ -1316,21 +1503,36 @@ class Core:
             }
         unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
         unresolved_listeners = await self.listeners.cleanup(sid, force, fenced)
+        unresolved_observers = await self.sensor_observers.cleanup(sid, force, fenced)
+        unresolved_vision = await self.face_observers.cleanup(sid, force, fenced)
         unresolved_recordings = await self.recordings.settle(sid)
         unresolved.extend(unresolved_recordings)
+        unresolved_captures = await self.vision.settle(capture)
+        unresolved.extend(unresolved_captures)
         listeners_released = not self.listeners.owns(sid)
         if not listeners_released:
             unresolved_resources.append("speech.recognition")
+        observers_released = not self.sensor_observers.owns(sid)
+        if not observers_released:
+            unresolved_resources.append("sensors.sonar")
+        vision_released = not self.face_observers.owns(sid)
+        if not vision_released:
+            unresolved_resources.append("vision.faces")
         return {
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
             "unresolved_resources": unresolved_resources,
             "unresolved_listener_ids": unresolved_listeners,
+            "unresolved_sensor_observer_ids": unresolved_observers,
+            "unresolved_vision_observer_ids": unresolved_vision,
             "force_release": force
             and fenced
-            and controls_released
+            and not unreleased_controls
             and listeners_released
-            and not unresolved_recordings,
+            and observers_released
+            and vision_released
+            and not unresolved_recordings
+            and not unresolved_captures,
         }
 
     def close_session(
@@ -1384,23 +1586,38 @@ class Core:
         else:
             self.finish(op, "succeeded", result)
 
-    def stop_pending(self) -> bool:
+    @staticmethod
+    def motion_stop_matches(scope: str | None, kind: str) -> bool:
+        return kind in MOTION_KINDS if scope == "all" else kind in {"motion.move", VELOCITY_KIND}
+
+    def stop_pending(self, kind: str | None = None) -> bool:
         return self.closing or any(
-            op.public["kind"] == "robot.stop" and op.public["status"] not in TERMINAL
+            op.public["status"] not in TERMINAL
+            and (
+                op.public["kind"] == "robot.stop"
+                or (
+                    op.public["kind"] == "motion.stop"
+                    and kind is not None
+                    and self.motion_stop_matches(op.stop_scope, kind)
+                )
+            )
             for op in self.operations.values()
         )
 
     async def stop_all(self) -> dict[str, Any]:
         self.listeners.stop_all()
+        self.sensor_observers.stop_all()
+        self.face_observers.stop_session()
         self.recordings.stop_all()
+        capture = self.vision.stop()
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
-            elif op.public["kind"] == CONTROL_KIND and op.public["status"] == "running":
+            elif op.public["kind"] in CONTROL_KINDS and op.public["status"] == "running":
                 self.update(op, status="cancelling")
         async with asyncio.timeout(self.settings.backend_timeout_seconds):
             stopped = await self.backend.stop()
-            stopped = await self.joint_controls.settle_stop(stopped, list(self.operations.values()))
+            stopped = await self.settle_control_stops(stopped, list(self.operations.values()))
         for op in list(self.operations.values()):
             if op.public["kind"] not in NATIVE_KINDS or op.released:
                 continue
@@ -1421,31 +1638,111 @@ class Core:
             }
         )
         await self.listeners.settled()
+        await self.sensor_observers.settled()
+        await self.face_observers.settled()
+        stopped["unresolved_sensor_observer_ids"] = [
+            item.public["id"] for item in self.sensor_observers.items.values() if not item.released
+        ]
         stopped["unresolved_listener_ids"] = [
             item.public["id"] for item in self.listeners.items.values() if not item.released
         ]
+        stopped["unresolved_vision_observer_ids"] = self.face_observers.unresolved()
         stopped["unresolved_ids"].extend(await self.recordings.settle())
+        if capture is not None:
+            oid = capture.operation.public["id"]
+            unresolved_capture = await self.vision.settle(capture)
+            if oid in stopped["unresolved_ids"] and not unresolved_capture:
+                stopped["unresolved_ids"].remove(oid)
+            if unresolved_capture and oid not in stopped["unresolved_ids"]:
+                stopped["unresolved_ids"].append(oid)
         return stopped
 
-    def priority_stop(self, session: Session) -> dict[str, Any]:
-        previous = self.operations.get(session.stop_operation_id or "")
+    def priority_stop(self, session: Session, scope: str | None = None) -> dict[str, Any]:
+        slot = scope or "robot"
+        previous = self.operations.get(session.stop_operation_ids.get(slot, ""))
         if previous:
             if previous.public["status"] not in TERMINAL:
                 return copy.deepcopy(previous.public)
             self.forget_operation(previous.public["id"])
-        op = self.new_operation(session, "robot.stop", [], False)
-        session.stop_operation_id = op.public["id"]
+        op = self.new_operation(session, "motion.stop" if scope else "robot.stop", [], False)
+        op.stop_scope = scope
+        session.stop_operation_ids[slot] = op.public["id"]
         self.spawn(self.run_stop(op))
         return copy.deepcopy(op.public)
+
+    async def stop_motion(self, scope: str) -> dict[str, Any]:
+        affected = [
+            op
+            for op in self.operations.values()
+            if not op.released and self.motion_stop_matches(scope, op.public["kind"])
+        ]
+        for op in affected:
+            if op.public["status"] == "accepted":
+                self.finish(op, "cancelled", {"dispatched": False})
+            elif op.public["status"] == "running":
+                self.update(op, status="cancelling")
+        ids = [
+            op.public["id"]
+            for op in affected
+            if not op.released and op.public["connection_generation"] == self.generation
+        ]
+        try:
+            async with asyncio.timeout(self.settings.backend_timeout_seconds):
+                result = await self.backend.stop(motion_scope=scope, operation_ids=ids)
+                result = await self.settle_control_stops(result, affected)
+        except Exception:
+            result = {"confirmed_ids": [], "unresolved_ids": []}
+        for op in affected:
+            if op.released:
+                continue
+            if self.stop_confirmed(op, result):
+                self.finish_stopped(op, result)
+            else:
+                self.finish(
+                    op,
+                    "unknown",
+                    error=BridgeError("stop_unconfirmed", "Native motion may continue", 503),
+                )
+        return {
+            "scope": scope,
+            "confirmed_ids": sorted(set(result["confirmed_ids"])),
+            "locomotion_confirmed": result.get("locomotion_confirmed") is True,
+            "joint_stop_confirmed": (
+                result.get("joint_stop_confirmed") is True if scope == "all" else None
+            ),
+            "unresolved_ids": sorted(
+                set(result["unresolved_ids"])
+                | {op.public["id"] for op in affected if not op.released}
+            ),
+        }
 
     async def run_stop(self, op: Operation) -> None:
         self.update(op, status="running", started_at=utc())
         try:
+            if op.stop_scope is not None:
+                result = await self.stop_motion(op.stop_scope)
+                uncertain = (
+                    not result["locomotion_confirmed"]
+                    or result["joint_stop_confirmed"] is False
+                    or bool(result["unresolved_ids"])
+                )
+                self.finish(
+                    op,
+                    "unknown" if uncertain else "succeeded",
+                    result,
+                    BridgeError("stop_unconfirmed", "Native motion stop unconfirmed", 503)
+                    if uncertain
+                    else None,
+                )
+                return
             result = await self.stop_all()
             self.finish(
                 op,
                 "unknown"
-                if result["unresolved_ids"] or result["unresolved_listener_ids"]
+                if result["unresolved_ids"]
+                or result["unresolved_listener_ids"]
+                or result["unresolved_sensor_observer_ids"]
+                or result["unresolved_vision_observer_ids"]
                 else "succeeded",
                 result,
             )
@@ -1459,9 +1756,16 @@ class Core:
     def create_subscription(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         if len(self.subscriptions) >= self.settings.max_subscriptions:
             raise BridgeError("limit_exceeded", "Subscription capacity exhausted", 429)
-        events = body.get("events", [])
+        events = list(body.get("events", []))
         if set(events) - EVENT_TYPES.keys():
             raise BridgeError("unsupported", "Unknown or unavailable event type", 422)
+        thresholds = [
+            Threshold({"id": identifier(), **rule}) for rule in body.get("thresholds", [])
+        ]
+        if thresholds and THRESHOLD_EVENT not in events:
+            events.append(THRESHOLD_EVENT)
+        if THRESHOLD_EVENT in events and not thresholds:
+            raise BridgeError("invalid_request", "Threshold events require at least one rule")
         samples = []
         for request in body.get("samples", []):
             if set(request["groups"]) - {"sensors", "joints", "motion", "autonomy"}:
@@ -1494,8 +1798,36 @@ class Core:
             },
             "connected": False,
         }
-        self.subscriptions[sid] = Subscription(value)
+        if thresholds:
+            value["thresholds"] = [rule.configuration for rule in thresholds]
+        self.subscriptions[sid] = Subscription(value, thresholds=thresholds)
         return copy.deepcopy(value)
+
+    def threshold_source(self) -> tuple[Any, Any] | None:
+        raw = self.samples.get("sensors", {}).get("value") or {}
+        tag = raw.get("_sonar") or {}
+        if tag.get("enabled") is True and tag.get("producer_id") is not None:
+            return tag["producer_id"], tag.get("revision")
+        return None
+
+    def emit_threshold_crossings(self) -> None:
+        group = None
+        source = None
+        gap_ms = max(250, 2000 / self.settings.sample_rate_hz)
+        for sub in self.subscriptions.values():
+            if not sub.thresholds or not sub.buffer or sub.buffer.closed:
+                continue
+            filters = sub.public["filters"]
+            if filters.get("operation_id"):
+                continue
+            if group is None:
+                group = self.state(["sensors"])["groups"]["sensors"]
+                source = self.threshold_source()
+            for rule in sub.thresholds:
+                if filters.get("sensor") and filters["sensor"] != rule.configuration["sensor"]:
+                    continue
+                if crossing := rule.observe(group, source, gap_ms):
+                    sub.buffer.put(self.event(THRESHOLD_EVENT, crossing))
 
     def subscription(self, sid: str, session_id: str | None) -> Subscription:
         self.session(session_id)
@@ -1526,17 +1858,23 @@ class Core:
         sub.buffer = buffer
         self.streams[sub.public["id"]] = (sub, buffer)
         sub.public["connected"] = True
-        initial = [
-            self.event(
-                "stream.ready", {"subscription_id": sub.public["id"], "replay_supported": False}
-            )
-        ]
+        events = set(sub.public["events"])
+        ready = {"subscription_id": sub.public["id"], "replay_supported": False}
+        if DETECTIONS in events:
+            ready["source_readiness"] = {
+                "vision.faces": self.face_observers.readiness(sub.public["session_id"])
+            }
+        initial = [self.event("stream.ready", ready)]
         if sub.attachments or last_event_id:
             recover = ["state", "operations"]
             if {"speech.recognized", "speech.listener_changed"} & set(sub.public["events"]):
                 recover.append("listeners")
             if "recording.changed" in sub.public["events"]:
                 recover.append("recordings")
+            if "sensor.observer_changed" in sub.public["events"]:
+                recover.append("sensor_observers")
+            if {DETECTIONS, FACE_OBSERVER_CHANGED} & events:
+                recover.append("vision_observers")
             if "asset.created" in sub.public["events"]:
                 recover.append("assets")
             initial.append(
@@ -1545,10 +1883,16 @@ class Core:
                     {"reason": "reattached_without_replay", "recover": recover},
                 )
             )
-        groups = sub.public["samples"][0]["groups"] if sub.public["samples"] else ["sensors"]
-        initial.append(
-            self.event("state.sample", {"state": self.state(groups), "skipped_samples": 0})
-        )
+        groups = list(sub.public["samples"][0]["groups"]) if sub.public["samples"] else ["sensors"]
+        if sub.thresholds and "sensors" not in groups:
+            groups.append("sensors")
+        state = self.state(groups)
+        if sub.thresholds:
+            source = self.threshold_source()
+            for rule in sub.thresholds:
+                rule.reset()
+                rule.observe(state["groups"]["sensors"], source, 0)
+        initial.append(self.event("state.sample", {"state": state, "skipped_samples": 0}))
         for event in initial:
             buffer.put(event)
         if buffer.closed:
@@ -1606,6 +1950,16 @@ class Core:
         ]
         if unknown_listeners:
             quarantined["speech.recognition"] = unknown_listeners
+        unknown_observers = [
+            item.public["id"]
+            for item in self.sensor_observers.items.values()
+            if item.public["status"] == "unknown" and not item.released
+        ]
+        if unknown_observers:
+            quarantined["sensors.sonar"] = unknown_observers
+        unknown_vision = self.face_observers.unresolved(unknown_only=True)
+        if unknown_vision:
+            quarantined["vision.faces"] = unknown_vision
         return {
             "bridge_instance_id": self.instance,
             "connection_generation": self.generation,
@@ -1624,6 +1978,8 @@ class Core:
             "sessions": len(self.sessions),
             "subscriptions": len(self.subscriptions),
             "listeners": len(self.listeners.items),
+            "sensor_observers": len(self.sensor_observers.items),
+            "vision_observers": len(self.face_observers.items),
             "recordings": len(self.recordings.items),
             "active_recordings": len(self.recordings.active()),
             "streams": len(self.streams),
@@ -1639,9 +1995,7 @@ class Core:
 
     def trim_recovery_history(self, limit: int) -> None:
         history = [
-            o
-            for o in self.operations.values()
-            if o.public["kind"] in RECOVERY_KINDS - {"robot.stop"}
+            o for o in self.operations.values() if o.public["kind"] in RECOVERY_KINDS - STOP_KINDS
         ]
         count = len(history)
         for op in history:
@@ -1665,9 +2019,10 @@ class Core:
 
     def forget_session(self, sid: str) -> None:
         session = self.sessions.pop(sid)
-        self.joint_controls.forget_session(sid)
-        if session.stop_operation_id:
-            self.forget_operation(session.stop_operation_id)
+        for manager in self.control_lifetimes.values():
+            manager.forget_session(sid)
+        for oid in session.stop_operation_ids.values():
+            self.forget_operation(oid)
         for key, record in list(self.keys.items()):
             if record.resource_kind == "session" and record.resource_id == sid:
                 del self.keys[key]
@@ -1689,6 +2044,8 @@ class Core:
                 )
                 or sid in self.configuration_owners.values()
                 or self.listeners.owns(sid)
+                or self.sensor_observers.owns(sid)
+                or self.face_observers.owns(sid)
                 or self.recordings.owns(sid)
             ):
                 continue
@@ -1698,6 +2055,8 @@ class Core:
     def sweep(self) -> None:
         now = self.clock()
         self.listeners.sweep()
+        self.sensor_observers.sweep()
+        self.face_observers.sweep()
         self.recordings.tick()
         for session in list(self.sessions.values()):
             if session.public["status"] == "active" and session.deadline <= now:
@@ -1707,6 +2066,8 @@ class Core:
                 and session.retained_until <= now
                 and session.public["id"] not in self.configuration_owners.values()
                 and not self.listeners.owns(session.public["id"])
+                and not self.sensor_observers.owns(session.public["id"])
+                and not self.face_observers.owns(session.public["id"])
                 and not self.recordings.owns(session.public["id"])
                 and not any(
                     o.public["session_id"] == session.public["id"] and not o.released
@@ -1738,6 +2099,14 @@ class Core:
             elif record.resource_kind == "listener":
                 listener = self.listeners.items.get(rid)
                 if listener and (not listener.released or (listener.retained_until or 0) > now):
+                    continue
+            elif record.resource_kind == "sensor_observer":
+                observer = self.sensor_observers.items.get(rid)
+                if observer and (not observer.released or (observer.retained_until or 0) > now):
+                    continue
+            elif record.resource_kind == "vision_observer":
+                observer = self.face_observers.items.get(rid)
+                if observer and (not observer.released or (observer.retained_until or 0) > now):
                     continue
             elif record.resource_kind == "recording":
                 recording = self.recordings.items.get(rid)

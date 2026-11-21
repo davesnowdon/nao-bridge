@@ -1,4 +1,4 @@
-# Using contract 1.1.0 over HTTP
+# Using contract 1.9.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -55,6 +55,38 @@ It uses shared state samples rather than a dedicated public battery event;
 fresh acquisition does not establish when the robot last updated its battery value.
 No charging or charger-connected status is inferred from charge.
 
+Passive observations live in `groups.sensors.value.readings`, keyed by their
+catalog IDs. Each is `{ "value": ..., "reason": ... }`; null is unavailable or
+invalid, while zero and false are valid. The catalog's `state_path` contains
+literal object keys relative to the group value. For example,
+`["readings", "inertial.angle.x", "value"]` locates an angle; do not split the
+sensor ID on dots. This also works for touch and battery without special cases.
+
+| IDs | Unit / meaning |
+| --- | --- |
+| `inertial.acceleration.x/y/z` | `m/s^2`, torso axes |
+| `inertial.angular_velocity.x/y` | `rad/s`, torso axes |
+| `inertial.angle.x/y` | `rad`, torso inclination |
+| `foot.left/right.load.front_left/front_right/rear_left/rear_right` | `kg`, approximate load at each foot pad |
+| `foot.left/right.load` | `kg`, approximate total load per foot |
+| `foot.left/right.contact`, `foot.contact` | Boolean native ground-contact indication; the combined value means at least one foot |
+| `joint.<joint-name>.temperature` | `degC`, for discovered joints |
+
+Slash notation in this table abbreviates separate IDs; the catalog supplies the
+exact strings. `source` reports native key discovery independently of `state`,
+which reports whether the latest shared reading is fresh and valid. Unsupported
+keys have null readings with `native_key_unavailable`; failed discovery uses
+`native_discovery_failed`. Neither is zero. Reconnection rediscovers support.
+Invalid numeric/contact values use `missing_or_invalid_reading`. Per-sensor
+metadata includes `value_type`, `frame`, and an optional lower bound.
+
+These observations share acquisition with touch/battery and use `state.sample`
+and sample recordings, with no separate passive-sensor events. Group freshness
+measures the bridge's acquisition, not the robot's producer update time. Foot
+loads are approximate kilograms, not pressure in pascals; no contact threshold
+is inferred from them. Axis conventions and readings on both firmware generations
+still require hardware acceptance. Managed sonar is described below.
+
 `motion.posture_changed` carries `posture` or `family` (at least one nonempty
 string). Each native event reports its own field, not an atomic pair.
 `motion.fall_changed` carries `phase: "falling"` or `"fallen"`, indicating native
@@ -92,6 +124,110 @@ workers acquire sensors, joints, motion and autonomy separately. A slow/failed
 read affects its group; completed groups continue updating the shared cache.
 In-flight readings from a previous connection are discarded. Native service-side
 serialization can still affect observed rates and must be measured on hardware.
+
+## Finite walking and odometry
+
+Check `features["motion.moves"]` and `locomotion` in robot capabilities.
+`POST /api/motion/moves` accepts a session-owned relative displacement and
+returns a 202 Operation. Send an `Idempotency-Key` so an ambiguous acceptance
+can be retried with the same payload.
+
+```json
+{"x": 0.2, "y": -0.1, "yaw": 0.25, "speed": 0.3}
+```
+
+The axes are metres forward and left, and radians counterclockwise, relative
+to the robot at native execution start. Omitted components default to zero.
+Supply at least one nonzero component, with at most 1 m total translation and
+pi radians rotation. Speed defaults to 0.3 of the discovered default step
+frequency. Values must be positive, at most one, and within the discovered
+frequency bounds. Physical velocity depends on the native gait and surface.
+
+The robot must be awake, idle, and have stiff joints with fresh observations.
+Prepare it explicitly before a move. Walking reserves locomotion and the body
+joints so concurrent joint, posture and autonomy commands cannot interfere.
+The bridge leaves native safeguards enabled. A successful operation reports
+that the native call ended. A native `false` reports a failed move, and
+`reached: null` indicates the service returned no target verdict. Inspect
+odometry to assess the displacement.
+
+Cancel an owned move via its operation cancel endpoint. During walking,
+native `stopMove` requests controlled stop.
+Cancellation requires an inactive native report and the end of the dispatched
+move call. An unconfirmed result retains the reservation with status `unknown`.
+Hardware stop timing and distance require acceptance on each robot model.
+
+`POST /api/motion/stop` accepts `{}` for the default `locomotion` scope,
+which includes finite moves and velocity leases. Use `{"scope":"all"}`
+to include other joint motion and joint controls.
+Both scopes can stop motion owned by another session. They leave speech,
+managed sensor sources and recordings running. The all-motion scope requests
+joint hold where a joint control requires it and preserves stiffness.
+Use `POST /api/robot/stop` to stop bridge activities across domains.
+
+The 202 response identifies a `motion.stop` Operation. Check the status
+and `MotionStopResult` once the operation ends. `confirmed_ids` contains
+native operations that were confirmed ended or fenced before dispatch.
+`unresolved_ids` identifies unconfirmed active work. The result gives separate
+`locomotion_confirmed` and `joint_stop_confirmed` values. The latter is
+null for the locomotion scope. Confirmation is based on native execution
+and hold mechanisms. A hardware emergency stop has different guarantees.
+
+Read `GET /api/state?include=motion` and select
+`groups.motion.value.odometry`. The pose is sensor-backed, relative to the
+first valid planar sample of its origin. Velocity is a native estimate in the
+current robot frame, in m/s and rad/s. Either value can be null with its own
+reason even in a fresh group. Motion and sensor groups can be read together
+with `include=motion,sensors`, with an acquisition window in the State response.
+Compare origin, bridge instance, generation and acquisition times before
+combining observations. Reconnection or loss of pose observation creates a new
+origin. Slip, relocation and native resets without a sample gap may remain
+undetected.
+
+## Managed sonar
+
+`POST /api/sensors/observers` with `{"sources":["sonar"]}`, `X-Session-ID` and an
+idempotency key returns 201, a `SensorObserver`, and its `Location`. Poll that
+location or subscribe to the owning session's `sensor.observer_changed` events.
+`GET /api/sensors/observers/{id}` reconciles state after an SSE gap;
+`POST /api/sensors/observers/{id}/stop` with `{}` accepts cleanup with 202 and
+returns the resource, not an Operation. Another session cannot inspect or stop it.
+
+States are `starting`, `warming`, `active`, `stopping`, `stopped`, `failed`, and
+`unknown`. Warming follows confirmed native subscription; the initial settling
+policy is 0.5 seconds. Active does not establish a fresh physical echo or valid
+values on both sides. Lifecycle notification can precede the next shared sample.
+
+Multiple observers share one named native subscription. Stop/session expiry/close
+releases that observer's reference; the last release unsubscribes only the bridge's
+name, preserving other native applications. Priority stop ends all bridge observers.
+Discovery, GET state, sample subscriptions and recordings do not activate sonar.
+While any observer is active, its shared readings are visible through ordinary
+state reads, SSE samples and sample recordings. Stopping the last observer masks
+cached sonar values immediately, before native cleanup finishes.
+
+`sonar.left` and `sonar.right` are metre readings with `quality`:
+
+| Quality | Reading |
+| --- | --- |
+| `measured` | 0.20–0.80 m, the documented range for the two target models |
+| `estimated` | Greater than 0.80 m and below the native 5 m sentinel |
+| `too_close` | Null distance with `below_ranging_limit`; presence is not a usable distance |
+| `unavailable` | Null with a reason: warming, inactive source, no echo/invalid return, or missing native key |
+
+No echo does not prove clear space. `frame` remains null until source geometry is
+verified. Per-reading quality describes interpretation; group freshness describes
+bridge acquisition, not the native producer's update time. The catalog exposes
+`producer: "sonar"`, per-side source availability and `reliable_range`; capabilities
+include source readiness, settling policy and limits. Defaults allow 32 outstanding
+observers and 256 retained records. Terminal history and retry records are bounded.
+
+A rejected start is `failed`; an unconfirmed native transition is `unknown` and
+retains ownership. New demand is rejected while unresolved. Connection loss never
+resumes observers automatically. Restart the agent for recovery, then use explicit
+session revocation with acknowledged fencing and `force_release` to release the
+old generation's unresolved reference. Ordinary cleanup never force-releases it.
+None of these software checks establish physical sonar acceptance.
 
 ## Motion preparation
 
@@ -175,6 +311,44 @@ Python supplies `motion.set_joint_targets(positions, control_id=..., sequence=..
 for a single update and `motion.joint_control(positions, speed=..., ttl=...)` for a
 scope that manages identity, ordering, refresh and cancellation. Both sync and async
 clients use the same route. See the [client lifecycle](../clients/python/README.md#joint-controls).
+
+## Velocity control
+
+Check `features["motion.velocity"]` and the `velocity_control` capability
+metadata. This feature is available in the software fixtures. Physical robots
+report `hardware_velocity_stop_unverified` until measured acceptance passes.
+
+```http
+PUT /api/motion/velocity
+X-Session-ID: <session-id>
+Content-Type: application/json
+
+{"control_id":"drive","sequence":0,"x":0.05,"y":0,"yaw":0.2,"ttl":0.5}
+```
+
+The target is robot-relative. `x` is forward and `y` is left in m/s. `yaw` is
+counterclockwise in rad/s. Supply a full target on each update. A missing axis
+defaults to zero. The initial fixture bounds are a planar speed norm of
+0.10 m/s and a yaw rate magnitude of 0.40 rad/s. A live session and fresh,
+awake and stiff motion state are required to start.
+
+Sequence zero creates one `motion.velocity_control` Operation that reserves
+locomotion and the body joints. Each PUT returns 202 with the same operation
+ID and current `control` metadata. Greater sequences replace the pending
+target. An identical duplicate leaves expiry unchanged. Changed duplicates
+and older sequences are rejected. Omitted TTL is 0.5 seconds and the maximum
+is 1 second. Session renewal has its own deadline.
+
+Cancel the operation or call `POST /api/motion/stop` for a controlled stop.
+The agent also stops on setpoint expiry or loss of API heartbeat authority.
+An expired operation completes with `result.reason: "velocity_expired"` once
+the stop is confirmed. For a dispatched target, `result.stop` reports
+`mechanism: "stopMove"`, `confirmed`, and `native_inactive`. A late native write
+can require another stop before ownership is released. Poll the original
+operation if its outcome is `unknown`. Only a confirmed outcome on the same
+connection or explicit fenced recovery releases quarantine. An ended control
+ID cannot be reused. Loss of the agent, container, or robot link can prevent a
+stop attempt.
 
 ## Absolute joint moves and trajectories
 
@@ -461,14 +635,51 @@ Socket close alone allows reattachment until session expiry. An invalidated sess
 cannot be closed as if it were still active; inspect retained operations and use
 explicit recovery where necessary.
 
+### Sensor threshold events
+
+To observe crossings on a shared sensor, add `thresholds` to the subscription
+request. A rule automatically subscribes to `sensor.threshold_changed`.
+
+```json
+{
+  "thresholds": [
+    {"sensor":"sonar.left","direction":"below","enter":0.35,"exit":0.55},
+    {"sensor":"battery.charge","direction":"below","enter":20,"exit":25}
+  ]
+}
+```
+
+The response includes each accepted rule and its opaque `id`. Up to eight rules
+are allowed. Sources are `sonar.left`, `sonar.right` in metres and
+`battery.charge` in percent. A `below` rule enters at or below `enter` and
+exits at or above `exit`. An `above` rule reverses both comparisons.
+The two thresholds must leave a nonzero band. When a reading stays in that band,
+the preceding state is retained. The subscription filters also apply to these
+events.
+
+Each crossing carries `threshold_id`, `sensor`, `active`, `value`, `quality`
+and `sampled_bridge_time_ms`. The value is the reading that changed the state.
+Sonar readings report `measured` or `estimated` quality. A missing echo or a
+too-close indication has no numeric distance and clears the baseline.
+
+Rules use the shared feed while a stream is attached, independently of any SSE
+sample rate. A rule does not activate sonar. Start an owned
+[sonar observer](#managed-sonar) when measurements are needed.
+The initial state sample includes sensors. The first usable sample establishes
+the baseline without an event. It starts inactive unless the reading meets the
+enter condition. Missing or stale readings, a new sonar producer, a stream gap,
+or a sampling gap beyond two sample intervals (at least 250 ms) reset the
+baseline. Inspect fresh sensor state at startup and after gaps. Threshold events
+do not replace the robot's native safeguards.
+
 ## Priority stop and explicit recovery
 
-`POST /api/robot/stop` with an active session and `{}` requests priority cancellation
-of implemented speech work, including other sessions. Stop admission does not
-depend on ordinary or cleanup history capacity. It retains the latest stop
-operation/key per session and coalesces calls while that stop is running. It is not an emergency-stop
-certification or a motion stop: this slice exposes no motion. Its Operation becomes
-unknown if affected native work cannot be confirmed stopped.
+`POST /api/robot/stop` with an active session and `{}` requests priority stop
+across bridge activities and sessions. Stop admission bypasses ordinary and
+cleanup history capacity. It retains the latest robot-stop operation/key per
+session and coalesces calls while that stop is running. Its Operation becomes
+unknown if affected native work cannot be confirmed stopped. For motion alone,
+use the [motion stop scopes](#finite-walking-and-odometry).
 
 ```bash
 curl -fsS "$BRIDGE/api/robot/diagnostics"
@@ -491,6 +702,92 @@ missing history does not establish whether earlier robot work stopped.
 JSON API failures use `{ "error": { "code", "message", "details", "retryable" },
 "request_id" }`. Keep unknown codes intact; `retryable` does not authorize arbitrary
 side-effect replay. Reject returned stream URLs that change the bridge origin.
+
+## Still camera capture
+
+`GET /api/vision/cameras` returns the current connection generation and
+discovered camera IDs (`top`, `bottom`), frames, resolutions and fields of view
+in radians when available. Discovery uses cached metadata and requires no session.
+The catalog is empty when no cameras are discovered or the robot is disconnected.
+Check `features.vision.captures` for capture availability, which also requires
+asset storage.
+
+```http
+POST /api/vision/captures
+X-Session-ID: <session-id>
+Idempotency-Key: still-1
+Content-Type: application/json
+
+{"camera":"bottom","resolution":"640x480"}
+```
+
+Both fields are optional. Defaults are `top` and `320x240`; use a mode from the
+catalog. Capture returns a 202 `vision.capture` Operation with its status URL in
+`Location`. The bridge processes one still capture at a time, including
+publication. A competing capture returns `resource_busy`. An unavailable camera
+returns `unsupported`, and unavailable asset storage returns `storage_unavailable`.
+The final Operation reports failures such as `camera_busy`,
+`camera_frame_unavailable`, `invalid_camera_frame` or `storage_full`.
+`capture_unconfirmed` reports an unknown outcome, including unconfirmed native
+subscription cleanup.
+
+On success `result` matches `CameraCaptureResult`. Download the `asset_id` through
+`GET /api/assets/{id}/content` or use the asset's SHA-256 and byte count to verify a
+local copy. The completed asset has kind `camera.image` and type `image/png`.
+Its metadata repeats `result.capture`, including the camera frame, dimensions,
+pixel format, bridge identity, connection generation, and the native read's
+start/end on the bridge timeline. The optional `source_time` uses the NAOqi
+camera's clock. Use the bridge window when relating an image to sensor or odometry
+samples. The camera can supply a buffered frame, so the window alone cannot
+establish exposure time. Angular bounds are present when the frame supplies them.
+
+Cancellation, session close, and robot-wide stop prevent publication if requested
+before the image enters storage finalization. The capture outcome becomes known
+after its native reply and cleanup. Once publication begins, `cancellable` is
+`false` and the operation settles to success or storage failure. Scoped motion stop
+allows a capture to continue. Incomplete PNGs are discarded on restart. Completed
+images share the quota, retention and download routes with other assets.
+
+## Managed face observations
+
+Check `features.vision.observers` for availability. The `faces` capability
+metadata reports the detector's camera at discovery and supported delivery rates
+in `rates_hz`. Creating an event subscription alone does not start the detector.
+
+```http
+POST /api/vision/observers
+X-Session-ID: <session-id>
+Idempotency-Key: faces-1
+Content-Type: application/json
+
+{"faces":true,"rate_hz":2}
+```
+
+The defaults are face detection at up to 2 Hz on the native detector's current
+camera. Choose `rate_hz` of 1, 2 or 5 and optionally request `camera: "top"` or
+`"bottom"`. An explicit camera must match the detector's current camera. A
+failed camera probe or unavailable configuration appears in the observer's
+`error`. Compatible observers share one native producer; conflicting requests
+during an active or pending configuration receive `resource_busy`.
+
+Creation returns 201 with a `VisionObserver` and a status URL. Poll
+`GET /api/vision/observers/{id}` or use `vision.observer_changed` to follow
+`starting`, `active`, `stopping`, and the final outcome. An active observer's
+configuration gives the accepted camera. The session can subscribe to
+`vision.detections`. Each event includes its `observer_id`, camera frame,
+image timestamp and up to 16 faces with angular centres and extents in radians.
+Face IDs identify detections in a frame. Detector output supplies geometry only.
+Silence may mean the detector has not delivered a usable observation, so it
+cannot establish that an area is clear. A `stream.ready` for this event type
+includes `source_readiness["vision.faces"]` for the owning session.
+
+`POST /api/vision/observers/{id}/stop` takes `{}` and returns 202. Closing or
+expiring a session releases its observers; the last release ends the native
+subscription. Robot-wide stop requests cleanup and reports unresolved observer
+IDs. Scoped motion stop leaves face observation running. An unknown cleanup
+requires agent recovery and explicit release of old-generation ownership. After
+an SSE gap, query the observer's status and use future events. Reconnecting
+does not replay detections or recreate an observer.
 
 ## Sample recordings and retained assets
 

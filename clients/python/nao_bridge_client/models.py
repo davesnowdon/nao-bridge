@@ -54,6 +54,10 @@ class Capabilities(WireModel):
     autonomy: dict[str, AutonomySetting] = Field(default_factory=dict)
     motion_events: dict[str, list[str]] = Field(default_factory=dict)
     recognition: dict[str, Any] = Field(default_factory=dict)
+    sonar: dict[str, Any] = Field(default_factory=dict)
+    faces: dict[str, Any] = Field(default_factory=dict)
+    locomotion: dict[str, Any] = Field(default_factory=dict)
+    velocity_control: dict[str, Any] = Field(default_factory=dict)
 
 
 class Sensor(WireModel):
@@ -65,10 +69,31 @@ class Sensor(WireModel):
     state: Capability
     events: Capability
     event_type: str | None
+    state_path: list[str] | None = None
+    value_type: Literal["number", "boolean"] | None = None
+    frame: str | None = None
+    minimum: float | None = None
+    source: Capability | None = None
+    producer: str | None = None
+    reliable_range: list[float] | None = None
 
 
 class SensorsData(WireModel):
     items: list[Sensor]
+    connection_generation: int
+
+
+class Camera(WireModel):
+    id: str
+    frame: str
+    resolutions: list[str]
+    pixel_format: str
+    horizontal_fov_rad: float | None
+    vertical_fov_rad: float | None
+
+
+class CamerasData(WireModel):
+    items: list[Camera]
     connection_generation: int
 
 
@@ -169,6 +194,65 @@ class ListenerData(WireModel):
     error: ErrorDetail | None
 
 
+class SensorObserverConfiguration(WireModel):
+    sources: list[str]
+
+
+class SensorObserverData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    configuration: SensorObserverConfiguration
+    status: Literal["starting", "warming", "active", "stopping", "stopped", "failed", "unknown"]
+    reason: str | None
+    error: ErrorDetail | None
+
+
+class VisionObserverConfiguration(WireModel):
+    faces: Literal[True]
+    camera: Literal["top", "bottom"] | None
+    rate_hz: int = Field(ge=1, le=5)
+
+
+class VisionObserverData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    configuration: VisionObserverConfiguration
+    status: Literal["starting", "active", "stopping", "stopped", "failed", "unknown"]
+    error: ErrorDetail | None
+
+
+class CameraTimestamp(WireModel):
+    clock: Literal["naoqi_camera"]
+    seconds: int = Field(ge=0, le=9007199254740991)
+    microseconds: int = Field(ge=0, le=999999)
+
+
+class FaceBounds(WireModel):
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    alpha_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
+    beta_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
+    width_rad: float = Field(gt=0, le=3.141592653589793)
+    height_rad: float = Field(gt=0, le=3.141592653589793)
+
+
+class VisionDetections(WireModel):
+    observer_id: str = Field(min_length=1, max_length=128)
+    camera: Literal["top", "bottom"]
+    frame: Literal["camera.top", "camera.bottom"]
+    source_time: CameraTimestamp
+    faces: list[FaceBounds] = Field(max_length=16)
+
+    @model_validator(mode="after")
+    def matching_frame(self) -> VisionDetections:
+        if self.frame != "camera." + self.camera:
+            raise ValueError("Vision frame does not match the camera")
+        return self
+
+
 class SpeechHypothesis(WireModel):
     text: str
     confidence: float = Field(ge=0, le=1)
@@ -239,6 +323,40 @@ class State(WireModel):
     groups: dict[str, StateGroup]
 
 
+class PlanarVector(WireModel):
+    x: float
+    y: float
+    yaw: float
+
+
+class Odometry(WireModel):
+    origin_id: str
+    origin_reason: str
+    frame: Literal["odometry"]
+    velocity_frame: Literal["robot"]
+    pose: PlanarVector | None
+    pose_reason: str | None
+    velocity: PlanarVector | None
+    velocity_reason: str | None
+    pose_source: Literal["joint_sensors"]
+    velocity_source: Literal["native_estimate"]
+
+
+class OdometrySample(StateGroup):
+    value: Odometry | None
+    bridge_instance_id: str
+    connection_generation: int
+    acquisition_finished_bridge_time_ms: float | None
+
+
+class AcceptedThreshold(WireModel):
+    id: str = Field(min_length=1, max_length=128)
+    sensor: Literal["battery.charge", "sonar.left", "sonar.right"]
+    direction: Literal["below", "above"]
+    enter: float
+    exit: float
+
+
 class SubscriptionData(WireModel):
     id: str
     session_id: str
@@ -250,6 +368,7 @@ class SubscriptionData(WireModel):
     replay_supported: Literal[False]
     queue_limits: dict[str, int]
     connected: bool
+    thresholds: list[AcceptedThreshold] = Field(default_factory=list, max_length=8)
 
 
 class Event(WireModel):
@@ -278,6 +397,9 @@ class StreamNotice(WireModel):
 class StreamReadyData(WireModel):
     subscription_id: str
     replay_supported: Literal[False]
+    source_readiness: dict[str, Literal["ready", "inactive", "unavailable", "unknown"]] = Field(
+        default_factory=dict
+    )
 
 
 class StreamResetData(WireModel):
@@ -288,6 +410,15 @@ class StreamResetData(WireModel):
 class TouchChangedData(WireModel):
     sensor: str
     pressed: bool
+
+
+class SensorThresholdChangedData(WireModel):
+    threshold_id: str = Field(min_length=1, max_length=128)
+    sensor: Literal["battery.charge", "sonar.left", "sonar.right"]
+    active: bool
+    value: float = Field(ge=0, le=100)
+    quality: Literal["measured", "estimated"]
+    sampled_bridge_time_ms: float = Field(ge=0)
 
 
 class MotionPostureChangedData(WireModel):

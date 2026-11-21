@@ -1,8 +1,18 @@
 """NAO Bridge HTTP/SSE client. The replacement contract intentionally removes the v1 API."""
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .client import JointControl, Listener, Nao, Operation, Recording, Subscription
-from .controls import AsyncJointControl
+from .client import (
+    JointControl,
+    Listener,
+    Nao,
+    Operation,
+    Recording,
+    SensorObserver,
+    Subscription,
+    VelocityControl,
+    VisionObserver,
+)
+from .controls import AsyncJointControl, AsyncVelocityControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
@@ -18,32 +28,71 @@ from .errors import (
     ProtocolError,
     RecordingFailed,
     RecordingTimeout,
+    SensorObserverError,
+    SensorObserverTimeout,
     SessionLost,
     StaleState,
+    VisionObserverError,
+    VisionObserverTimeout,
 )
 from .listeners import AsyncListener
 from .models import (
+    AcceptedThreshold,
     AssetData,
     AssetsPage,
+    Camera,
+    CamerasData,
     Capabilities,
     Event,
     ListenerConfiguration,
     ListenerData,
+    Odometry,
+    OdometrySample,
     OperationData,
+    PlanarVector,
     RecordingData,
     RecordingSource,
     RobotInfo,
+    SensorObserverConfiguration,
+    SensorObserverData,
+    SensorThresholdChangedData,
     SessionData,
     SpeechHypothesis,
     SpeechRecognizedData,
     State,
     StreamNotice,
+    VisionDetections,
+    VisionObserverConfiguration,
+    VisionObserverData,
 )
 from .recordings import AsyncRecording
+from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
 from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "AsyncVelocityControl",
+    "VelocityControl",
+    "AsyncVisionObserver",
+    "VisionObserver",
+    "VisionObserverConfiguration",
+    "VisionObserverData",
+    "VisionObserverError",
+    "VisionObserverTimeout",
+    "VisionDetections",
+    "Camera",
+    "CamerasData",
+    "AcceptedThreshold",
+    "SensorThresholdChangedData",
+    "Odometry",
+    "OdometrySample",
+    "PlanarVector",
+    "AsyncSensorObserver",
+    "SensorObserver",
+    "SensorObserverData",
+    "SensorObserverConfiguration",
+    "SensorObserverError",
+    "SensorObserverTimeout",
     "AssetData",
     "AssetsPage",
     "AsyncRecording",

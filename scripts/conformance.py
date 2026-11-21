@@ -38,7 +38,8 @@ class Probe:
             conn.request(method, path, body=raw, headers=fields)
             response = conn.getresponse()
             content = response.read()
-            assert response.status == status, (method, path, response.status, content)
+            expected = (status,) if isinstance(status, int) else status
+            assert response.status in expected, (method, path, response.status, content)
             value = json.loads(content) if content else None
             if schema:
                 self.validate(schema, value)
@@ -51,6 +52,80 @@ class Probe:
             {"$defs": self.schemas["$defs"], "$ref": "#/$defs/" + name},
             format_checker=FormatChecker(),
         ).validate(value)
+
+    def sensor_observers(self):
+        first = self.request(
+            "POST",
+            "/api/sensors/observers",
+            {"sources": ["sonar"]},
+            status=201,
+            schema="SensorObserver",
+        )
+        second = self.request(
+            "POST",
+            "/api/sensors/observers",
+            {"sources": ["sonar"]},
+            status=201,
+            schema="SensorObserver",
+        )
+
+        def wait(item, expected):
+            deadline = time.monotonic() + 5
+            while True:
+                value = self.request(
+                    "GET", "/api/sensors/observers/" + item["id"], schema="SensorObserver"
+                )
+                if value["status"] == expected:
+                    return value
+                assert time.monotonic() < deadline and value["status"] not in {
+                    "unknown",
+                    "failed",
+                }, value
+                time.sleep(0.02)
+
+        wait(first, "active")
+        wait(second, "active")
+        deadline = time.monotonic() + 5
+        while True:
+            state = self.request(
+                "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
+            )
+            values = state["groups"]["sensors"]["value"]
+            if values and all(
+                values["readings"][name]["value"] is not None
+                for name in ("sonar.left", "sonar.right")
+            ):
+                break
+            assert time.monotonic() < deadline, state
+            time.sleep(0.02)
+        self.validate("SensorStateValue", values)
+        assert "_sonar" not in values
+        assert values["readings"]["sonar.left"]["quality"] == "measured"
+        assert values["readings"]["sonar.right"]["quality"] == "estimated"
+        self.request("POST", "/api/sensors/observers/" + first["id"] + "/stop", {}, status=202)
+        wait(first, "stopped")
+        wait(second, "active")
+        self.request("POST", "/api/sensors/observers/" + second["id"] + "/stop", {}, status=202)
+        wait(second, "stopped")
+        state = self.request("GET", "/api/state?include=sensors", schema="State")
+        assert state["groups"]["sensors"]["value"]["readings"]["sonar.left"]["value"] is None
+
+    def threshold_subscription(self):
+        rule = {"sensor": "sonar.left", "direction": "below", "enter": 0.35, "exit": 0.55}
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"thresholds": [rule]},
+            status=201,
+            schema="Subscription",
+        )
+        assert "sensor.threshold_changed" in sub["events"]
+        accepted = sub["thresholds"][0]
+        assert accepted == {"id": accepted["id"], **rule}
+        assert "sensor.threshold_changed" not in self.stream(sub)
+        state = self.request("GET", "/api/state?include=sensors", schema="State")
+        assert state["groups"]["sensors"]["value"]["readings"]["sonar.left"]["value"] is None
+        self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
 
     def sample_recording(self):
         assert self.request("GET", "/api/robot")["backend"] in {"fake", "native-fixture"}
@@ -111,6 +186,140 @@ class Probe:
             time.sleep(0.02)
         raise AssertionError("Operation did not finish within fixture deadline")
 
+    def camera_capture(self):
+        catalog = self.request("GET", "/api/vision/cameras", schema="Cameras")
+        assert [camera["id"] for camera in catalog["items"]] == ["top", "bottom"]
+        operation = self.wait(
+            self.request(
+                "POST",
+                "/api/vision/captures",
+                {"camera": "bottom", "resolution": "640x480"},
+                status=202,
+                schema="Operation",
+                headers={"Idempotency-Key": "camera-capture"},
+            )
+        )
+        assert operation["status"] == "succeeded", operation
+        result = operation["result"]
+        self.validate("CameraCaptureResult", result)
+        capture = result["capture"]
+        assert capture["frame"] == "camera.bottom"
+        assert capture["connection_generation"] == catalog["connection_generation"]
+        window = capture["acquisition"]
+        assert 0 <= window["started_bridge_time_ms"] <= window["finished_bridge_time_ms"]
+        path = "/api/assets/" + result["asset_id"]
+        asset = self.request("GET", path, schema="Asset")
+        assert asset["content_type"] == "image/png" and asset["metadata"] == capture
+        conn = self.connection()
+        try:
+            conn.request("GET", path + "/content")
+            response = conn.getresponse()
+            assert response.status == 200 and response.getheader("Content-Type") == "image/png"
+            data = response.read()
+            assert len(data) == asset["size_bytes"]
+            assert hashlib.sha256(data).hexdigest() == asset["sha256"]
+            assert data[:8] == b"\x89PNG\r\n\x1a\n"
+            assert int.from_bytes(data[16:20], "big") == capture["width"] == 640
+            assert int.from_bytes(data[20:24], "big") == capture["height"] == 480
+        finally:
+            conn.close()
+        deadline = time.monotonic() + 2
+        while error := self.request("DELETE", path, status=(204, 409)):
+            assert error["error"]["code"] == "resource_busy" and time.monotonic() < deadline, error
+            time.sleep(0.02)
+
+    def vision_observers(self):
+        collection = "/api/vision/observers"
+        observers = [
+            self.request(
+                "POST",
+                collection,
+                {"faces": True, "rate_hz": 5},
+                status=201,
+                schema="VisionObserver",
+                headers={"Idempotency-Key": key},
+            )
+            for key in ("face-first", "face-second")
+        ]
+
+        def wait(item, status):
+            deadline = time.monotonic() + 5
+            path = collection + "/" + item["id"]
+            while True:
+                latest = self.request("GET", path, schema="VisionObserver")
+                if latest["status"] == status:
+                    return latest
+                assert time.monotonic() < deadline and latest["status"] not in {
+                    "unknown",
+                    "failed",
+                }, latest
+                time.sleep(0.02)
+
+        def stop(item):
+            self.request("POST", collection + "/" + item["id"] + "/stop", {}, status=202)
+            return wait(item, "stopped")
+
+        for item in observers:
+            assert wait(item, "active")["configuration"] == {
+                "faces": True,
+                "camera": "top",
+                "rate_hz": 5,
+            }
+        stop(observers[0])
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"events": ["vision.detections"]},
+            status=201,
+            schema="Subscription",
+        )
+        try:
+            self.stream(
+                sub,
+                observations=[
+                    (
+                        "stream.ready",
+                        "StreamReady",
+                        lambda data: data["source_readiness"]["vision.faces"] == "ready",
+                    ),
+                    (
+                        "vision.detections",
+                        "VisionDetections",
+                        lambda data: (
+                            data["observer_id"] == observers[1]["id"]
+                            and data["frame"] == "camera.top"
+                            and bool(data["faces"])
+                        ),
+                    ),
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+        stop(observers[1])
+
+    def velocity_control(self):
+        path = "/api/motion/velocity"
+        self.request(
+            "GET", "/api/state?include=joints,motion&wait_for_fresh_ms=1000", schema="State"
+        )
+        payload = {"control_id": "raw-velocity", "sequence": 0, "x": 0.05, "ttl": 0.75}
+        first = self.request("PUT", path, payload, status=202, schema="Operation")
+        assert first["kind"] == "motion.velocity_control" and "locomotion" in first["resources"]
+        update = {**payload, "sequence": 1, "x": 0.06, "y": -0.02}
+        accepted = self.request("PUT", path, update, status=202, schema="Operation")
+        duplicate = self.request("PUT", path, update, status=202, schema="Operation")
+        assert accepted["id"] == duplicate["id"] == first["id"]
+        assert accepted["control"]["expires_at"] == duplicate["control"]["expires_at"]
+        old = self.request("PUT", path, payload, status=409, schema="Error")
+        assert old["error"]["code"] == "stale_sequence"
+        ended = self.wait(first)
+        assert ended["status"] == "succeeded", ended
+        result = ended["result"]
+        assert result["reason"] == "velocity_expired" and result["stop"]["confirmed"]
+        assert result["dispatched_sequence"] == 1
+        rejected = self.request("PUT", path, {**update, "sequence": 2}, status=409, schema="Error")
+        assert rejected["error"]["code"] == "control_ended"
+
     def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
         conn = self.connection(timeout=3)
         headers = {
@@ -155,7 +364,9 @@ class Probe:
                     seen.add(event["type"])
                     for expected in pending_observations[:]:
                         kind, schema, data = expected
-                        if event["type"] == kind and event["data"] == data:
+                        if event["type"] == kind and (
+                            data(event["data"]) if callable(data) else event["data"] == data
+                        ):
                             self.validate(schema, event["data"])
                             pending_observations.remove(expected)
                     if event["type"] == "touch.changed":
@@ -192,12 +403,27 @@ def run(url):
         assert time.monotonic() < deadline, robot
         time.sleep(0.1)
         robot = probe.request("GET", "/api/robot", schema="Robot")
-    probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
-    probe.request("GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State")
+    capabilities = probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
+    captures = capabilities["features"]["vision.captures"]["status"] == "available"
+    faces = capabilities["features"]["vision.observers"]["status"] == "available"
+    velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
+    sensor_state = probe.request(
+        "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
+    )
+    sensor_value = sensor_state["groups"]["sensors"]["value"]
+    probe.validate("SensorStateValue", sensor_value)
     sensors = probe.request("GET", "/api/sensors", schema="Sensors")
     assert {"touch.hand.left.back", "touch.hand.right.back", "bumper.left", "bumper.right"} <= {
         item["id"] for item in sensors["items"]
     }
+    for item in sensors["items"]:
+        value = sensor_value
+        for key in item["state_path"]:
+            value = value[key]
+        assert value is not None or item.get("producer") == "sonar", item
+    assert sensor_value["readings"]["inertial.angle.x"] == {"value": 0.0, "reason": None}
+    assert sensor_value["readings"]["foot.contact"] == {"value": True, "reason": None}
+    assert sensor_value["readings"]["joint.HeadYaw.temperature"] == {"value": 35.0, "reason": None}
     joints = probe.request("GET", "/api/motion/joints", schema="Joints")
     assert joints["availability"]["status"] == "available"
     assert joints["chains"]["Head"] == ["HeadYaw", "HeadPitch"]
@@ -206,6 +432,10 @@ def run(url):
     state = probe.request(
         "GET", "/api/state?include=joints,motion&wait_for_fresh_ms=1000", schema="State"
     )
+    assert state["groups"]["motion"]["quality"] == "fresh"
+    stale = probe.request("GET", "/api/state?include=motion,sensors&max_age_ms=0", schema="State")
+    for group in stale["groups"].values():
+        assert group["quality"] == "stale" and group["reason"] == "sample_too_old"
     probe.validate("JointStateValue", state["groups"]["joints"]["value"])
     probe.validate("MotionStateValue", state["groups"]["motion"]["value"])
     assert state["groups"]["joints"]["value"]["measured"]["HeadYaw"] == 0.1
@@ -228,6 +458,14 @@ def run(url):
     assert again["id"] == session["id"]
     probe.session = session["id"]
     try:
+        probe.sensor_observers()
+        probe.threshold_subscription()
+        if velocity:
+            probe.velocity_control()
+        if captures:
+            probe.camera_capture()
+        if faces:
+            probe.vision_observers()
         operation = probe.request(
             "POST",
             "/api/speech/utterances",
@@ -368,6 +606,9 @@ def run(url):
         "checks": [
             "discovery",
             "state",
+            "observation_freshness",
+            "shared_sonar_observers",
+            "passive_threshold_subscription",
             "session",
             "idempotency",
             "speech",
@@ -377,7 +618,10 @@ def run(url):
             "sse",
             "reconnect_without_replay",
             "cleanup",
-        ],
+        ]
+        + (["camera_capture_and_download"] if captures else [])
+        + (["vision_observer_sharing_and_detections"] if faces else [])
+        + (["ordered_velocity_expiry"] if velocity else []),
     }
 
 

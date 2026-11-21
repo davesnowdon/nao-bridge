@@ -205,3 +205,141 @@ reconnection does not establish cleanup or authorize automatic listener resumpti
 The remaining public lifecycle must preserve this uncertainty and explicitly map
 revision-tagged native observations to owned listeners.
 
+## Passive sensor observations
+
+The [NAOqi 2.1 sensor names](https://doc.aldebaran.com/2-1/family/nao_dcm/actuator_sensor_names.html)
+and [2.8 sensor names](https://doc.aldebaran.com/2-8/family/nao_technical/lola/actuator_sensor_names.html)
+document acceleration in m/s², angular velocity in rad/s, inclination in radians,
+joint temperature in degrees Celsius and foot loads in kilograms. The references
+list some Z-axis keys while describing gyro/inclination Z as unavailable, so the
+initial adapter exposes only X/Y for those quantities. Foot load estimates are
+approximate; the API does not relabel them as pressure or infer an occupancy rule.
+
+[ALFsr 2.1](https://doc.aldebaran.com/2-1/naoqi/sensors/alfsr.html) and
+[ALFsr 2.8](https://doc.aldebaran.com/2-8/naoqi/sensors/alfsr.html) expose explicit
+left/right/combined contact and total-weight memory values. Combined contact means
+at least one foot on the ground. The adapter accepts binary native indications
+and distinguishes false from missing; it does not derive contact from load.
+
+[ALMemory](https://doc.aldebaran.com/2-1/naoqi/core/almemory-api.html) provides key
+discovery and batched `getListData`. Missing-key return behavior is not established
+by that documentation, so discovery precedes sampling: absent keys are never
+submitted and cannot become a plausible zero placeholder. Discovery failure is
+unknown support, distinct from a successful discovery with an absent key. The
+hardware gate must still establish source presence, frame signs, useful rate,
+and producer initialization/update behavior on each supported firmware.
+
+## Sonar producer and range interpretation
+
+[ALSonar 2.1](https://doc.aldebaran.com/2-1/naoqi/sensors/alsonar.html) activates
+ultrasonic acquisition through a named subscription. Removing only that name
+preserves other applications' demand. The
+[2.8 Python example](https://doc.aldebaran.com/2-8/dev/python/examples/sensors/index.html)
+uses the same lifecycle and left/right first-echo memory keys. Ordinary discovery
+and cached state reads must not acquire a persistent producer implicitly.
+
+Read the version-specific table in the
+[2.1 hardware reference](https://doc.aldebaran.com/2-1/family/robots/sonar_robot.html):
+**NAOv5** specifies 0.20–0.80 m, matching
+[NAO6](https://doc.aldebaran.com/2-8/family/nao_technical/sonar_naov6.html).
+The 0.25–2.55 m entry belongs to NAOv4/V3.x, not NAOv5. Search snippets can collapse
+those rows. Below 0.20 m there is proximity information without a usable distance;
+above 0.80 m the return is an estimate. The native key references linked above
+describe nonpositive returns and the maximum-range sentinel as error/no echo.
+No echo cannot establish clear space, and a distant estimate is not a precise
+obstacle boundary. Verify actual sentinels, torso transforms and source update
+behavior on both target robots before physical acceptance.
+
+The native adapter uses a 0.5-second settling window after confirmed
+subscription, with null warming readings. This is a software policy, not measured
+hardware readiness or proof of a new native sample. It distinguishes in-range
+values, estimates, too-close indications and invalid/no-echo returns. It retains
+an unfinished subscribe future before cleanup: an unsubscribe that overtakes a
+late subscribe cannot prove the producer stopped. Pending unsubscribe work is
+retained rather than repeatedly queued. Agent/API integration now exposes explicit
+owned sensor observers that share this native subscription. Reads and recordings
+do not activate it; source lifecycle and per-reading quality remain separate from
+acquisition freshness. These are software guarantees; physical readiness, range
+interpretation and source transforms remain acceptance work.
+
+## Finite walking and odometry adapter
+
+The [2.1 locomotion API](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk-api.html)
+and [2.8 API](https://doc.aldebaran.com/2-8/naoqi/motion/control-walk-api.html)
+distinguish world-frame planar position from robot-frame velocity.
+`getRobotPosition(True)` selects joint-sensor feedback; `getRobotVelocity()` is
+reported as a native estimate. The adapter rebases the first valid pose
+to a local odometry origin, including its heading. A new connection or lost pose
+observation starts a new origin; failed velocity alone does not discard position.
+This does not detect every native frame reset, slip or physical relocation.
+Application maps must still support explicit relocalization.
+
+`moveTo` accepts a relative planar displacement and a configuration. The initial
+mapping discovers minimum/default/maximum `MaxStepFrequency` and scales the default
+by the requested speed fraction, rejecting values below the native minimum.
+This is a gait-frequency fraction, not a linear metres-per-second guarantee;
+the [gait reference](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk.html)
+distinguishes frequency and step geometry. Other gait settings remain native
+defaults. The bridge policy bounds each displacement to 1 m translation and pi
+radians rotation; this is not a collision or physical safety envelope.
+
+Controlled stop uses `stopMove`, which finishes at double support, then checks
+`moveIsActive` within a shared deadline. An acknowledgement alone is insufficient.
+No wake, stiffness, posture or safeguard changes are added. The adapter passes
+isolated tests and a pinned-SDK loopback service. Contract 1.4.0 exposes owned
+finite moves and odometry through HTTP and the SDKs. Physical speed mapping,
+origin behavior and stopping distance remain hardware gates on both targets.
+
+## Still camera acquisition
+
+The adapter uses `getCameraIndexes` and optional FOV methods for discovery.
+`subscribeCamera` selects one camera and returns the handle used to fetch and
+unsubscribe. The bridge uses QVGA or VGA RGB, validates the returned frame's
+camera, dimensions, color space and raw byte count, and keeps angular bounds
+when present. The remote read returns the frame inline and does not require a
+local image release. See the [NAOqi 2.1 video API](https://doc.aldebaran.com/2-1/naoqi/vision/alvideodevice-api.html),
+[2.8 video API](https://doc.aldebaran.com/2-8/naoqi/vision/alvideodevice-api.html)
+and [SDK image example](https://doc.aldebaran.com/2-8/dev/python/examples/vision/get_image.html).
+
+The pinned SDK loopback returned full RGB frames containing NUL and non-ASCII
+bytes. The adapter completed both modes without removing a separate native
+consumer. Production IPC transferred both sizes and honored early cancellation
+with the four ordinary command workers occupied. The acquisition window covers
+the native read. Firmware-specific source clock behavior, actual exposure time,
+camera geometry and concurrent physical consumers remain acceptance work.
+
+## Face observations
+
+Both target firmware references specify a native timestamp, a camera ID,
+camera-relative face centres and angular size in `FaceDetected`. The recognition
+score belongs to identity matching. The bridge publishes the angular geometry
+and ignores the recognition metadata. It accepts explicit timestamped empty
+frames, discards malformed frames, and caps published detections at 16 per frame.
+[NAOqi 2.1 face detection](https://doc.aldebaran.com/2-1/naoqi/peopleperception/alfacedetection.html)
+and [NAOqi 2.8 face detection](https://doc.aldebaran.com/2-8/naoqi/peopleperception/alfacedetection.html).
+
+The extractor camera setting is shared. The bridge probes it at activation and
+uses the extractor's named period-based subscription, without global camera,
+pause, or recognition setters. Events from a different camera or a stale
+revision are suppressed. An unfinished activation must settle before owned
+unsubscribe can be confirmed. Physical acceptance still covers availability,
+camera identity, frame rate/age, concurrent consumers and stale subscriptions
+following sudden agent loss. [ALExtractor API](https://doc.aldebaran.com/2-8/naoqi/core/alextractor-api.html)
+and [ALVisionExtractor API](https://doc.aldebaran.com/2-8/naoqi/core/alvisionextractor-api.html).
+
+## Continuous robot-frame velocity
+
+The native adapter uses `ALMotion.move` to pass robot-frame m/s and rad/s. The
+NAOqi references describe this as a nonblocking call and describe `stopMove`
+as the controlled stop. Fixture bounds are a planar norm of 0.10 m/s and an
+absolute yaw rate of 0.40 rad/s. Physical acceptance must measure behavior
+and stopping at the enabled speeds and surfaces. [NAOqi 2.1 locomotion API](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk-api.html)
+and [NAOqi 2.8 locomotion API](https://doc.aldebaran.com/2-8/naoqi/motion/control-walk-api.html).
+
+The agent starts a separate stop when the target lease expires or the API
+heartbeat authority ends. A native update that may still arrive keeps the
+lease outcome unknown and triggers another stop once that write settles.
+A generation change ends that reconciliation. Loss of the agent, container
+or robot link can prevent further stop attempts. Neither an acknowledgement
+nor a fixture result measures stopping distance on a robot.
+

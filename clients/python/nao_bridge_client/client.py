@@ -4,31 +4,39 @@ import asyncio
 import os
 import threading
 from collections.abc import Coroutine
-from typing import Any, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .controls import AsyncJointControl
+from .controls import AsyncControlScope, AsyncJointControl, AsyncVelocityControl
 from .listeners import AsyncListener
 from .models import (
     AssetData,
     AssetsPage,
+    CamerasData,
     Capabilities,
     Event,
     JointCatalog,
     ListenerData,
+    OdometrySample,
     OperationData,
     PosturesData,
     RecordingData,
     RobotInfo,
     Sensor,
+    SensorObserverData,
     State,
     StreamNotice,
     SubscriptionData,
+    VisionObserverData,
 )
 from .recordings import AsyncRecording
+from .sensor_observers import AsyncObserver, ObserverData
 from .trajectory import Trajectory
 
 T = TypeVar("T")
+SyncObserver = TypeVar("SyncObserver", bound="_Observer[Any]")
+NativeScope = TypeVar("NativeScope", bound=AsyncControlScope)
+SyncScope = TypeVar("SyncScope", bound="_ControlScope[Any]")
 
 
 class Nao:
@@ -40,6 +48,7 @@ class Nao:
         self._thread: threading.Thread | None = None
         self.robot = Robot(self)
         self.sensors = Sensors(self)
+        self.vision = Vision(self)
         self.motion = Motion(self)
         self.autonomy = Autonomy(self)
         self.speech = Speech(self)
@@ -160,6 +169,63 @@ class Motion:
     def postures(self) -> PosturesData:
         return self._nao._run(self._nao._async.motion.postures())
 
+    def stop(
+        self,
+        *,
+        scope: Literal["locomotion", "all"] | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.stop(
+                    scope=scope,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def move(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.move(
+                    x=x,
+                    y=y,
+                    yaw=yaw,
+                    speed=speed,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def odometry(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> OdometrySample:
+        return self._nao._run(
+            self._nao._async.motion.odometry(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
+
     def set_joint_targets(
         self,
         positions: dict[str, float],
@@ -183,6 +249,32 @@ class Motion:
     ) -> JointControl:
         return JointControl(
             self._nao, self._nao._async.motion.joint_control(positions, speed=speed, ttl=ttl)
+        )
+
+    def set_velocity(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        control_id: str | None = None,
+        sequence: int = 0,
+        ttl: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.set_velocity(
+                    x=x, y=y, yaw=yaw, control_id=control_id, sequence=sequence, ttl=ttl
+                )
+            ),
+        )
+
+    def velocity(
+        self, *, x: float = 0, y: float = 0, yaw: float = 0, ttl: float | None = None
+    ) -> VelocityControl:
+        return VelocityControl(
+            self._nao, self._nao._async.motion.velocity(x=x, y=y, yaw=yaw, ttl=ttl)
         )
 
     def wake(
@@ -359,6 +451,19 @@ class Sensors:
     def __init__(self, nao: Nao):
         self._nao = nao
 
+    def observe(self, sources: list[str], *, idempotency_key: str | None = None) -> SensorObserver:
+        return SensorObserver(
+            self._nao,
+            self._nao._run(
+                self._nao._async.sensors.observe(sources, idempotency_key=idempotency_key)
+            ),
+        )
+
+    def get_observer(self, observer_id: str) -> SensorObserver:
+        return SensorObserver(
+            self._nao, self._nao._run(self._nao._async.sensors.get_observer(observer_id))
+        )
+
     def list(self) -> list[Sensor]:
         return self._nao._run(self._nao._async.sensors.list())
 
@@ -372,6 +477,59 @@ class Sensors:
                 require_fresh=require_fresh,
             )
         )
+
+
+class Vision:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def cameras(self) -> CamerasData:
+        return self._nao._run(self._nao._async.vision.cameras())
+
+    def observe(
+        self,
+        *,
+        faces: bool = True,
+        camera: str | None = None,
+        rate_hz: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> VisionObserver:
+        return VisionObserver(
+            self._nao,
+            self._nao._run(
+                self._nao._async.vision.observe(
+                    faces=faces,
+                    camera=camera,
+                    rate_hz=rate_hz,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def get_observer(self, observer_id: str) -> VisionObserver:
+        return VisionObserver(
+            self._nao, self._nao._run(self._nao._async.vision.get_observer(observer_id))
+        )
+
+    def capture(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.vision.capture(
+                camera,
+                resolution=resolution,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
 
 
 class Autonomy:
@@ -552,6 +710,64 @@ class Listener:
         self._nao._run(self._async.close())
 
 
+class _Observer(Generic[ObserverData]):
+    def __init__(self, nao: Nao, observer: AsyncObserver[ObserverData]):
+        self._nao = nao
+        self._async = observer
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def data(self) -> ObserverData:
+        return self._async.data
+
+    @property
+    def status(self) -> str:
+        return self._async.status
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    def __enter__(self: SyncObserver) -> SyncObserver:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+    def refresh(self: SyncObserver) -> SyncObserver:
+        self._nao._run(self._async.refresh())
+        return self
+
+    def wait_ready(self: SyncObserver, *, timeout: float | None = 10) -> SyncObserver:
+        self._nao._run(self._async.wait_ready(timeout=timeout))
+        return self
+
+    def wait_configured(self: SyncObserver, *, timeout: float | None = 10) -> SyncObserver:
+        self._nao._run(self._async.wait_configured(timeout=timeout))
+        return self
+
+    def stop(
+        self: SyncObserver, *, wait: bool = True, timeout: float | None = None
+    ) -> SyncObserver:
+        self._nao._run(self._async.stop(wait=wait, timeout=timeout))
+        return self
+
+    def close(self) -> None:
+        self._nao._run(self._async.close())
+
+
+class SensorObserver(_Observer[SensorObserverData]):
+    pass
+
+
+class VisionObserver(_Observer[VisionObserverData]):
+    pass
+
+
 class Recordings:
     def __init__(self, nao: Nao):
         self._nao = nao
@@ -715,8 +931,8 @@ class Operations:
         return {**result, "items": [Operation(self._nao, item) for item in result["items"]]}
 
 
-class JointControl:
-    def __init__(self, nao: Nao, control: AsyncJointControl):
+class _ControlScope(Generic[NativeScope]):
+    def __init__(self, nao: Nao, control: NativeScope):
         self._nao, self._async = nao, control
 
     @property
@@ -739,20 +955,27 @@ class JointControl:
     def closed(self) -> bool:
         return self._async.closed
 
-    def __enter__(self) -> JointControl:
+    def __enter__(self: SyncScope) -> SyncScope:
         self._nao._run(self._async.__aenter__())
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
 
-    def set_targets(self, positions: dict[str, float], *, speed: float | None = None) -> Operation:
-        return Operation(self._nao, self._nao._run(self._async.set_targets(positions, speed=speed)))
-
     def close(self) -> None:
         if self._nao._loop is None and self.closed:
             return
         self._nao._run(self._async.close())
+
+
+class JointControl(_ControlScope[AsyncJointControl]):
+    def set_targets(self, positions: dict[str, float], *, speed: float | None = None) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.set_targets(positions, speed=speed)))
+
+
+class VelocityControl(_ControlScope[AsyncVelocityControl]):
+    def set_velocity(self, *, x: float = 0, y: float = 0, yaw: float = 0) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.set_velocity(x=x, y=y, yaw=yaw)))
 
 
 class Operation:
@@ -798,6 +1021,7 @@ class Events:
         events: list[str] | None = None,
         samples: list[dict[str, Any]] | None = None,
         filters: dict[str, Any] | None = None,
+        thresholds: list[dict[str, Any]] | None = None,
         allow_lower_rate: bool = False,
     ) -> Subscription:
         return Subscription(
@@ -807,6 +1031,7 @@ class Events:
                     events=events,
                     samples=samples,
                     filters=filters,
+                    thresholds=thresholds,
                     allow_lower_rate=allow_lower_rate,
                 )
             ),

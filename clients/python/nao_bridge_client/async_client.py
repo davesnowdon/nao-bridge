@@ -8,14 +8,14 @@ import time
 import uuid
 import warnings
 from collections import deque
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 from pydantic import ValidationError
 
 from .assets import AsyncAssets
-from .controls import AsyncJointControl
+from .controls import AsyncControlScope, AsyncJointControl, AsyncVelocityControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
@@ -32,23 +32,28 @@ from .errors import (
 from .json_wire import loads
 from .listeners import AsyncListener
 from .models import (
+    CamerasData,
     Capabilities,
     ErrorDetail,
     Event,
     JointCatalog,
     ListenerData,
+    OdometrySample,
     OperationData,
     PosturesData,
     RobotInfo,
     Sensor,
+    SensorObserverData,
     SensorsData,
     SessionData,
     State,
     StreamNotice,
     SubscriptionData,
+    VisionObserverData,
     WireModel,
 )
 from .recordings import AsyncRecordings
+from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
 from .sse import SSEParser
 from .trajectory import Trajectory
 
@@ -106,11 +111,12 @@ class AsyncNao:
         self._lost: SessionLost | None = None
         self._session_lock = asyncio.Lock()
         self._subscriptions: set[AsyncSubscription] = set()
-        self._controls: set[AsyncJointControl] = set()
+        self._controls: set[AsyncControlScope] = set()
         self.last_pending_request: PendingRequest | None = None
         self.cleanup_error: Exception | None = None
         self.robot = AsyncRobot(self)
         self.sensors = AsyncSensors(self)
+        self.vision = AsyncVision(self)
         self.motion = AsyncMotion(self)
         self.autonomy = AsyncAutonomy(self)
         self.speech = AsyncSpeech(self)
@@ -500,6 +506,74 @@ class AsyncRobot:
         return await self._nao._request("GET", "/api/robot/diagnostics")
 
 
+class AsyncVision:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def cameras(self) -> CamerasData:
+        return decode(CamerasData, await self._nao._request("GET", "/api/vision/cameras"))
+
+    async def observe(
+        self,
+        *,
+        faces: bool = True,
+        camera: str | None = None,
+        rate_hz: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncVisionObserver:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"faces": faces}
+        if camera is not None:
+            body["camera"] = camera
+        if rate_hz is not None:
+            body["rate_hz"] = rate_hz
+        value = await self._nao._request(
+            "POST",
+            "/api/vision/observers",
+            body=body,
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        return AsyncVisionObserver(self._nao, decode(VisionObserverData, value))
+
+    async def get_observer(self, observer_id: str) -> AsyncVisionObserver:
+        if self._nao.session_id is None:
+            raise SessionLost("A vision observer must belong to the current client session")
+        data = decode(
+            VisionObserverData,
+            await self._nao._request(
+                "GET",
+                "/api/vision/observers/" + observer_id,
+            ),
+        )
+        if data.id != observer_id:
+            raise ProtocolError("Vision observer ID does not match the request")
+        return AsyncVisionObserver(self._nao, data)
+
+    async def capture(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        body = {
+            name: value
+            for name, value in (("camera", camera), ("resolution", resolution))
+            if value is not None
+        }
+        result = await self._nao._request(
+            "POST",
+            "/api/vision/captures",
+            body=body,
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        operation = AsyncOperation(self._nao, decode(OperationData, result))
+        return await operation.wait(timeout=timeout) if wait else operation
+
+
 class AsyncMotion:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
@@ -509,6 +583,67 @@ class AsyncMotion:
 
     async def postures(self) -> PosturesData:
         return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
+
+    async def stop(
+        self,
+        *,
+        scope: Literal["locomotion", "all"] | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        return await self._submit(
+            "stop",
+            {"scope": scope} if scope is not None else {},
+            wait=wait,
+            timeout=timeout,
+            idempotency_key=idempotency_key,
+        )
+
+    async def move(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body = {"x": x, "y": y, "yaw": yaw}
+        if speed is not None:
+            body["speed"] = speed
+        return await self._submit(
+            "moves", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def odometry(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> OdometrySample:
+        state = await self._nao.robot.state(
+            ["motion"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+        group = state.groups["motion"]
+        value = group.value.get("odometry") if isinstance(group.value, dict) else None
+        sample = decode(
+            OdometrySample,
+            {
+                **group.model_dump(),
+                "value": value,
+                "quality": group.quality if value is not None else "unavailable",
+                "reason": group.reason or ("odometry_unavailable" if value is None else None),
+                "bridge_instance_id": state.bridge_instance_id,
+                "connection_generation": state.connection_generation,
+                "acquisition_finished_bridge_time_ms": state.acquisition_finished_bridge_time_ms,
+            },
+        )
+        if require_fresh and (sample.value is None or sample.value.pose is None):
+            raise StaleState(["motion"])
+        return sample
 
     async def set_joint_targets(
         self,
@@ -520,48 +655,84 @@ class AsyncMotion:
         ttl: float | None = None,
     ) -> AsyncOperation:
         """Send one target only. Reuse its control ID with a newer sequence to update it."""
+        target: dict[str, Any] = {"positions": dict(positions)}
+        if speed is not None:
+            target["speed"] = speed
+        return await self._set_control(
+            "joint_setpoints", "motion.joint_control", target, control_id, sequence, ttl
+        )
+
+    async def set_velocity(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        control_id: str | None = None,
+        sequence: int = 0,
+        ttl: float | None = None,
+    ) -> AsyncOperation:
+        """Send one complete robot-frame velocity target, in m/s and rad/s."""
+        return await self._set_control(
+            "velocity",
+            "motion.velocity_control",
+            {"x": x, "y": y, "yaw": yaw},
+            control_id,
+            sequence,
+            ttl,
+        )
+
+    async def _set_control(
+        self,
+        route: str,
+        kind: str,
+        target: dict[str, Any],
+        control_id: str | None,
+        sequence: int,
+        ttl: float | None,
+    ) -> AsyncOperation:
         if control_id is None and sequence != 0:
             raise ValueError("A nonzero sequence requires an existing control ID")
         session = await self._nao._ensure_session()
         cid = control_id if control_id is not None else uuid.uuid4().hex
-        body: dict[str, Any] = {
-            "control_id": cid,
-            "sequence": sequence,
-            "positions": dict(positions),
-        }
-        if speed is not None:
-            body["speed"] = speed
+        body: dict[str, Any] = {"control_id": cid, "sequence": sequence, **target}
         if ttl is not None:
             body["ttl"] = ttl
-        data = decode(
-            OperationData,
-            await self._nao._request(
-                "PUT", "/api/motion/joint_setpoints", body=body, session_id=session.id
-            ),
-        )
+        try:
+            value = await self._nao._request(
+                "PUT", "/api/motion/" + route, body=body, session_id=session.id
+            )
+        except BridgeError as exc:
+            if exc.code != "transport_error":
+                raise
+            raise BridgeError(
+                "control_outcome_unknown", "Control acknowledgement was lost"
+            ) from exc
+        data = decode(OperationData, value)
         if (
             data.session_id != session.id
             or data.bridge_instance_id != session.bridge_instance_id
             or data.connection_generation != session.connection_generation
         ):
-            raise self._nao._lose(
-                "Joint-control response belongs to a different session or connection"
-            )
+            raise self._nao._lose("Control response belongs to a different session or connection")
         if (
-            data.kind != "motion.joint_control"
+            data.kind != kind
             or data.control is None
             or data.control.id != cid
             or data.control.sequence != sequence
         ):
-            raise ProtocolError(
-                "Joint-control response does not match the submitted identity/sequence"
-            )
+            raise ProtocolError("Control response does not match the submitted identity/sequence")
         return AsyncOperation(self._nao, data)
 
     def joint_control(
         self, positions: dict[str, float], *, speed: float | None = None, ttl: float | None = None
     ) -> AsyncJointControl:
         return AsyncJointControl(self._nao, positions, speed=speed, ttl=ttl)
+
+    def velocity(
+        self, *, x: float = 0, y: float = 0, yaw: float = 0, ttl: float | None = None
+    ) -> AsyncVelocityControl:
+        return AsyncVelocityControl(self._nao, x=x, y=y, yaw=yaw, ttl=ttl)
 
     async def wake(
         self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
@@ -726,6 +897,37 @@ class AsyncMotion:
 class AsyncSensors:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def observe(
+        self, sources: list[str], *, idempotency_key: str | None = None
+    ) -> AsyncSensorObserver:
+        await self._nao._ensure_session()
+        return AsyncSensorObserver(
+            self._nao,
+            decode(
+                SensorObserverData,
+                await self._nao._request(
+                    "POST",
+                    "/api/sensors/observers",
+                    body={"sources": sources},
+                    key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+                ),
+            ),
+        )
+
+    async def get_observer(self, observer_id: str) -> AsyncSensorObserver:
+        if self._nao.session_id is None:
+            raise SessionLost("A sensor observer must belong to the current client session")
+        return AsyncSensorObserver(
+            self._nao,
+            decode(
+                SensorObserverData,
+                await self._nao._request(
+                    "GET",
+                    "/api/sensors/observers/" + observer_id,
+                ),
+            ),
+        )
 
     async def list(self) -> list[Sensor]:
         return decode(SensorsData, await self._nao._request("GET", "/api/sensors")).items
@@ -1000,15 +1202,18 @@ class AsyncEvents:
         events: list[str] | None = None,
         samples: list[dict[str, Any]] | None = None,
         filters: dict[str, Any] | None = None,
+        thresholds: list[dict[str, Any]] | None = None,
         allow_lower_rate: bool = False,
     ) -> AsyncSubscription:
         await self._nao._ensure_session()
-        body = {
+        body: dict[str, Any] = {
             "events": events or [],
             "samples": samples or [],
             "filters": filters or {},
             "allow_lower_rate": allow_lower_rate,
         }
+        if thresholds is not None:
+            body["thresholds"] = thresholds
         data = decode(
             SubscriptionData,
             await self._nao._request(

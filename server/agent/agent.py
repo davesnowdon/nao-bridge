@@ -21,7 +21,30 @@ from autonomy import valid_autonomy, TransitionStopped
 from controls import JointControls, ControlError
 from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
+from sonar import valid_configuration as valid_sonar
+from camera import CameraError, CameraUnknown, handoff, valid_capture, valid_capture_id
+from faces import valid_configuration as valid_faces
+from velocity import VelocityControls
 from wire import VERSION, encode, frames, monotonic
+
+PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
+COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
+                autonomy=valid_autonomy, camera_capture=valid_capture)
+
+
+def valid_stop(request):
+    payload = request.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    scope = payload.get("motion_scope")
+    ids = payload.get("operation_ids", [])
+    if scope is None:
+        return not ids
+    return (scope in ("all", "locomotion")
+            and not payload.get("operation_id") and not request.get("session_id")
+            and isinstance(ids, list) and len(ids) <= 32
+            and all(isinstance(key, type(u"")) and 0 < len(key) <= 128 for key in ids)
+            and len(set(ids)) == len(ids))
 
 
 def background(function, *args):
@@ -42,12 +65,17 @@ class Agent(object):
         self.lock = threading.RLock()
         self.work = queue.Queue(16)
         self.recognition_work = queue.Queue(1)
+        self.sonar_work = queue.Queue(1)
+        self.faces_work = queue.Queue(1)
+        self.camera_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
         self.records = collections.OrderedDict()
         self.dropped = 0
         self.recognition_cleanup = None
+        self.sonar_cleanup = None
+        self.faces_cleanup = None
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
         self.driver = FixtureDriver(self.observe, self.lock) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe, self.lock)
@@ -55,6 +83,8 @@ class Agent(object):
         self.controls = JointControls(self.driver, self.lock, monotonic,
                                       lambda function, *args: background(self.run_control, function, *args),
                                       lambda request: self.valid(request, initial=False) is None, self.observe)
+        self.velocity_controls = VelocityControls(
+            self.driver, self.lock, monotonic, self.controls.spawn, self.controls.authority, self.observe)
 
     def observe(self, kind, data):
         try:
@@ -73,19 +103,23 @@ class Agent(object):
         with self.lock:
             self.heartbeat = 0
             self.epoch += 1
-            recognition = getattr(self.driver, "recognition", None)
-            if recognition:
-                recognition.invalidate()
-                self.recognition_cleanup = recognition
+            for name in PRODUCERS:
+                adapter = getattr(self.driver, name, None)
+                if adapter:
+                    adapter.invalidate()
+                    setattr(self, name + "_cleanup", adapter)
+            camera = getattr(self.driver, "camera", None)
+            if camera:
+                camera.invalidate()
         self.emergency_stop.set()
 
-    def recognition_recovery(self):
+    def producer_recovery(self, name):
         while True:
-            target = self.recognition_cleanup
+            target = getattr(self, name + "_cleanup")
             if target and target.close():
                 with self.lock:
-                    if self.recognition_cleanup is target:
-                        self.recognition_cleanup = None
+                    if getattr(self, name + "_cleanup") is target:
+                        setattr(self, name + "_cleanup", None)
             time.sleep(0.1)
 
     def watchdog(self):
@@ -96,6 +130,7 @@ class Agent(object):
             if expired:
                 self.lose_authority("heartbeat_lost")
             self.controls.tick()
+            self.velocity_controls.tick()
 
     def valid(self, request, initial=True):
         if request.get("agent") != self.instance or request.get("api") != self.api or request.get("epoch") != self.epoch:
@@ -107,7 +142,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint") and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "camera_capture") and request.get("session_id") in self.revoked:
             return "fenced_session"
         return None
 
@@ -129,7 +164,14 @@ class Agent(object):
     def worker(self, work=None):
         requests = self.work if work is None else work
         while True:
-            request, replies = requests.get()
+            if requests is self.camera_work:
+                adapter = self.driver.camera
+                if adapter:
+                    adapter.cleanup()
+            try:
+                request, replies = requests.get(timeout=0.1 if requests is self.camera_work else None)
+            except queue.Empty:
+                continue
             rid = request["id"]
             with self.lock:
                 record = self.records[rid]
@@ -146,11 +188,14 @@ class Agent(object):
             self.reply(replies, request, "accepted")
             future = None
             try:
-                if request["action"] == "recognition":
-                    self.run_recognition(request, record, replies)
+                if request["action"] in PRODUCERS:
+                    self.run_producer(request, record, replies)
                     continue
                 if request["action"] == "autonomy":
                     self.run_autonomy(request, record, replies)
+                    continue
+                if request["action"] == "camera_capture":
+                    self.run_camera(request, record, replies)
                     continue
                 if request["action"] == "trajectory":
                     self.driver.prepare_trajectory(request["payload"])
@@ -171,6 +216,9 @@ class Agent(object):
                     future = getattr(self.driver, request["action"])(request["payload"])
                     record["future"] = future
                 native_result = future.value()
+                if record.get("motion_kind") == "walk":
+                    self.finish_walk(request, replies, record, native_result)
+                    continue
                 with self.lock:
                     result = {"cancelled": record.get("stop_requested", False), "backend": "naoqi"}
                     if request["action"] == "motion_action" and request["payload"]["kind"] == "posture":
@@ -180,7 +228,9 @@ class Agent(object):
                     record.update(status="completed", result=result, finished=monotonic())
                 self.reply(replies, request, result=result)
             except Exception as error:
-                if future is not None and future.isCanceled():
+                if record.get("motion_kind") == "walk" and record["phase"] != "queued":
+                    self.finish_walk(request, replies, record, None, failed=True)
+                elif future is not None and future.isCanceled():
                     # qi reports confirmed cancellation by raising from value().
                     result = {"cancelled": True, "backend": "naoqi"}
                     with self.lock:
@@ -193,10 +243,33 @@ class Agent(object):
                     record.update(status="unknown", finished=monotonic())
                     self.reply(replies, request, "unknown", message="Native completion unconfirmed")
 
-    def run_recognition(self, request, record, replies):
-        adapter = self.driver.recognition
+    def finish_walk(self, request, replies, record, native_result, failed=False):
+        with self.lock:
+            stop_done = record.get("walk_stop_done")
+            if stop_done is None:
+                if not failed and (native_result is None or isinstance(native_result, bool)):
+                    result = {"backend": "naoqi", "cancelled": False,
+                              "reached": native_result}
+                    record.update(status="completed", result=result, finished=monotonic())
+                    self.reply(replies, request, result=result)
+                    return
+                record.update(status="unknown", finished=monotonic())
+        if stop_done is not None:
+            stop_done.wait(1.8)
+            if record.get("walk_stop_confirmed"):
+                self.reply(replies, request, result={"cancelled": True, "backend": "naoqi",
+                                                      "stop_confirmed": True})
+                return
+        with self.lock:
+            if record["status"] != "completed":
+                record.update(status="unknown", finished=monotonic())
+        self.reply(replies, request, "unknown", message="Walking outcome unconfirmed")
+
+    def run_producer(self, request, record, replies):
+        name = request["action"]
+        adapter = getattr(self.driver, name)
         if adapter is None:
-            raise ValueError("Recognition unavailable")
+            raise ValueError("Producer unavailable")
         record["phase"] = "dispatch_started"
         try:
             result = adapter.configure(request["payload"],
@@ -204,7 +277,7 @@ class Agent(object):
         except Exception as error:
             if adapter.poisoned or not isinstance(error, ValueError):
                 record.update(status="unknown", finished=monotonic())
-                self.reply(replies, request, "unknown", message="Recognition transition unconfirmed")
+                self.reply(replies, request, "unknown", message="Producer transition unconfirmed")
             else:
                 record.update(status="rejected", finished=monotonic())
                 self.reply(replies, request, "rejected", code=getattr(error, "code", "unsupported"), message=str(error))
@@ -233,44 +306,152 @@ class Agent(object):
                           result=result, finished=monotonic())
         self.reply(replies, request, result=result)
 
+    def run_camera(self, request, record, replies):
+        adapter = self.driver.camera
+        if adapter is None:
+            raise CameraError("unsupported", "Camera discovery is unavailable")
+
+        def authorized():
+            return (not record.get("stop_requested") and self.driver.connected()
+                    and self.driver.camera is adapter and self.valid(request, initial=False) is None)
+
+        def dispatch(method, *args):
+            with self.lock:
+                if not authorized():
+                    raise CameraError("capture_cancelled", "Camera capture authority ended")
+                record["phase"] = "dispatch_started"
+                return method(*args, _async=True)
+
+        try:
+            result, pixels = adapter.capture(request["payload"], authorized, dispatch)
+            if authorized():
+                try:
+                    handoff(self.root, self.instance, request["id"], pixels)
+                except (IOError, OSError):
+                    raise CameraError("capture_transfer_failed", "Could not transfer the camera image")
+        except CameraError as error:
+            if error.code != "capture_cancelled" and authorized():
+                with self.lock:
+                    record.update(status="rejected", finished=monotonic())
+                self.reply(replies, request, "rejected", code=error.code, message=str(error))
+                return
+            result = {"cancelled": True}
+        except CameraUnknown as error:
+            with self.lock:
+                record.update(status="unknown", finished=monotonic())
+            self.reply(replies, request, "unknown", message=str(error))
+            return
+        with self.lock:
+            if not authorized():
+                result = {"cancelled": True, "dispatched": record["phase"] != "queued"}
+            record.update(status="completed", result=result, finished=monotonic())
+            self.reply(replies, request, result=result)
+
     def stop(self, request):
         with self.lock:
             payload = request.get("payload", {}) if request else {}
             oid = payload.get("operation_id")
             sid = request.get("session_id") if request else None
+            scope = payload.get("motion_scope")
+            requested_ids = payload.get("operation_ids", [])
+            broad_stop = not oid and not sid
             controls = getattr(self, "controls", None)
-            control_ids = controls.stop(oid, sid, defer_hold=True) if controls else []
-            if oid and oid not in self.records and not control_ids and len(self.records) < 4096:
-                # The priority lane can overtake a command that has not arrived yet.
-                self.records[oid] = {"session_id": sid, "status": "completed", "phase": "queued",
-                                     "action": "cancelled", "finished": monotonic(),
-                                     "result": {"cancelled": True, "dispatched": False}}
+            control_ids = controls.stop(oid, sid, defer_hold=True) if controls and scope != "locomotion" else []
+            velocity = getattr(self, "velocity_controls", None)
+            velocity_engaged = set(key for key, record in velocity.records.items()
+                                   if not record["released"]) if velocity else set()
+            velocity_ids = [key for key in velocity.stop(oid, sid)
+                            if key in velocity_engaged or key == oid or key in requested_ids] if velocity else []
+            velocity_stopping = [key for key in velocity_ids
+                                 if velocity.records[key]["status"] == "cancelling"]
+            velocity_deadline = monotonic() + 1.1
+            already_ended, missing = [], []
+            # The priority lane can overtake a command that has not arrived yet.
+            for key in requested_ids if scope else [oid] if oid else []:
+                if key in control_ids or key in velocity_ids:
+                    continue
+                if key not in self.records:
+                    if len(self.records) >= 4096:
+                        missing.append(key)
+                        continue
+                    self.records[key] = {
+                        "session_id": sid, "status": "completed", "phase": "queued",
+                        "action": "cancelled", "finished": monotonic(),
+                        "result": {"cancelled": True, "dispatched": False},
+                    }
+                if self.records[key]["status"] == "completed" or (
+                        scope and self.records[key]["status"] == "rejected"):
+                    already_ended.append(key)
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
-                        and (record.get("action") != "recognition" or key == oid)
+                        and (record.get("action") not in PRODUCERS or key == oid)
+                        and (record.get("action") != "camera_capture" or record["status"] != "unknown" or key == oid)
+                        and (not scope
+                             or scope == "locomotion" and record.get("motion_kind") == "walk"
+                             or scope == "all" and record.get("action") in ("trajectory", "motion_action", "autonomy"))
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
                 record["stop_requested"] = True
-        # Do not stop a different session's native output when the selected set is empty.
+                if record.get("motion_kind") == "walk" and record["phase"] != "queued":
+                    record.setdefault("walk_stop_done", threading.Event()).clear()
         active = [record for _, record in selected if record["phase"] != "queued"]
-        if any(record.get("action", "speak") == "speak" for record in active) or (not oid and not sid):
+        walks = [record for record in active if record.get("motion_kind") == "walk"]
+        locomotion = getattr(self.driver, "locomotion", None)
+        walk_stopped = False
+        if locomotion and (walks or (broad_stop and not velocity_stopping)):
+            try:
+                walk_stopped = locomotion.stop()["native_inactive"]
+            except Exception:
+                logging.warning("Native locomotion stop did not confirm", exc_info=True)
+        if not scope and (any(record.get("action", "speak") == "speak" for record in active) or broad_stop):
             try:
                 self.driver.stop()
             except Exception:
-                # The say future can confirm cancellation before stopAll replies.
                 logging.warning("stopAll did not confirm", exc_info=True)
-        motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") for name in record["names"]))
-        if motion_names or (not oid and not sid):
+        if velocity_stopping:
+            while monotonic() < velocity_deadline and any(
+                    velocity.snapshot(key)["status"] == "cancelling" for key in velocity_stopping):
+                time.sleep(0.005)
+            velocity_stopped = all(
+                (velocity.snapshot(key)["stop"] or {}).get("confirmed") is True
+                for key in velocity_stopping)
+            if not walks:
+                walk_stopped = velocity_stopped
+        motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") and record.get("motion_kind") != "walk" for name in record["names"]))
+        walk_deadline = monotonic() + 0.2
+        if walk_stopped:
+            for record in walks:
+                future = record.get("future")
+                if future is not None and not future.isFinished():
+                    try:
+                        future.value(max(1, int((walk_deadline - monotonic()) * 1000)))
+                    except Exception:
+                        pass
+        walk_pending = bool(walks) and (not walk_stopped or any(
+            not record.get("future") or not record["future"].isFinished() for record in walks))
+        if velocity_ids:
+            walk_pending = walk_pending or any(
+                not value["released"] and value["status"] not in ("succeeded", "cancelled")
+                for value in (velocity.snapshot(key) for key in velocity_ids))
+        joint_stop_confirmed = None
+        if (scope != "locomotion" and (scope != "all" or (walk_stopped and not walk_pending))
+                and (motion_names or (broad_stop and not walk_pending))):
             try:
-                self.driver.stop_motion(motion_names or ["Body"], stop_posture=(not oid and not sid) or any(record.get("motion_kind") in ("wake", "rest", "posture") for record in active))
+                if scope == "all" and not getattr(self.driver, "safety_motion", None):
+                    raise ValueError("Native joint stop unavailable")
+                self.driver.stop_motion(["Body"] if scope == "all" else motion_names or ["Body"],
+                                        stop_posture=broad_stop or any(
+                                            record.get("motion_kind") in ("wake", "rest", "posture") for record in active))
+                joint_stop_confirmed = True
             except Exception:
+                joint_stop_confirmed = False
                 logging.warning("Native motion stop did not confirm", exc_info=True)
-        confirmed, unresolved = [], []
+        confirmed, unresolved = already_ended, missing
         if controls:
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if record.get("action") in ("autonomy", "recognition") and record["phase"] != "queued":
+            if (record.get("action") in PRODUCERS or record.get("action") in ("autonomy", "camera_capture")) and record["phase"] != "queued":
                 # A completed individual setter does not finish a multi-setting transition.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
                 continue
@@ -278,6 +459,16 @@ class Agent(object):
                 confirmed.append(key)
                 continue
             future = record.get("future")
+            if record.get("motion_kind") == "walk":
+                with self.lock:
+                    stopped = walk_stopped and future is not None and future.isFinished()
+                    if stopped:
+                        record.update(status="completed", finished=monotonic(),
+                                      result={"cancelled": True, "stop_confirmed": True})
+                    record["walk_stop_confirmed"] = stopped
+                    record["walk_stop_done"].set()
+                (confirmed if stopped else unresolved).append(key)
+                continue
             if future is not None:
                 try:
                     future.value(max(1, int((deadline - monotonic()) * 1000)))
@@ -296,13 +487,26 @@ class Agent(object):
         for key in control_ids:
             value = controls.snapshot(key)
             (confirmed if value["status"] in ("succeeded", "cancelled") else unresolved).append(key)
+        velocity_results = {key: velocity.snapshot(key) for key in velocity_ids}
+        for key, value in velocity_results.items():
+            if value["status"] in ("succeeded", "cancelled"):
+                confirmed.append(key)
+            elif not value["released"] or oid == key or key in requested_ids:
+                unresolved.append(key)
         result = {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
+        if scope:
+            result.update(locomotion_confirmed=walk_stopped and not any(
+                key in unresolved and record.get("motion_kind") == "walk" for key, record in selected)
+                and not any(key in unresolved for key in velocity_ids),
+                joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
                         if key in self.records and self.records[key].get("action") == "autonomy" and "result" in self.records[key])
         if outcomes:
             result["results"] = outcomes
         if control_ids:
             result["controls"] = dict((key, controls.snapshot(key)) for key in control_ids)
+        if velocity_results:
+            result["velocity_controls"] = velocity_results
         return result
 
     def safety_worker(self):
@@ -427,47 +631,67 @@ class Agent(object):
                             else:
                                 self.revoked[sid] = monotonic()
                                 self.reply(replies, request, result={"fenced": True, "epoch": self.epoch})
-                        elif lane == "priority" and action == "release_controls":
+                        elif lane == "priority" and action in ("release_controls", "release_velocity_controls"):
                             try:
                                 sid = request.get("session_id")
                                 if sid not in self.revoked:
                                     raise ControlError("fencing_unconfirmed", "Session must be fenced before release")
-                                self.reply(replies, request, result={"released_ids": self.controls.release(sid)})
+                                manager = self.controls if action == "release_controls" else self.velocity_controls
+                                self.reply(replies, request, result={"released_ids": manager.release(sid)})
                             except ControlError as error:
                                 self.reply(replies, request, "rejected", code=error.code, message=str(error))
                         elif lane == "priority" and action == "stop":
-                            try:
-                                self.priority.put_nowait((request, replies))
-                            except queue.Full:
-                                self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
-                        elif lane == "controls" and action in ("joint_setpoint", "control_status"):
+                            if not valid_stop(request):
+                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid stop request")
+                            else:
+                                try:
+                                    self.priority.put_nowait((request, replies))
+                                except queue.Full:
+                                    self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
+                        elif lane == "controls" and action in (
+                                "joint_setpoint", "control_status", "velocity_setpoint", "velocity_status"):
                             try:
                                 oid = request.get("payload", {}).get("operation_id")
                                 if not isinstance(oid, type(u"")) or not 0 < len(oid) <= 128:
                                     raise ControlError("invalid_request", "Invalid control operation ID")
-                                if action == "joint_setpoint":
-                                    if oid in self.records:
+                                velocity = action.startswith("velocity_")
+                                manager = self.velocity_controls if velocity else self.controls
+                                peer = self.controls if velocity else self.velocity_controls
+                                if action.endswith("_setpoint"):
+                                    if oid in self.records or oid in peer.records:
                                         raise ControlError("control_ended", "Operation ID is already used or stopped")
-                                    value = self.controls.submit(request)
+                                    if any(not item["released"] for item in peer.records.values()):
+                                        raise ControlError("resource_busy", "Active control owns overlapping joints")
+                                    value = manager.submit(request)
                                 else:
-                                    value = self.controls.snapshot(oid)
-                                    if self.controls.records[oid]["identity"][0] != request.get("session_id"):
+                                    value = manager.snapshot(oid)
+                                    if manager.records[oid]["identity"][0] != request.get("session_id"):
                                         raise ControlError("forbidden", "Control belongs to another session")
                                 self.reply(replies, request, result=value)
                             except ValueError as error:
                                 self.reply(replies, request, "rejected", code=getattr(error, "code", "invalid_request"), message=str(error))
-                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition"):
+                        elif lane == "command" and (action == "speak" or action in COMMANDS):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration}[action](request.get("payload")) and (action == "recognition" or bool(request.get("session_id")))):
+                            elif not (self.validate_speech(request) if action == "speak"
+                                      else COMMANDS[action](request.get("payload"))
+                                      and (action in PRODUCERS or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
+                            elif action == "camera_capture" and not valid_capture_id(rid):
+                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid capture operation ID")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
-                                (self.recognition_work if action == "recognition" else self.work).put_nowait((request, replies))
-                                self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
+                                requests = (getattr(self, action + "_work") if action in PRODUCERS
+                                            else self.camera_work if action == "camera_capture" else self.work)
+                                try:
+                                    requests.put_nowait((request, replies))
+                                except queue.Full:
+                                    self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent command queue full")
+                                else:
+                                    self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
             except (socket.error, ValueError, StopIteration, queue.Full):
@@ -500,10 +724,13 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
-        background(self.run_critical, self.worker, self.recognition_work)
+        background(self.run_critical, self.worker, self.camera_work)
+        for name in PRODUCERS:
+            background(self.run_critical, self.worker, getattr(self, name + "_work"))
+            background(self.run_critical, self.producer_recovery, name)
         for group in GROUPS:
             background(self.run_critical, self.sampler.run, group)
-        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling, self.recognition_recovery):
+        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling):
             background(self.run_critical, worker)
         for lane in ("priority", "command", "controls", "events"):
             background(self.run_critical, self.serve, lane)
@@ -512,12 +739,14 @@ class Agent(object):
             with self.lock:
                 now = monotonic()
                 self.controls.prune(self.revoked)
+                self.velocity_controls.prune(self.revoked)
                 for rid, record in list(self.records.items()):
                     if record["status"] in ("completed", "rejected") and now - record.get("finished", now) > 900:
                         del self.records[rid]
                 for sid, revoked_at in list(self.revoked.items()):
                     if (now - revoked_at > 900 and not any(r["session_id"] == sid for r in self.records.values())
-                            and not any(r["identity"][0] == sid for r in self.controls.records.values())):
+                            and not any(r["identity"][0] == sid for manager in (self.controls, self.velocity_controls)
+                                        for r in manager.records.values())):
                         del self.revoked[sid]
 
 

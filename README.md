@@ -16,9 +16,20 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.1.0 replaces the old API without compatibility
+remain available. Contract 1.9.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
+
+[Increment-3 work](docs/increment-3-status.md) adds passive inertial, foot-load,
+ground-contact and joint-temperature observations to the shared sensor state, plus
+explicit sonar observers and battery/sonar thresholds with sync/async SDK support.
+It adds finite walking, local planar odometry, scoped motion stop, still
+camera capture as downloadable PNG assets, and managed face detection events.
+The [Wanderer reference app](examples/wanderer/README.md) demonstrates short
+finite moves, live stop handling, a local occupancy map and pose-associated stills.
+Velocity leases are available in software fixtures. Hardware velocity remains
+disabled pending measured stop and expiry tests. Physical walking, stopping,
+camera and sensor acceptance remain pending.
 
 Robot-free tests cover real SDK loopback services and injected process failures.
 Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the

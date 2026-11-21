@@ -21,18 +21,20 @@ def agent_module(monkeypatch):
     sys.modules.pop("native", None)
     sys.modules.pop("wire", None)
     sys.modules.pop("motion", None)
+    sys.modules.pop("locomotion", None)
     sys.modules.pop("autonomy", None)
     sys.modules.pop("controls", None)
     sys.modules.pop("sampling", None)
     sys.modules.pop("observations", None)
     sys.modules.pop("recognition", None)
+    sys.modules.pop("sonar", None)
 
 
 class DrainQueue:
     def __init__(self, item):
         self.item = item
 
-    def get(self):
+    def get(self, timeout=None):
         if self.item is None:
             raise StopIteration
         item, self.item = self.item, None
@@ -48,6 +50,7 @@ def bare_agent(module):
     agent.revoked = {}
     agent.lock = threading.RLock()
     agent.records = {}
+    agent.camera_work = queue.Queue(1)
     agent.priority = queue.Queue(8)
     agent.emergency_stop = threading.Event()
     agent.driver = types.SimpleNamespace(
@@ -79,6 +82,27 @@ def test_stop_includes_completed_control_without_ordinary_ledger_entry(agent_mod
         "unresolved_ids": [],
         "controls": {"control": snapshot},
     }
+
+
+@pytest.mark.parametrize("scope", [None, "all"])
+def test_priority_stop_keeps_joint_stop_behind_unconfirmed_velocity(agent_module, scope):
+    agent = bare_agent(agent_module)
+    pending = {"status": "unknown", "released": False, "stop": {"confirmed": False}}
+    agent.velocity_controls = types.SimpleNamespace(
+        records={"velocity": pending},
+        stop=lambda *args: ["velocity"],
+        snapshot=lambda oid: pending,
+    )
+    agent.driver.locomotion = types.SimpleNamespace(stop=lambda: {"native_inactive": True})
+    agent.driver.stop = lambda: None
+    agent.driver.stop_motion = lambda *args, **kwargs: pytest.fail(
+        "Whole-body stop overtook unconfirmed controlled locomotion stop"
+    )
+    result = agent.stop({"payload": {"motion_scope": scope}}) if scope else agent.stop(None)
+    assert result["unresolved_ids"] == ["velocity"]
+    assert result["velocity_controls"]["velocity"] == pending
+    if scope:
+        assert not result["locomotion_confirmed"] and result["joint_stop_confirmed"] is None
 
 
 def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
@@ -400,6 +424,69 @@ def test_stop_during_motion_preparation_never_dispatches(agent_module):
     assert replies.get_nowait()["result"] == {"cancelled": True, "dispatched": False}
 
 
+@pytest.mark.parametrize("inactive,ended", [(True, False), (False, True), (True, True)])
+def test_walk_stop_needs_native_inactivity_and_ended_future(agent_module, inactive, ended):
+    agent = bare_agent(agent_module)
+    agent.driver.locomotion = types.SimpleNamespace(stop=lambda: {"native_inactive": inactive})
+    record = {
+        "session_id": "session",
+        "status": "accepted",
+        "phase": "dispatch_started",
+        "action": "motion_action",
+        "motion_kind": "walk",
+        "names": ["HeadYaw"],
+        "future": types.SimpleNamespace(isFinished=lambda: ended, value=lambda _: None),
+    }
+    agent.records["move"] = record
+    result = agent.stop({"payload": {"operation_id": "move"}})
+    replies = queue.Queue(8)
+    agent.finish_walk({"id": "move"}, replies, record, False)
+    reply = replies.get_nowait()
+    if inactive and ended:
+        assert result["confirmed_ids"] == ["move"] and reply["result"]["cancelled"]
+    else:
+        assert result["unresolved_ids"] == ["move"] and reply["status"] == "unknown"
+
+
+def test_motion_stop_scopes_ignore_speech_and_fence_unseen_commands(agent_module):
+    agent = bare_agent(agent_module)
+    calls = []
+    agent.driver.locomotion = types.SimpleNamespace(
+        stop=lambda: calls.append("locomotion") or {"native_inactive": True}
+    )
+    agent.driver.safety_motion = object()
+    agent.driver.stop_motion = lambda names, **kwargs: calls.append(names)
+    agent.records.update(
+        speech={
+            "session_id": "speaker",
+            "status": "accepted",
+            "phase": "dispatch_started",
+            "action": "speak",
+        },
+        joint={
+            "session_id": "owner",
+            "status": "accepted",
+            "phase": "queued",
+            "action": "trajectory",
+            "names": ["HeadYaw"],
+        },
+    )
+    scope = {"payload": {"motion_scope": "locomotion", "operation_ids": ["late-walk"]}}
+    assert agent_module.valid_stop(scope)
+    assert not agent_module.valid_stop({"payload": {"motion_scope": "unknown"}})
+    assert not agent_module.valid_stop({"payload": {"motion_scope": "all", "operation_ids": [3]}})
+    result = agent.stop(scope)
+    assert result["confirmed_ids"] == ["late-walk"] and result["locomotion_confirmed"]
+    assert agent.records["late-walk"]["result"] == {"cancelled": True, "dispatched": False}
+    assert "stop_requested" not in agent.records["joint"]
+    all_motion = {"payload": {"motion_scope": "all", "operation_ids": ["late-control"]}}
+    result = agent.stop(all_motion)
+    assert set(result["confirmed_ids"]) == {"late-control", "joint"}
+    assert result["joint_stop_confirmed"]
+    assert "stop_requested" not in agent.records["speech"]
+    assert calls == ["locomotion", "locomotion", ["Body"]]
+
+
 def test_motion_private_payload_validation_rejects_unsafe_shapes(agent_module):
     from motion import valid_trajectory
 
@@ -512,21 +599,55 @@ def test_stop_checks_native_cancellation_even_when_stop_reply_times_out(
         assert caplog.records[-1].exc_info is not None
 
 
+def test_native_sensor_batch_preserves_contacts_when_an_optional_reading_is_invalid(agent_module):
+    import native
+
+    driver = native.NativeDriver("fixture", lambda *_: None)
+    values = {key: 0 for key in native.MEMORY_KEYS}
+    values.update({native.BATTERY_KEY: 0, "footContact": 0, "leftFootTotalWeight": None})
+    calls = []
+
+    def get_values(keys):
+        calls.append(keys)
+        return [values[key] for key in keys]
+
+    memory = types.SimpleNamespace(getDataListName=lambda: list(values), getListData=get_values)
+    driver.call = lambda service, method, *args: getattr(service, method)(*args)
+    passive = native.PassiveSensors(memory, driver.call, [])
+    result = driver.sample_sensors(memory, passive)
+    assert len(calls) == 1
+    assert result["battery"] == {"charge": 0, "reason": None}
+    assert all(value is False for value in result["touch"].values())
+    assert result["readings"]["foot.contact"] == {"value": False, "reason": None}
+    assert result["readings"]["foot.left.load"] == {
+        "value": None,
+        "reason": "missing_or_invalid_reading",
+    }
+    memory.getListData = lambda keys: [0]
+    with pytest.raises(ValueError, match="Incomplete native sensor batch"):
+        driver.sample_sensors(memory, passive)
+
+
 def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_module):
     import native
 
     driver = native.NativeDriver("fixture", lambda *_: None)
     old_memory = object()
+    old_passive = object()
     driver.memory = old_memory
+    driver.passive_sensors = old_passive
     driver.motion = types.SimpleNamespace(
         sample_joints=lambda: {"source": "old"},
         sample_motion=lambda: {"awake": True},
     )
     driver.posture = types.SimpleNamespace(sample=lambda: "StandInit")
     driver.autonomy = types.SimpleNamespace(sample=lambda: {"life_state": "disabled"})
-    driver.sample_sensors = lambda memory: {"old_connection": memory is old_memory}
+    driver.sample_sensors = lambda memory, passive, sonar: {
+        "old_connection": memory is old_memory and passive is old_passive
+    }
     readers = driver.sample_readers()
     driver.memory = object()
+    driver.passive_sensors = object()
     driver.motion = driver.posture = driver.autonomy = None
     assert readers["sensors"]() == {"old_connection": True}
     assert readers["joints"]() == {"source": "old"}
@@ -538,13 +659,16 @@ def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_mo
             unavailable[group]()
 
 
-def test_priority_stop_leaves_internal_recognition_transition_to_ordered_cleanup(agent_module):
+@pytest.mark.parametrize("producer", ["recognition", "sonar", "faces"])
+def test_priority_stop_leaves_internal_producer_transition_to_ordered_cleanup(
+    agent_module, producer
+):
     agent = bare_agent(agent_module)
     agent.driver.stop = lambda: None
     agent.driver.stop_motion = lambda *args, **kwargs: None
     record = {
         "session_id": None,
-        "action": "recognition",
+        "action": producer,
         "phase": "dispatch_started",
         "status": "accepted",
     }
@@ -555,30 +679,32 @@ def test_priority_stop_leaves_internal_recognition_transition_to_ordered_cleanup
 
 
 @pytest.mark.parametrize("poisoned,status", [(False, "rejected"), (True, "unknown")])
+@pytest.mark.parametrize("producer", ["recognition", "sonar", "faces"])
 def test_recognition_rpc_does_not_turn_uncertain_mutation_into_known_rejection(
-    agent_module, poisoned, status
+    agent_module, poisoned, status, producer
 ):
     agent = bare_agent(agent_module)
 
     def configure(*args):
         raise ValueError("setter failed")
 
-    agent.driver.recognition = types.SimpleNamespace(poisoned=poisoned, configure=configure)
+    setattr(agent.driver, producer, types.SimpleNamespace(poisoned=poisoned, configure=configure))
     replies = queue.Queue()
     record = {}
-    agent.run_recognition({"id": "configure", "payload": {}}, record, replies)
+    agent.run_producer({"id": "configure", "payload": {}, "action": producer}, record, replies)
     assert replies.get_nowait()["status"] == status
     assert record["status"] == status
 
 
-def test_authority_loss_fences_recognition_without_waiting_for_native_cleanup(agent_module):
+@pytest.mark.parametrize("producer", ["recognition", "sonar", "faces"])
+def test_authority_loss_fences_producer_without_waiting_for_native_cleanup(agent_module, producer):
     agent = bare_agent(agent_module)
     calls = []
     adapter = types.SimpleNamespace(
         invalidate=lambda: calls.append("fenced"),
         close=lambda: pytest.fail("native close on authority lock"),
     )
-    agent.driver.recognition = adapter
+    setattr(agent.driver, producer, adapter)
     agent.lose_authority("watchdog")
     assert calls == ["fenced"]
-    assert agent.recognition_cleanup is adapter
+    assert getattr(agent, producer + "_cleanup") is adapter

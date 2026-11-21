@@ -6,7 +6,7 @@ import math
 import time
 import uuid
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from .errors import BridgeError, OperationCancelled, ProtocolError, SessionLost
 
@@ -14,16 +14,18 @@ if TYPE_CHECKING:
     from .async_client import AsyncNao, AsyncOperation
 
 
-class AsyncJointControl:
+Scope = TypeVar("Scope", bound="AsyncControlScope")
+
+
+class AsyncControlScope:
     """One-use scope: refresh the latest complete target and cancel on exit."""
 
-    def __init__(
-        self, nao: AsyncNao, positions: dict[str, float], *, speed: float | None, ttl: float | None
-    ):
+    name = "control"
+
+    def __init__(self, nao: AsyncNao, target: dict[str, Any], *, ttl: float | None):
         self._nao = nao
         self.id = uuid.uuid4().hex
-        self._positions = dict(positions)
-        self._speed, self._ttl = speed, ttl
+        self._target, self._ttl = target, ttl
         self._operation: AsyncOperation | None = None
         self._session_id: str | None = None
         self._sequence = 0
@@ -55,19 +57,19 @@ class AsyncJointControl:
     def closed(self) -> bool:
         return self._closed
 
-    async def __aenter__(self) -> AsyncJointControl:
+    async def __aenter__(self: Scope) -> Scope:
         if self._entered or self._closed:
-            raise RuntimeError("Create a new joint control to begin another scope")
+            raise RuntimeError(f"Create a new {self.name} to begin another scope")
         self._entered = True
         self._session_id = (await self._nao._ensure_session()).id
         if self._closed:
-            raise RuntimeError("Joint-control scope closed during session creation")
+            raise RuntimeError("Control scope closed during session creation")
         self._nao._controls.add(self)
         try:
-            self._initial = asyncio.create_task(self._send(self._positions, self._speed))
+            self._initial = asyncio.create_task(self._send(self._target))
             await self._initial
             if self._closed:
-                raise RuntimeError("Joint-control scope closed during creation")
+                raise RuntimeError("Control scope closed during creation")
             self._worker = asyncio.create_task(self._run())
             return self
         except BaseException:
@@ -84,27 +86,25 @@ class AsyncJointControl:
                 raise
             if failure is not exc:
                 warnings.warn(
-                    "Joint-control cleanup/failure: " + str(failure), RuntimeWarning, stacklevel=2
+                    "Control cleanup/failure: " + str(failure), RuntimeWarning, stacklevel=2
                 )
 
     def _check_session(self) -> None:
         if self._nao._lost:
             raise self._nao._lost
         if self._nao.session_id != self._session_id or self._nao._http is None:
-            raise SessionLost("The joint control's client session has ended")
+            raise SessionLost("The control's client session has ended")
         if time.monotonic() >= self._nao._lease_deadline:
-            raise self._nao._lose("Session renewal deadline elapsed during joint control")
+            raise self._nao._lose("Session renewal deadline elapsed during control")
 
-    async def _send(self, positions: dict[str, float], speed: float | None) -> None:
+    async def _send(self, target: dict[str, Any]) -> None:
         self._check_session()
         sent = time.monotonic()
         if self._operation is not None and sent >= self._deadline:
             raise BridgeError(
                 "control_ended", "Local control deadline elapsed; create a new control deliberately"
             )
-        request = self._nao.motion.set_joint_targets(
-            positions, control_id=self.id, sequence=self._sequence, speed=speed, ttl=self._ttl
-        )
+        request = self._dispatch(target)
         try:
             operation = await asyncio.wait_for(
                 request, self._deadline - sent if self._operation else self._nao.timeout
@@ -115,17 +115,17 @@ class AsyncJointControl:
                 "Target acknowledgement missed its deadline; renewal stopped",
             ) from exc
         if self._operation and operation.id != self._operation.id:
-            raise ProtocolError("Joint-control update changed operation identity")
+            raise ProtocolError("Control update changed operation identity")
         if self._operation:
             self._operation.data = operation.data
         else:
             self._operation = operation
         operation._outcome()
         if operation.status not in {"accepted", "running"}:
-            raise BridgeError("control_ended", "Joint control has already ended")
+            raise BridgeError("control_ended", "Control has already ended")
         control = operation.data.control
         if control is None:
-            raise ProtocolError("Joint-control operation lacks control metadata")
+            raise ProtocolError("Operation lacks control metadata")
         self._ttl = control.ttl
         self._deadline = sent + control.ttl
         self._refresh_at = sent + control.ttl / 3
@@ -135,27 +135,18 @@ class AsyncJointControl:
             )
         self._sequence += 1
 
-    async def set_targets(
-        self, positions: dict[str, float], *, speed: float | None = None
-    ) -> AsyncOperation:
+    async def _dispatch(self, target: dict[str, Any]) -> AsyncOperation:
+        raise NotImplementedError
+
+    def _check_active(self) -> None:
         if self._error:
             raise self._error
         if not self._entered or self._closed:
-            raise RuntimeError("Joint-control scope is not active")
+            raise RuntimeError("Control scope is not active")
         self._check_session()
-        if set(positions) != set(self._positions):
-            raise ValueError("Supply the complete fixed joint set")
-        values = [*positions.values(), *([speed] if speed is not None else [])]
-        if any(
-            isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v)
-            for v in values
-        ):
-            raise ValueError("Targets and speed must be finite numbers")
-        if speed is not None and not 0 < speed <= 1:
-            raise ValueError("Speed must be in (0, 1]")
-        self._positions = dict(positions)
-        if speed is not None:
-            self._speed = speed
+
+    async def _publish(self, target: dict[str, Any]) -> AsyncOperation:
+        self._target = target
         self._version += 1
         version = self._version
         self._wake.set()
@@ -163,7 +154,7 @@ class AsyncJointControl:
             if self._error:
                 raise self._error
             if self._closed:
-                raise RuntimeError("Joint-control scope closed before acknowledging the target")
+                raise RuntimeError("Control scope closed before acknowledging the target")
             changed = self._changed
             await changed.wait()
         return self.operation
@@ -182,7 +173,7 @@ class AsyncJointControl:
                 if self._closed:
                     break
                 version = self._version
-                await self._send(dict(self._positions), self._speed)
+                await self._send(self._target)
                 self._acknowledged = version
                 self._notify()
         except asyncio.CancelledError:
@@ -247,3 +238,62 @@ class AsyncJointControl:
             raise self._error
         if self.cleanup_error:
             raise self.cleanup_error
+
+
+class AsyncJointControl(AsyncControlScope):
+    name = "joint control"
+
+    def __init__(
+        self, nao: AsyncNao, positions: dict[str, float], *, speed: float | None, ttl: float | None
+    ):
+        super().__init__(nao, {"positions": dict(positions), "speed": speed}, ttl=ttl)
+
+    async def _dispatch(self, target: dict[str, Any]) -> AsyncOperation:
+        return await self._nao.motion.set_joint_targets(
+            target["positions"],
+            control_id=self.id,
+            sequence=self._sequence,
+            speed=target["speed"],
+            ttl=self._ttl,
+        )
+
+    async def set_targets(
+        self, positions: dict[str, float], *, speed: float | None = None
+    ) -> AsyncOperation:
+        self._check_active()
+        if set(positions) != set(self._target["positions"]):
+            raise ValueError("Supply the complete fixed joint set")
+        require_finite([*positions.values(), *([speed] if speed is not None else [])])
+        if speed is not None and not 0 < speed <= 1:
+            raise ValueError("Speed must be in (0, 1]")
+        return await self._publish(
+            {
+                "positions": dict(positions),
+                "speed": self._target["speed"] if speed is None else speed,
+            }
+        )
+
+
+class AsyncVelocityControl(AsyncControlScope):
+    name = "velocity control"
+
+    def __init__(self, nao: AsyncNao, *, x: float, y: float, yaw: float, ttl: float | None):
+        super().__init__(nao, {"x": x, "y": y, "yaw": yaw}, ttl=ttl)
+
+    async def _dispatch(self, target: dict[str, Any]) -> AsyncOperation:
+        return await self._nao.motion.set_velocity(
+            **target, control_id=self.id, sequence=self._sequence, ttl=self._ttl
+        )
+
+    async def set_velocity(self, *, x: float = 0, y: float = 0, yaw: float = 0) -> AsyncOperation:
+        self._check_active()
+        require_finite([x, y, yaw])
+        return await self._publish({"x": x, "y": y, "yaw": yaw})
+
+
+def require_finite(values: list[float]) -> None:
+    if any(
+        isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v)
+        for v in values
+    ):
+        raise ValueError("Control targets must be finite numbers")

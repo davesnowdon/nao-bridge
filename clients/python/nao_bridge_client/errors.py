@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .models import ListenerData, OperationData, RecordingData
+from .models import (
+    ListenerData,
+    OperationData,
+    RecordingData,
+    SensorObserverData,
+    VisionObserverData,
+)
 
 
 class BridgeError(Exception):
@@ -39,6 +45,46 @@ class SessionLost(BridgeError):
 class StaleState(BridgeError):
     def __init__(self, groups: list[str]):
         super().__init__("stale_state", "Fresh state is unavailable", details={"groups": groups})
+
+
+class SensorObserverTimeout(TimeoutError):
+    def __init__(self, observer_id: str):
+        self.observer_id = observer_id
+        super().__init__("Local wait timed out; sensor observer was not stopped: " + observer_id)
+
+
+class SensorObserverError(BridgeError):
+    def __init__(self, observer: SensorObserverData):
+        self.observer = observer
+        self.observer_id = observer.id
+        error = observer.error
+        super().__init__(
+            error.code if error else "sensor_observer_ended",
+            error.message if error else "Sensor observer ended before readiness",
+            details=error.details
+            if error
+            else {"observer_id": observer.id, "status": observer.status},
+        )
+
+
+class VisionObserverTimeout(TimeoutError):
+    def __init__(self, observer_id: str):
+        self.observer_id = observer_id
+        super().__init__("Local wait timed out; vision observer was not stopped: " + observer_id)
+
+
+class VisionObserverError(BridgeError):
+    def __init__(self, observer: VisionObserverData):
+        self.observer = observer
+        self.observer_id = observer.id
+        error = observer.error
+        super().__init__(
+            error.code if error else "vision_observer_ended",
+            error.message if error else "Vision observer ended before readiness",
+            details=error.details
+            if error
+            else {"observer_id": observer.id, "status": observer.status},
+        )
 
 
 class ListenerTimeout(TimeoutError):
