@@ -7,7 +7,7 @@ from collections.abc import Coroutine
 from typing import Any, Generic, Literal, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .controls import AsyncJointControl
+from .controls import AsyncControlScope, AsyncJointControl, AsyncVelocityControl
 from .listeners import AsyncListener
 from .models import (
     AssetData,
@@ -35,6 +35,8 @@ from .trajectory import Trajectory
 
 T = TypeVar("T")
 SyncObserver = TypeVar("SyncObserver", bound="_Observer[Any]")
+NativeScope = TypeVar("NativeScope", bound=AsyncControlScope)
+SyncScope = TypeVar("SyncScope", bound="_ControlScope[Any]")
 
 
 class Nao:
@@ -247,6 +249,32 @@ class Motion:
     ) -> JointControl:
         return JointControl(
             self._nao, self._nao._async.motion.joint_control(positions, speed=speed, ttl=ttl)
+        )
+
+    def set_velocity(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        control_id: str | None = None,
+        sequence: int = 0,
+        ttl: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.set_velocity(
+                    x=x, y=y, yaw=yaw, control_id=control_id, sequence=sequence, ttl=ttl
+                )
+            ),
+        )
+
+    def velocity(
+        self, *, x: float = 0, y: float = 0, yaw: float = 0, ttl: float | None = None
+    ) -> VelocityControl:
+        return VelocityControl(
+            self._nao, self._nao._async.motion.velocity(x=x, y=y, yaw=yaw, ttl=ttl)
         )
 
     def wake(
@@ -903,8 +931,8 @@ class Operations:
         return {**result, "items": [Operation(self._nao, item) for item in result["items"]]}
 
 
-class JointControl:
-    def __init__(self, nao: Nao, control: AsyncJointControl):
+class _ControlScope(Generic[NativeScope]):
+    def __init__(self, nao: Nao, control: NativeScope):
         self._nao, self._async = nao, control
 
     @property
@@ -927,20 +955,27 @@ class JointControl:
     def closed(self) -> bool:
         return self._async.closed
 
-    def __enter__(self) -> JointControl:
+    def __enter__(self: SyncScope) -> SyncScope:
         self._nao._run(self._async.__aenter__())
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
 
-    def set_targets(self, positions: dict[str, float], *, speed: float | None = None) -> Operation:
-        return Operation(self._nao, self._nao._run(self._async.set_targets(positions, speed=speed)))
-
     def close(self) -> None:
         if self._nao._loop is None and self.closed:
             return
         self._nao._run(self._async.close())
+
+
+class JointControl(_ControlScope[AsyncJointControl]):
+    def set_targets(self, positions: dict[str, float], *, speed: float | None = None) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.set_targets(positions, speed=speed)))
+
+
+class VelocityControl(_ControlScope[AsyncVelocityControl]):
+    def set_velocity(self, *, x: float = 0, y: float = 0, yaw: float = 0) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.set_velocity(x=x, y=y, yaw=yaw)))
 
 
 class Operation:

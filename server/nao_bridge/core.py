@@ -18,7 +18,7 @@ from .events import EventBuffer, Subscription
 from .face_observers import CHANGED as FACE_OBSERVER_CHANGED
 from .face_observers import DETECTIONS, MAX_HISTORY, MAX_OBSERVERS, FaceObservers
 from .joint_controls import KIND as CONTROL_KIND
-from .joint_controls import JointControls
+from .joint_controls import VELOCITY_KIND, JointControls, VelocityControls
 from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
 from .recordings import KIND as RECORDING_KIND
@@ -43,7 +43,8 @@ ORDINARY_KINDS = {
     "motion.trajectory_run",
     "autonomy.transition",
 } | MOTION_ACTIONS
-NATIVE_KINDS = ORDINARY_KINDS | {CONTROL_KIND}
+CONTROL_KINDS = {CONTROL_KIND, VELOCITY_KIND}
+NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS
 MOTION_KINDS = NATIVE_KINDS - {"speech.utterance"}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
@@ -127,6 +128,11 @@ class Core:
         self.configuration_owners: dict[str, str] = {}
         self.pending_replacements: dict[str, str] = {}
         self.joint_controls = JointControls(self)
+        self.velocity_controls = VelocityControls(self)
+        self.control_lifetimes = {
+            CONTROL_KIND: self.joint_controls,
+            VELOCITY_KIND: self.velocity_controls,
+        }
         self.listeners = Listeners(self)
         self.sensor_observers = SensorObservers(self)
         self.face_observers = FaceObservers(self)
@@ -255,6 +261,10 @@ class Core:
             self.sensor_observers.observation(data)
         elif kind == "faces.detections":
             self.face_observers.observation(data)
+        elif kind == "velocity_control.changed":
+            operation = self.operations.get(data.get("operation_id", ""))
+            if operation and operation.public["kind"] == VELOCITY_KIND:
+                self.velocity_controls.reconcile(operation, data, stopping=True)
         elif kind == "sample":
             if self.connection != "connected":
                 return
@@ -355,6 +365,16 @@ class Core:
                 "motion.moves": feature(
                     available and self.info.get("locomotion", {}).get("available", False)
                 ),
+                "motion.velocity": {
+                    "status": "available"
+                    if available and self.info.get("velocity_control", {}).get("available")
+                    else "unavailable",
+                    "reason": None
+                    if available and self.info.get("velocity_control", {}).get("available")
+                    else self.info.get("velocity_control", {}).get(
+                        "reason", "not_connected_or_discovered"
+                    ),
+                },
                 "motion.stop": feature(available and bool(self.info.get("locomotion"))),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "motion.posture_changed": feature(
@@ -442,6 +462,7 @@ class Core:
                 "max_vision_observer_history": MAX_HISTORY,
                 "max_thresholds_per_subscription": MAX_RULES,
                 "max_joint_controls": 4,
+                "max_velocity_controls": 1,
                 "max_joint_control_ids": 4096,
                 "joint_control_default_ttl": 0.5,
                 "joint_control_max_ttl": 1.0,
@@ -454,6 +475,11 @@ class Core:
             "sonar": copy.deepcopy(self.info.get("sonar", {})),
             "faces": copy.deepcopy(self.info.get("faces", {})),
             "locomotion": copy.deepcopy(self.info.get("locomotion", {})),
+            **(
+                {"velocity_control": copy.deepcopy(self.info["velocity_control"])}
+                if "velocity_control" in self.info
+                else {}
+            ),
             "motion_events": copy.deepcopy(
                 self.info.get("motion_events", {"posture_fields": [], "fall_phases": []})
             ),
@@ -1326,7 +1352,7 @@ class Core:
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 result = await self.backend.stop(operation_id=op.public["id"])
-                result = await self.joint_controls.settle_stop(result, [op])
+                result = await self.settle_control_stops(result, [op])
             if self.stop_confirmed(op, result):
                 self.finish_stopped(op, result)
                 return True
@@ -1334,15 +1360,24 @@ class Core:
                 self.finish(
                     op,
                     "unknown",
+                    op.public.get("result"),
                     error=BridgeError("stop_unconfirmed", "Native cancellation unconfirmed", 503),
                 )
         except Exception:
             self.finish(
                 op,
                 "unknown",
+                op.public.get("result"),
                 error=BridgeError("stop_unconfirmed", "Cancellation response unavailable", 503),
             )
         return False
+
+    async def settle_control_stops(
+        self, stopped: dict[str, Any], operations: list[Operation]
+    ) -> dict[str, Any]:
+        for manager in self.control_lifetimes.values():
+            await manager.settle_stop(stopped, operations)
+        return stopped
 
     def stop_confirmed(self, op: Operation, stopped: dict[str, Any]) -> bool:
         # A fresh agent's early-stop tombstone cannot establish an old native outcome.
@@ -1352,21 +1387,20 @@ class Core:
         )
 
     def finish_stopped(self, op: Operation, stopped: dict[str, Any]) -> None:
-        control = stopped.get("controls", {}).get(op.public["id"])
-        if op.public["kind"] == CONTROL_KIND:
+        manager = self.control_lifetimes.get(op.public["kind"])
+        if manager:
+            control = stopped.get(manager.stop_field, {}).get(op.public["id"])
             if control:
-                self.joint_controls.reconcile(op, control, stopping=True)
+                manager.reconcile(op, control, stopping=True)
             else:
-                record = self.joint_controls.records[
-                    (op.public["session_id"], op.public["control"]["id"])
-                ]
+                record = manager.records[(op.public["session_id"], op.public["control"]["id"])]
                 self.finish(
                     op,
                     "succeeded" if record.expired else "cancelled",
                     {
-                        "reason": "joint_control_expired" if record.expired else "cancelled",
+                        "reason": manager.expiry_reason if record.expired else "cancelled",
                         "dispatched": False,
-                        "hold": {"required": False, "confirmed": True},
+                        manager.result_field: {"required": False, "confirmed": True},
                     },
                 )
             return
@@ -1423,27 +1457,25 @@ class Core:
         for op in affected:
             if op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
-            elif op.public["kind"] == CONTROL_KIND and op.public["status"] == "running":
+            elif op.public["kind"] in CONTROL_KINDS and op.public["status"] == "running":
                 self.update(op, status="cancelling")
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 fenced = await self.backend.fence(sid)
                 stopped = await self.backend.stop(session_id=sid)
-                stopped = await self.joint_controls.settle_stop(stopped, affected)
+                stopped = await self.settle_control_stops(stopped, affected)
         except Exception:
             fenced = False
             stopped = {"confirmed_ids": [], "unresolved_ids": []}
-        controls_released = True
-        if (
-            force
-            and fenced
-            and any(op.public["kind"] == CONTROL_KIND and not op.released for op in affected)
-        ):
-            try:
-                async with asyncio.timeout(self.settings.backend_timeout_seconds):
-                    await self.backend.release_joint_controls(sid)
-            except Exception:
-                controls_released = False
+        unreleased_controls = set()
+        if force and fenced:
+            for kind, manager in self.control_lifetimes.items():
+                if any(op.public["kind"] == kind and not op.released for op in affected):
+                    try:
+                        async with asyncio.timeout(self.settings.backend_timeout_seconds):
+                            await manager.release(sid)
+                    except Exception:
+                        unreleased_controls.add(kind)
         unresolved = []
         for op in affected:
             if op.released or op.public["kind"] in ("session.close", "session.revoke"):
@@ -1457,7 +1489,7 @@ class Core:
                     "unknown",
                     error=BridgeError("cleanup_unconfirmed", "Native work may continue", 503),
                 )
-                if force and fenced and (op.public["kind"] != CONTROL_KIND or controls_released):
+                if force and fenced and op.public["kind"] not in unreleased_controls:
                     op.released = True
                     if op.public["kind"] == "speech.utterance":
                         self.listeners.end_output(op.public["id"])
@@ -1495,7 +1527,7 @@ class Core:
             "unresolved_vision_observer_ids": unresolved_vision,
             "force_release": force
             and fenced
-            and controls_released
+            and not unreleased_controls
             and listeners_released
             and observers_released
             and vision_released
@@ -1556,7 +1588,7 @@ class Core:
 
     @staticmethod
     def motion_stop_matches(scope: str | None, kind: str) -> bool:
-        return kind in MOTION_KINDS if scope == "all" else kind == "motion.move"
+        return kind in MOTION_KINDS if scope == "all" else kind in {"motion.move", VELOCITY_KIND}
 
     def stop_pending(self, kind: str | None = None) -> bool:
         return self.closing or any(
@@ -1581,11 +1613,11 @@ class Core:
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
-            elif op.public["kind"] == CONTROL_KIND and op.public["status"] == "running":
+            elif op.public["kind"] in CONTROL_KINDS and op.public["status"] == "running":
                 self.update(op, status="cancelling")
         async with asyncio.timeout(self.settings.backend_timeout_seconds):
             stopped = await self.backend.stop()
-            stopped = await self.joint_controls.settle_stop(stopped, list(self.operations.values()))
+            stopped = await self.settle_control_stops(stopped, list(self.operations.values()))
         for op in list(self.operations.values()):
             if op.public["kind"] not in NATIVE_KINDS or op.released:
                 continue
@@ -1657,7 +1689,7 @@ class Core:
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
                 result = await self.backend.stop(motion_scope=scope, operation_ids=ids)
-                result = await self.joint_controls.settle_stop(result, affected)
+                result = await self.settle_control_stops(result, affected)
         except Exception:
             result = {"confirmed_ids": [], "unresolved_ids": []}
         for op in affected:
@@ -1987,7 +2019,8 @@ class Core:
 
     def forget_session(self, sid: str) -> None:
         session = self.sessions.pop(sid)
-        self.joint_controls.forget_session(sid)
+        for manager in self.control_lifetimes.values():
+            manager.forget_session(sid)
         for oid in session.stop_operation_ids.values():
             self.forget_operation(oid)
         for key, record in list(self.keys.items()):

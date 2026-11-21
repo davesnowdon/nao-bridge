@@ -1,4 +1,4 @@
-# Using contract 1.8.0 over HTTP
+# Using contract 1.9.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -158,7 +158,8 @@ move call. An unconfirmed result retains the reservation with status `unknown`.
 Hardware stop timing and distance require acceptance on each robot model.
 
 `POST /api/motion/stop` accepts `{}` for the default `locomotion` scope,
-or `{"scope":"all"}` to stop walking, joint commands and joint controls.
+which includes finite moves and velocity leases. Use `{"scope":"all"}`
+to include other joint motion and joint controls.
 Both scopes can stop motion owned by another session. They leave speech,
 managed sensor sources and recordings running. The all-motion scope requests
 joint hold where a joint control requires it and preserves stiffness.
@@ -310,6 +311,44 @@ Python supplies `motion.set_joint_targets(positions, control_id=..., sequence=..
 for a single update and `motion.joint_control(positions, speed=..., ttl=...)` for a
 scope that manages identity, ordering, refresh and cancellation. Both sync and async
 clients use the same route. See the [client lifecycle](../clients/python/README.md#joint-controls).
+
+## Velocity control
+
+Check `features["motion.velocity"]` and the `velocity_control` capability
+metadata. This feature is available in the software fixtures. Physical robots
+report `hardware_velocity_stop_unverified` until measured acceptance passes.
+
+```http
+PUT /api/motion/velocity
+X-Session-ID: <session-id>
+Content-Type: application/json
+
+{"control_id":"drive","sequence":0,"x":0.05,"y":0,"yaw":0.2,"ttl":0.5}
+```
+
+The target is robot-relative. `x` is forward and `y` is left in m/s. `yaw` is
+counterclockwise in rad/s. Supply a full target on each update. A missing axis
+defaults to zero. The initial fixture bounds are a planar speed norm of
+0.10 m/s and a yaw rate magnitude of 0.40 rad/s. A live session and fresh,
+awake and stiff motion state are required to start.
+
+Sequence zero creates one `motion.velocity_control` Operation that reserves
+locomotion and the body joints. Each PUT returns 202 with the same operation
+ID and current `control` metadata. Greater sequences replace the pending
+target. An identical duplicate leaves expiry unchanged. Changed duplicates
+and older sequences are rejected. Omitted TTL is 0.5 seconds and the maximum
+is 1 second. Session renewal has its own deadline.
+
+Cancel the operation or call `POST /api/motion/stop` for a controlled stop.
+The agent also stops on setpoint expiry or loss of API heartbeat authority.
+An expired operation completes with `result.reason: "velocity_expired"` once
+the stop is confirmed. For a dispatched target, `result.stop` reports
+`mechanism: "stopMove"`, `confirmed`, and `native_inactive`. A late native write
+can require another stop before ownership is released. Poll the original
+operation if its outcome is `unknown`. Only a confirmed outcome on the same
+connection or explicit fenced recovery releases quarantine. An ended control
+ID cannot be reused. Loss of the agent, container, or robot link can prevent a
+stop attempt.
 
 ## Absolute joint moves and trajectories
 

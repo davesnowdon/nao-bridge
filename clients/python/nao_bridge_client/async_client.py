@@ -15,7 +15,7 @@ import httpx
 from pydantic import ValidationError
 
 from .assets import AsyncAssets
-from .controls import AsyncJointControl
+from .controls import AsyncControlScope, AsyncJointControl, AsyncVelocityControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
@@ -111,7 +111,7 @@ class AsyncNao:
         self._lost: SessionLost | None = None
         self._session_lock = asyncio.Lock()
         self._subscriptions: set[AsyncSubscription] = set()
-        self._controls: set[AsyncJointControl] = set()
+        self._controls: set[AsyncControlScope] = set()
         self.last_pending_request: PendingRequest | None = None
         self.cleanup_error: Exception | None = None
         self.robot = AsyncRobot(self)
@@ -655,48 +655,84 @@ class AsyncMotion:
         ttl: float | None = None,
     ) -> AsyncOperation:
         """Send one target only. Reuse its control ID with a newer sequence to update it."""
+        target: dict[str, Any] = {"positions": dict(positions)}
+        if speed is not None:
+            target["speed"] = speed
+        return await self._set_control(
+            "joint_setpoints", "motion.joint_control", target, control_id, sequence, ttl
+        )
+
+    async def set_velocity(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        control_id: str | None = None,
+        sequence: int = 0,
+        ttl: float | None = None,
+    ) -> AsyncOperation:
+        """Send one complete robot-frame velocity target, in m/s and rad/s."""
+        return await self._set_control(
+            "velocity",
+            "motion.velocity_control",
+            {"x": x, "y": y, "yaw": yaw},
+            control_id,
+            sequence,
+            ttl,
+        )
+
+    async def _set_control(
+        self,
+        route: str,
+        kind: str,
+        target: dict[str, Any],
+        control_id: str | None,
+        sequence: int,
+        ttl: float | None,
+    ) -> AsyncOperation:
         if control_id is None and sequence != 0:
             raise ValueError("A nonzero sequence requires an existing control ID")
         session = await self._nao._ensure_session()
         cid = control_id if control_id is not None else uuid.uuid4().hex
-        body: dict[str, Any] = {
-            "control_id": cid,
-            "sequence": sequence,
-            "positions": dict(positions),
-        }
-        if speed is not None:
-            body["speed"] = speed
+        body: dict[str, Any] = {"control_id": cid, "sequence": sequence, **target}
         if ttl is not None:
             body["ttl"] = ttl
-        data = decode(
-            OperationData,
-            await self._nao._request(
-                "PUT", "/api/motion/joint_setpoints", body=body, session_id=session.id
-            ),
-        )
+        try:
+            value = await self._nao._request(
+                "PUT", "/api/motion/" + route, body=body, session_id=session.id
+            )
+        except BridgeError as exc:
+            if exc.code != "transport_error":
+                raise
+            raise BridgeError(
+                "control_outcome_unknown", "Control acknowledgement was lost"
+            ) from exc
+        data = decode(OperationData, value)
         if (
             data.session_id != session.id
             or data.bridge_instance_id != session.bridge_instance_id
             or data.connection_generation != session.connection_generation
         ):
-            raise self._nao._lose(
-                "Joint-control response belongs to a different session or connection"
-            )
+            raise self._nao._lose("Control response belongs to a different session or connection")
         if (
-            data.kind != "motion.joint_control"
+            data.kind != kind
             or data.control is None
             or data.control.id != cid
             or data.control.sequence != sequence
         ):
-            raise ProtocolError(
-                "Joint-control response does not match the submitted identity/sequence"
-            )
+            raise ProtocolError("Control response does not match the submitted identity/sequence")
         return AsyncOperation(self._nao, data)
 
     def joint_control(
         self, positions: dict[str, float], *, speed: float | None = None, ttl: float | None = None
     ) -> AsyncJointControl:
         return AsyncJointControl(self._nao, positions, speed=speed, ttl=ttl)
+
+    def velocity(
+        self, *, x: float = 0, y: float = 0, yaw: float = 0, ttl: float | None = None
+    ) -> AsyncVelocityControl:
+        return AsyncVelocityControl(self._nao, x=x, y=y, yaw=yaw, ttl=ttl)
 
     async def wake(
         self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None

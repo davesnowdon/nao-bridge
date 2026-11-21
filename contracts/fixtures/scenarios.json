@@ -243,6 +243,28 @@
       "nondeterminism": [
         "opaque IDs, native image timestamps, and callback ordering"
       ]
+    },
+    {
+      "name": "owned velocity expiry and controlled stop",
+      "steps": [
+        "check motion.velocity capability and fresh joint and motion state",
+        "PUT sequence zero with a complete robot-frame target",
+        "PUT a newer sequence, repeat it, then send an older sequence",
+        "leave the session live and stop sending targets",
+        "read the terminal operation and try to renew its control ID"
+      ],
+      "expected": [
+        "software fixtures advertise velocity; hardware remains gated",
+        "locomotion and body joints are reserved by one operation",
+        "the newer sequence keeps the operation ID and the duplicate keeps its expiry",
+        "the older update is rejected with stale_sequence",
+        "velocity_expired succeeds only after confirmed controlled stop",
+        "the ended ID is rejected with control_ended"
+      ],
+      "nondeterminism": [
+        "opaque operation ID and accepted expiry timestamp",
+        "any unconfirmed stop keeps locomotion reserved and reports unknown"
+      ]
     }
   ]
 }

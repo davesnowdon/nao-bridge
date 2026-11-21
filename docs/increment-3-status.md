@@ -16,7 +16,7 @@ are unchanged. This document tracks further robot-free work against the full
 | Threshold/hysteresis observations | Shared battery and sonar feed, per-subscription hysteresis, SSE schema and both SDKs implemented | Live source behavior pending |
 | Camera discovery and still capture | Native adapter, bounded RGB transfer, PNG assets, HTTP and both Python SDKs implemented | Both firmware generations pending |
 | Managed face observation | Owned native source, shared HTTP lifecycle, SSE and both Python SDKs implemented | Both firmware generations pending |
-| Owned velocity controls, independent expiry and controlled stop | Agent and private IPC implemented. HTTP and SDK integration pending | Native hardware remains gated pending measured stop and expiry |
+| Owned velocity controls, independent expiry and controlled stop | Agent, private IPC, HTTP lifecycle, raw conformance and both Python SDKs implemented | Native hardware remains gated pending measured stop and expiry |
 | Public-API Wanderer reference application | Pending | Pending |
 
 The passive adapter discovers native memory keys once per connection, then adds
@@ -131,3 +131,15 @@ The pinned SDK fixture verified ordered updates, expiry and scoped stop with
 four ordinary command workers occupied. A separate agent watchdog check
 confirmed the stop after heartbeat authority loss. The late-write and
 stop-order regressions ran in the host test suite.
+
+Contract 1.9.0 exposes one owned `PUT /api/motion/velocity` operation in the
+software fixtures. The HTTP and SDK layers share the joint-control ordering and
+scoped lifetime machinery. Fixture verification covers conflicting owners,
+cancel, session cleanup, same-generation confirmation after an unknown stop,
+lost acknowledgements and expiry with eight SSE streams attached.
+
+`make check` passed lint, types, 588 server/integration tests and 47 SDK tests.
+The final fixture adjustments passed 46 focused HTTP and control tests. The
+native suite verified the HTTP expiry result, the agent heartbeat watchdog
+and controlled stop with occupied command workers. The schema compatibility
+guard passed against the preceding contract and the PR #37 base.

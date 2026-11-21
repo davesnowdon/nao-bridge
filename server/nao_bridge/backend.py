@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from .camera_frames import CAMERA_SIZES
 from .contract import CONTACTS, PASSIVE_SENSORS
 from .errors import BackendUnknown, BridgeError
-from .fake_controls import FakeControls
+from .fake_controls import FakeControls, FakeVelocityControls
 
 EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -41,6 +41,13 @@ class Backend(Protocol):
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
+    async def velocity_setpoint(
+        self, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
+    async def velocity_control_status(
+        self, session_id: str, operation_id: str
+    ) -> dict[str, Any]: ...
+    async def release_velocity_controls(self, session_id: str) -> dict[str, Any]: ...
     async def stop(
         self,
         operation_id: str | None = None,
@@ -67,6 +74,7 @@ class FakeBackend:
         self.calls: list[dict[str, Any]] = []
         self.autonomy_results: dict[str, dict[str, Any]] = {}
         self.controls = FakeControls(self)
+        self.velocity_controls = FakeVelocityControls(self)
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
         self.motion_stop_ids: deque[str] = deque(maxlen=4096)
         self.revoked: set[str] = set()
@@ -177,6 +185,9 @@ class FakeBackend:
         self.samples_task = asyncio.create_task(self._samples())
 
     async def connection(self, connected: bool) -> None:
+        if not connected:
+            self.velocity_controls.invalidate()
+            self.motion_state["locomotion_active"] = False
         self.connected = connected
         self.faces = None
         self.motion_state["odometry"] = {
@@ -246,6 +257,15 @@ class FakeBackend:
                     "joint_controls": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
+                    },
+                    "velocity_control": {
+                        "available": connected,
+                        "reason": None if connected else "disconnected",
+                        "frame": "robot",
+                        "max_ttl": 1.0,
+                        "default_ttl": 0.5,
+                        "max_translation_m_s": 0.10,
+                        "max_rotation_rad_s": 0.40,
                     },
                     "cameras": [
                         {
@@ -617,6 +637,16 @@ class FakeBackend:
             if motion_scope == "locomotion"
             else await self.controls.stop(operation_id, session_id)
         )
+        velocity_ids = {
+            oid for oid, record in self.velocity_controls.records.items() if not record["released"]
+        } | set(operation_ids or [])
+        if operation_id is not None:
+            velocity_ids.add(operation_id)
+        velocity = {
+            oid: record
+            for oid, record in (await self.velocity_controls.stop(operation_id, session_id)).items()
+            if oid in velocity_ids
+        }
         selected = (
             {
                 call["id"]
@@ -638,10 +668,13 @@ class FakeBackend:
             and (motion_scope is None or key in selected)
         ]
         confirmed = self.connected and self.stop_confirmed
+        velocity_clear = all(record["released"] for record in velocity.values())
         scope_result = (
             {
-                "locomotion_confirmed": confirmed,
-                "joint_stop_confirmed": confirmed if motion_scope == "all" else None,
+                "locomotion_confirmed": confirmed and velocity_clear,
+                "joint_stop_confirmed": confirmed
+                if motion_scope == "all" and velocity_clear
+                else None,
             }
             if motion_scope
             else {}
@@ -650,9 +683,15 @@ class FakeBackend:
             return {
                 "confirmed_ids": [],
                 "unresolved_ids": list(
-                    set(matched + list(controls) + ([operation_id] if operation_id else []))
+                    set(
+                        matched
+                        + list(controls)
+                        + list(velocity)
+                        + ([operation_id] if operation_id else [])
+                    )
                 ),
                 "controls": controls,
+                "velocity_controls": velocity,
                 **scope_result,
             }
         if motion_scope:
@@ -671,13 +710,16 @@ class FakeBackend:
                 )
             )
         ]
-        unresolved = {oid for oid, value in controls.items() if not value["released"]}
+        unresolved = {
+            oid for oid, value in {**controls, **velocity}.items() if not value["released"]
+        }
         return {
             "confirmed_ids": list(
                 set(
                     matched
                     + completed
                     + list(controls)
+                    + list(velocity)
                     + (operation_ids or [])
                     + ([operation_id] if operation_id else [])
                 )
@@ -685,6 +727,7 @@ class FakeBackend:
             ),
             "unresolved_ids": list(unresolved),
             "controls": controls,
+            "velocity_controls": velocity,
             "results": {key: self.autonomy_results[key] for key in completed},
             **scope_result,
         }
@@ -700,6 +743,17 @@ class FakeBackend:
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]:
         return await self.controls.release(session_id)
 
+    async def velocity_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload["operation_id"] in self.motion_stop_ids:
+            raise BridgeError("control_ended", "Velocity was stopped before dispatch", 409)
+        return await self.velocity_controls.submit(session_id, payload)
+
+    async def velocity_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]:
+        return await self.velocity_controls.status(session_id, operation_id)
+
+    async def release_velocity_controls(self, session_id: str) -> dict[str, Any]:
+        return await self.velocity_controls.release(session_id)
+
     async def fence(self, session_id: str) -> bool:
         if not self.connected or not self.fence_confirmed:
             return False
@@ -711,6 +765,7 @@ class FakeBackend:
 
     async def close(self) -> None:
         await self.controls.close()
+        await self.velocity_controls.close()
         if self.samples_task:
             self.samples_task.cancel()
             await asyncio.gather(self.samples_task, return_exceptions=True)

@@ -52,6 +52,7 @@ asyncio.run(main())
 | `motion.stop(scope=...)` | Stops locomotion or all motion across sessions, leaving other activities running |
 | `motion.set_joint_targets(...)` | One ordered target update; no background refresh |
 | `motion.joint_control(...)` | Scoped latest-target refresh and cancellation on exit |
+| `motion.set_velocity(...)`, `motion.velocity(...)` | One-shot or scoped robot-frame velocity leases with controlled stop |
 | `autonomy.configure(...)`, `.state(...)` | Explicit discovered settings and observed values |
 | `operations.get(id)`, `operations.list(...)` | Retained operation history for this session |
 | `operation.refresh()`, `.wait(timeout=...)`, `.cancel(wait=...)` | Authoritative status, bounded local wait, explicit cancellation |
@@ -216,6 +217,26 @@ An omitted ID generates a new ID with sequence zero. To update that control, sup
 its ID and a greater sequence yourself. This path sends once and lets TTL expire;
 it has no `wait` parameter. Use the returned operation's ordinary wait/refresh
 methods if needed. Identical duplicate updates never extend server expiry.
+
+## Velocity control
+
+```python
+from nao_bridge_client import Nao
+
+with Nao("http://localhost:3000") as nao:
+    if nao.robot.capabilities().features["motion.velocity"].status == "available":
+        with nao.motion.velocity(x=0.05, ttl=0.5) as drive:
+            drive.set_velocity(y=-0.03, yaw=0.15)
+```
+
+Velocity scopes manage the control ID, sequence, refresh and cancellation.
+Each setpoint is a complete target in robot-frame m/s and rad/s. The raw
+`motion.set_velocity(...)` sends one update, returning an operation handle.
+Use the same control ID and a greater sequence to update it. The scope's
+operation reports expiry, controlled stop, or an unknown result. A lost
+acknowledgement raises `BridgeError` with code `control_outcome_unknown`.
+With `AsyncNao` use `async with nao.motion.velocity(...)` and await updates.
+Check capabilities first. Physical velocity remains gated.
 
 ## Vocabulary listeners
 

@@ -57,6 +57,7 @@ class Capabilities(WireModel):
     sonar: dict[str, Any] = Field(default_factory=dict)
     faces: dict[str, Any] = Field(default_factory=dict)
     locomotion: dict[str, Any] = Field(default_factory=dict)
+    velocity_control: dict[str, Any] = Field(default_factory=dict)
 
 
 class Sensor(WireModel):

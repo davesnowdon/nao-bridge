@@ -848,6 +848,8 @@ try:
             latencies.append((time.monotonic() - start) * 1000)
             assert observers[0].wait(op)["status"] == "succeeded"
         assert max(latencies) < 250, latencies
+        observers[0].velocity_control()
+        print("Native HTTP velocity expiry passed with eight attached SSE streams", flush=True)
         print(
             json.dumps({"native_fixture_streams": 8, "command_acceptance_ms": latencies}),
             flush=True,

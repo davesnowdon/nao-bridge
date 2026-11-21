@@ -297,6 +297,29 @@ class Probe:
             self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
         stop(observers[1])
 
+    def velocity_control(self):
+        path = "/api/motion/velocity"
+        self.request(
+            "GET", "/api/state?include=joints,motion&wait_for_fresh_ms=1000", schema="State"
+        )
+        payload = {"control_id": "raw-velocity", "sequence": 0, "x": 0.05, "ttl": 0.75}
+        first = self.request("PUT", path, payload, status=202, schema="Operation")
+        assert first["kind"] == "motion.velocity_control" and "locomotion" in first["resources"]
+        update = {**payload, "sequence": 1, "x": 0.06, "y": -0.02}
+        accepted = self.request("PUT", path, update, status=202, schema="Operation")
+        duplicate = self.request("PUT", path, update, status=202, schema="Operation")
+        assert accepted["id"] == duplicate["id"] == first["id"]
+        assert accepted["control"]["expires_at"] == duplicate["control"]["expires_at"]
+        old = self.request("PUT", path, payload, status=409, schema="Error")
+        assert old["error"]["code"] == "stale_sequence"
+        ended = self.wait(first)
+        assert ended["status"] == "succeeded", ended
+        result = ended["result"]
+        assert result["reason"] == "velocity_expired" and result["stop"]["confirmed"]
+        assert result["dispatched_sequence"] == 1
+        rejected = self.request("PUT", path, {**update, "sequence": 2}, status=409, schema="Error")
+        assert rejected["error"]["code"] == "control_ended"
+
     def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
         conn = self.connection(timeout=3)
         headers = {
@@ -383,6 +406,7 @@ def run(url):
     capabilities = probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
     captures = capabilities["features"]["vision.captures"]["status"] == "available"
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
+    velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
     sensor_state = probe.request(
         "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
     )
@@ -432,6 +456,8 @@ def run(url):
     try:
         probe.sensor_observers()
         probe.threshold_subscription()
+        if velocity:
+            probe.velocity_control()
         if captures:
             probe.camera_capture()
         if faces:
@@ -589,7 +615,8 @@ def run(url):
             "cleanup",
         ]
         + (["camera_capture_and_download"] if captures else [])
-        + (["vision_observer_sharing_and_detections"] if faces else []),
+        + (["vision_observer_sharing_and_detections"] if faces else [])
+        + (["ordered_velocity_expiry"] if velocity else []),
     }
 
 

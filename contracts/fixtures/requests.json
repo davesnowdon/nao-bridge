@@ -408,6 +408,35 @@
         "camera": null
       },
       "valid": false
+    },
+    {
+      "schema": "VelocitySetpoint",
+      "value": {
+        "control_id": "turn",
+        "sequence": 0,
+        "yaw": -0.2
+      },
+      "valid": true
+    },
+    {
+      "schema": "VelocitySetpoint",
+      "value": {
+        "control_id": "turn",
+        "sequence": 1,
+        "x": 0.02,
+        "y": -0.02,
+        "ttl": 0.35
+      },
+      "valid": true
+    },
+    {
+      "schema": "VelocitySetpoint",
+      "value": {
+        "control_id": "turn",
+        "sequence": true,
+        "x": 0.02
+      },
+      "valid": false
     }
   ]
 }

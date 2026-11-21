@@ -491,6 +491,9 @@
         "locomotion": {
           "type": "object",
           "additionalProperties": true
+        },
+        "velocity_control": {
+          "$ref": "#/$defs/VelocityControlCapability"
         }
       },
       "required": [
@@ -3950,6 +3953,99 @@
         "frame",
         "source_time",
         "faces"
+      ],
+      "additionalProperties": true
+    },
+    "VelocitySetpoint": {
+      "type": "object",
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "x": {
+          "type": "number",
+          "minimum": -0.1,
+          "maximum": 0.1,
+          "default": 0,
+          "description": "Forward velocity in metres per second."
+        },
+        "y": {
+          "type": "number",
+          "minimum": -0.1,
+          "maximum": 0.1,
+          "default": 0,
+          "description": "Leftward velocity in metres per second."
+        },
+        "yaw": {
+          "type": "number",
+          "minimum": -0.4,
+          "maximum": 0.4,
+          "default": 0,
+          "description": "Counterclockwise angular velocity in radians per second."
+        },
+        "ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        }
+      },
+      "required": [
+        "control_id",
+        "sequence"
+      ],
+      "additionalProperties": false
+    },
+    "VelocityControlCapability": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "frame": {
+          "const": "robot"
+        },
+        "max_ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "default_ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "max_translation_m_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_rotation_rad_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "frame",
+        "max_ttl",
+        "default_ttl",
+        "max_translation_m_s",
+        "max_rotation_rad_s"
       ],
       "additionalProperties": true
     }

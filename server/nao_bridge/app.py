@@ -538,6 +538,13 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         result = core.joint_controls.submit(session(request), value)
         return created(result, "operations", 202)
 
+    @app.put("/api/motion/velocity")
+    async def velocity_setpoint(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "VelocitySetpoint")
+        result = core.velocity_controls.submit(session(request), value)
+        return created(result, "operations", 202)
+
     @app.post("/api/motion/wake")
     async def wake(request: Request) -> Response:
         return await submit_motion_action(request, "wake", "MotionTransitionCreate", "wake")

@@ -9,9 +9,10 @@ from .client import (
     Recording,
     SensorObserver,
     Subscription,
+    VelocityControl,
     VisionObserver,
 )
-from .controls import AsyncJointControl
+from .controls import AsyncJointControl, AsyncVelocityControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
@@ -70,6 +71,8 @@ from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "AsyncVelocityControl",
+    "VelocityControl",
     "AsyncVisionObserver",
     "VisionObserver",
     "VisionObserverConfiguration",

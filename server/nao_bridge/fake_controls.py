@@ -12,6 +12,10 @@ if TYPE_CHECKING:
 
 
 class FakeControls:
+    action = "joint_setpoint"
+    expiry_reason = "joint_control_expired"
+    result_field = "hold"
+
     def __init__(self, backend: "FakeBackend") -> None:
         self.backend = backend
         self.records: dict[str, dict[str, Any]] = {}
@@ -22,7 +26,7 @@ class FakeControls:
         backend = self.backend
         oid = payload["operation_id"]
         if not backend.connected:
-            raise BackendUnknown("Disconnected during joint target dispatch")
+            raise BackendUnknown("Disconnected during target dispatch")
         if sid in backend.revoked:
             raise BridgeError("session_invalid", "Control session is fenced", 409)
         record = self.records.get(oid)
@@ -31,15 +35,15 @@ class FakeControls:
         if record:
             if sid != record["session_id"] or payload["control_id"] != record["control_id"]:
                 raise BridgeError("forbidden", "Control belongs to another session", 403)
+            if record["expires"] <= time.monotonic():
+                await self.end(oid, self.expiry_reason)
+                raise BridgeError("control_ended", "Expired control cannot be renewed", 409)
             if payload["sequence"] <= record["sequence"]:
                 if payload == record["payload"]:
                     return await self.status(sid, oid)
                 raise BridgeError("stale_sequence", "Control update is not newer", 409)
-            if payload["names"] != record["payload"]["names"]:
+            if payload.get("names") != record["payload"].get("names"):
                 raise BridgeError("invalid_request", "Control joint set is fixed")
-            if record["expires"] <= time.monotonic():
-                await self.end(oid, "joint_control_expired")
-                raise BridgeError("control_ended", "Expired control cannot be renewed", 409)
         elif payload["sequence"] != 0:
             raise BridgeError("not_found", "Control must start at sequence zero", 404)
         if not time.monotonic() < payload["expires"] <= time.monotonic() + 1:
@@ -54,7 +58,7 @@ class FakeControls:
                 "operation_id": oid,
                 "session_id": sid,
                 "control_id": payload["control_id"],
-                "hold": None,
+                self.result_field: None,
                 "reason": None,
                 "released": False,
             }
@@ -73,7 +77,7 @@ class FakeControls:
             {
                 "id": oid,
                 "session_id": sid,
-                "action": "joint_setpoint",
+                "action": self.action,
                 "payload": copy.deepcopy(payload),
             }
         )
@@ -81,15 +85,19 @@ class FakeControls:
         if failure == "rejected":
             await self.end(oid, "precondition_failed")
             raise BridgeError("unsupported", "Injected native rejection", 422)
+        self.target(payload)
+        if failure == "unknown":
+            raise BackendUnknown("Injected lost target acknowledgement")
+        return await self.status(sid, oid)
+
+    def target(self, payload: dict[str, Any]) -> None:
+        backend = self.backend
         for name, angle in zip(payload["names"], payload["angles"], strict=True):
             for peer in [
                 name,
                 *next(j["coupled_with"] for j in backend.joints if j["name"] == name),
             ]:
                 backend.joint_state["commanded"][peer] = angle
-        if failure == "unknown":
-            raise BackendUnknown("Injected lost target acknowledgement")
-        return await self.status(sid, oid)
 
     async def status(self, sid: str, oid: str) -> dict[str, Any]:
         if not self.backend.connected:
@@ -111,7 +119,7 @@ class FakeControls:
             if record["session_id"] in self.backend.revoked:
                 await self.end(oid, "authority_lost")
             elif record["expires"] <= time.monotonic():
-                await self.end(oid, "joint_control_expired")
+                await self.end(oid, self.expiry_reason)
             await asyncio.sleep(0.01)
 
     async def end(self, oid: str, reason: str) -> None:
@@ -119,6 +127,17 @@ class FakeControls:
         if record["status"] in {"succeeded", "cancelled", "unknown"}:
             return
         confirmed = self.backend.connected and self.backend.stop_confirmed
+        termination = self.terminate(record, confirmed)
+        record.update(
+            status=("succeeded" if reason == self.expiry_reason else "cancelled")
+            if confirmed
+            else "unknown",
+            reason=reason,
+            **{self.result_field: termination},
+            released=confirmed,
+        )
+
+    def terminate(self, record: dict[str, Any], confirmed: bool) -> dict[str, Any]:
         if confirmed:
             for name in record["payload"]["names"]:
                 for peer in [
@@ -128,14 +147,7 @@ class FakeControls:
                     self.backend.joint_state["commanded"][peer] = self.backend.joint_state[
                         "measured"
                     ][peer]
-        record.update(
-            status=("succeeded" if reason == "joint_control_expired" else "cancelled")
-            if confirmed
-            else "unknown",
-            reason=reason,
-            hold={"required": True, "confirmed": confirmed, "mechanism": "fake_measured_target"},
-            released=confirmed,
-        )
+        return {"required": True, "confirmed": confirmed, "mechanism": "fake_measured_target"}
 
     async def stop(self, oid: str | None, sid: str | None) -> dict[str, Any]:
         if oid:
@@ -167,3 +179,30 @@ class FakeControls:
         for task in self.tasks:
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
+
+
+class FakeVelocityControls(FakeControls):
+    action = "velocity_setpoint"
+    expiry_reason = "velocity_expired"
+    result_field = "stop"
+
+    def target(self, payload: dict[str, Any]) -> None:
+        velocity = {axis: payload[axis] for axis in ("x", "y", "yaw")}
+        self.backend.motion_state["locomotion_active"] = any(velocity.values())
+        self.backend.motion_state["odometry"]["velocity"] = velocity
+
+    def terminate(self, record: dict[str, Any], confirmed: bool) -> dict[str, Any]:
+        if confirmed:
+            self.target({"x": 0, "y": 0, "yaw": 0})
+        return {
+            "required": True,
+            "confirmed": confirmed,
+            "mechanism": "stopMove",
+            "native_inactive": confirmed,
+            "reason": None if confirmed else "stop_unconfirmed",
+        }
+
+    def invalidate(self) -> None:
+        for record in self.records.values():
+            if record["status"] in {"accepted", "running"}:
+                record.update(status="unknown", reason="connection_lost")

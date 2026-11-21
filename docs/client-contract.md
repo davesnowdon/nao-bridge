@@ -79,6 +79,13 @@ errors to the application and on scope exit. Parent-client shutdown stops
 refreshers before closing its session or transport. Python examples and error
 behavior are in the [client README](../clients/python/README.md#joint-controls).
 
+Velocity uses the same sequence, lease and operation lifecycle as joint
+targets. The target names robot-relative `x` and `y` in m/s and `yaw` in rad/s.
+Always send the full vector on update. A lost PUT response leaves its outcome
+unknown. Stop refreshing on uncertain replies. If the operation ID is known,
+request cancellation and reconcile its status. An unknown stop retains
+ownership until same-generation confirmation or explicit fenced recovery.
+
 ## SSE recipe
 
 1. Create a subscription for exact event types and sample groups/rates. Inspect returned accepted rates and producer readiness; a stream does not automatically activate vision detection or a speech listener.
