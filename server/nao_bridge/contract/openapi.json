@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.2.0",
-    "description": "Implemented HTTP/SSE contract, including increment-2 foundations and passive sensor observations. No v1 compatibility. Physical motion, hold and new sensor acceptance is pending."
+    "version": "1.3.0",
+    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors and managed sonar observers. Physical motion, hold and new sensor acceptance is pending."
   },
   "servers": [
     {
@@ -2395,6 +2395,204 @@
           }
         }
       }
+    },
+    "/sensors/observers": {
+      "post": {
+        "operationId": "createSensorObserver",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorObserver"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensorObserverCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/sensors/observers/{observer_id}": {
+      "get": {
+        "operationId": "getSensorObserver",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorObserver"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "observer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ]
+      }
+    },
+    "/sensors/observers/{observer_id}/stop": {
+      "post": {
+        "operationId": "stopSensorObserver",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorObserver"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "observer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2611,6 +2809,15 @@
       },
       "SensorStateValue": {
         "$ref": "schemas.json#/$defs/SensorStateValue"
+      },
+      "SensorObserverCreate": {
+        "$ref": "schemas.json#/$defs/SensorObserverCreate"
+      },
+      "SensorObserverConfiguration": {
+        "$ref": "schemas.json#/$defs/SensorObserverConfiguration"
+      },
+      "SensorObserver": {
+        "$ref": "schemas.json#/$defs/SensorObserver"
       }
     }
   }

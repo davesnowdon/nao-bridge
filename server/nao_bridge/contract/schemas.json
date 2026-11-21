@@ -474,6 +474,10 @@
         "recognition": {
           "type": "object",
           "additionalProperties": true
+        },
+        "sonar": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
@@ -1476,6 +1480,20 @@
         "source": {
           "$ref": "#/$defs/Feature",
           "description": "Native key discovery, distinct from freshness/validity in state. Not a hardware verification claim."
+        },
+        "producer": {
+          "type": "string"
+        },
+        "reliable_range": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "required": [
@@ -2767,6 +2785,15 @@
             "string",
             "null"
           ]
+        },
+        "quality": {
+          "enum": [
+            "measured",
+            "estimated",
+            "too_close",
+            "unavailable"
+          ],
+          "description": "Optional source-specific distance quality, independent of state-group acquisition freshness. Measured denotes the documented nominal ranging interval, not a hardware verification claim."
         }
       },
       "required": [
@@ -2834,6 +2861,115 @@
       ],
       "additionalProperties": true,
       "description": "Value of the sensors state group. Passive readings use stable catalog IDs; motion, touch and battery share the usual group freshness envelope. Numeric zero and boolean false are valid."
+    },
+    "SensorObserverCreate": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "sonar"
+            ]
+          }
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "SensorObserverConfiguration": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "sonar"
+            ]
+          }
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "additionalProperties": true
+    },
+    "SensorObserver": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configuration": {
+          "$ref": "#/$defs/SensorObserverConfiguration"
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "warming",
+            "active",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "configuration",
+        "status",
+        "reason",
+        "error"
+      ],
+      "additionalProperties": true,
+      "description": "Session-owned demand for shared sensor producers. Active means the native subscription is confirmed and its software settling interval elapsed; it does not guarantee valid readings or a new native producer update. Stop removes this observer only."
     }
   }
 }

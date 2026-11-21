@@ -54,6 +54,7 @@ class Capabilities(WireModel):
     autonomy: dict[str, AutonomySetting] = Field(default_factory=dict)
     motion_events: dict[str, list[str]] = Field(default_factory=dict)
     recognition: dict[str, Any] = Field(default_factory=dict)
+    sonar: dict[str, Any] = Field(default_factory=dict)
 
 
 class Sensor(WireModel):
@@ -70,6 +71,8 @@ class Sensor(WireModel):
     frame: str | None = None
     minimum: float | None = None
     source: Capability | None = None
+    producer: str | None = None
+    reliable_range: list[float] | None = None
 
 
 class SensorsData(WireModel):
@@ -170,6 +173,21 @@ class ListenerData(WireModel):
         "failed",
         "unknown",
     ]
+    reason: str | None
+    error: ErrorDetail | None
+
+
+class SensorObserverConfiguration(WireModel):
+    sources: list[str]
+
+
+class SensorObserverData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    configuration: SensorObserverConfiguration
+    status: Literal["starting", "warming", "active", "stopping", "stopped", "failed", "unknown"]
     reason: str | None
     error: ErrorDetail | None
 

@@ -1,7 +1,7 @@
 """NAO Bridge HTTP/SSE client. The replacement contract intentionally removes the v1 API."""
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .client import JointControl, Listener, Nao, Operation, Recording, Subscription
+from .client import JointControl, Listener, Nao, Operation, Recording, SensorObserver, Subscription
 from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
@@ -18,6 +18,8 @@ from .errors import (
     ProtocolError,
     RecordingFailed,
     RecordingTimeout,
+    SensorObserverError,
+    SensorObserverTimeout,
     SessionLost,
     StaleState,
 )
@@ -33,6 +35,8 @@ from .models import (
     RecordingData,
     RecordingSource,
     RobotInfo,
+    SensorObserverConfiguration,
+    SensorObserverData,
     SessionData,
     SpeechHypothesis,
     SpeechRecognizedData,
@@ -40,10 +44,17 @@ from .models import (
     StreamNotice,
 )
 from .recordings import AsyncRecording
+from .sensor_observers import AsyncSensorObserver
 from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "AsyncSensorObserver",
+    "SensorObserver",
+    "SensorObserverData",
+    "SensorObserverConfiguration",
+    "SensorObserverError",
+    "SensorObserverTimeout",
     "AssetData",
     "AssetsPage",
     "AsyncRecording",

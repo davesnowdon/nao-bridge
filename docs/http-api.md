@@ -1,4 +1,4 @@
-# Using contract 1.2.0 over HTTP
+# Using contract 1.3.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -85,7 +85,7 @@ and sample recordings, with no separate passive-sensor events. Group freshness
 measures the bridge's acquisition, not the robot's producer update time. Foot
 loads are approximate kilograms, not pressure in pascals; no contact threshold
 is inferred from them. Axis conventions and readings on both firmware generations
-still require hardware acceptance. Sonar is not yet implemented.
+still require hardware acceptance. Managed sonar is described below.
 
 `motion.posture_changed` carries `posture` or `family` (at least one nonempty
 string). Each native event reports its own field, not an atomic pair.
@@ -124,6 +124,51 @@ workers acquire sensors, joints, motion and autonomy separately. A slow/failed
 read affects its group; completed groups continue updating the shared cache.
 In-flight readings from a previous connection are discarded. Native service-side
 serialization can still affect observed rates and must be measured on hardware.
+
+## Managed sonar
+
+`POST /api/sensors/observers` with `{"sources":["sonar"]}`, `X-Session-ID` and an
+idempotency key returns 201, a `SensorObserver`, and its `Location`. Poll that
+location or subscribe to the owning session's `sensor.observer_changed` events.
+`GET /api/sensors/observers/{id}` reconciles state after an SSE gap;
+`POST /api/sensors/observers/{id}/stop` with `{}` accepts cleanup with 202 and
+returns the resource, not an Operation. Another session cannot inspect or stop it.
+
+States are `starting`, `warming`, `active`, `stopping`, `stopped`, `failed`, and
+`unknown`. Warming follows confirmed native subscription; the initial settling
+policy is 0.5 seconds. Active does not establish a fresh physical echo or valid
+values on both sides. Lifecycle notification can precede the next shared sample.
+
+Multiple observers share one named native subscription. Stop/session expiry/close
+releases that observer's reference; the last release unsubscribes only the bridge's
+name, preserving other native applications. Priority stop ends all bridge observers.
+Discovery, GET state, sample subscriptions and recordings do not activate sonar.
+While any observer is active, its shared readings are visible through ordinary
+state reads, SSE samples and sample recordings. Stopping the last observer masks
+cached sonar values immediately, before native cleanup finishes.
+
+`sonar.left` and `sonar.right` are metre readings with `quality`:
+
+| Quality | Reading |
+| --- | --- |
+| `measured` | 0.20–0.80 m, the documented range for the two target models |
+| `estimated` | Greater than 0.80 m and below the native 5 m sentinel |
+| `too_close` | Null distance with `below_ranging_limit`; presence is not a usable distance |
+| `unavailable` | Null with a reason: warming, inactive source, no echo/invalid return, or missing native key |
+
+No echo does not prove clear space. `frame` remains null until source geometry is
+verified. Per-reading quality describes interpretation; group freshness describes
+bridge acquisition, not the native producer's update time. The catalog exposes
+`producer: "sonar"`, per-side source availability and `reliable_range`; capabilities
+include source readiness, settling policy and limits. Defaults allow 32 outstanding
+observers and 256 retained records. Terminal history and retry records are bounded.
+
+A rejected start is `failed`; an unconfirmed native transition is `unknown` and
+retains ownership. New demand is rejected while unresolved. Connection loss never
+resumes observers automatically. Restart the agent for recovery, then use explicit
+session revocation with acknowledged fencing and `force_release` to release the
+old generation's unresolved reference. Ordinary cleanup never force-releases it.
+None of these software checks establish physical sonar acceptance.
 
 ## Motion preparation
 

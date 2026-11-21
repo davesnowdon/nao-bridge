@@ -20,6 +20,7 @@ from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
 from .recordings import KIND as RECORDING_KIND
 from .recordings import Recordings
+from .sensor_observers import SONAR_IDS, SensorObservers
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -47,6 +48,7 @@ EVENT_TYPES = {
     "motion.fall_changed": "MotionFallChanged",
     "speech.recognized": "SpeechRecognized",
     "speech.listener_changed": "Listener",
+    "sensor.observer_changed": "SensorObserver",
     "recording.changed": "Recording",
     "asset.created": "Asset",
 }
@@ -112,6 +114,7 @@ class Core:
         self.pending_replacements: dict[str, str] = {}
         self.joint_controls = JointControls(self)
         self.listeners = Listeners(self)
+        self.sensor_observers = SensorObservers(self)
         self.recordings = Recordings(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
@@ -197,6 +200,7 @@ class Core:
             self.connection = data["connection"]
             self.generation += 1
             self.listeners.connection_changed()
+            self.sensor_observers.connection_changed()
             self.samples.clear()
             self.sample_changed.set()
             self.emit(
@@ -227,6 +231,8 @@ class Core:
 
         elif kind in {"recognition.state", "recognition.words"}:
             self.listeners.observation(kind, data)
+        elif kind == "sonar.state":
+            self.sensor_observers.observation(data)
         elif kind == "sample":
             if self.connection != "connected":
                 return
@@ -318,6 +324,9 @@ class Core:
                 "speech.listeners": feature(
                     available and self.info.get("recognition", {}).get("available", False)
                 ),
+                "sensors.observers": feature(
+                    available and self.info.get("sonar", {}).get("available", False)
+                ),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "motion.posture_changed": feature(
                     available and bool(self.info.get("motion_events", {}).get("posture_fields"))
@@ -370,6 +379,8 @@ class Core:
                     "max_subscriptions",
                     "max_listeners",
                     "max_listener_history",
+                    "max_sensor_observers",
+                    "max_sensor_observer_history",
                     "asset_quota_bytes",
                     "max_assets",
                     "max_asset_downloads",
@@ -402,6 +413,7 @@ class Core:
             "state_groups": ["sensors", "joints", "motion", "autonomy"],
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
             "recognition": copy.deepcopy(self.info.get("recognition", {})),
+            "sonar": copy.deepcopy(self.info.get("sonar", {})),
             "motion_events": copy.deepcopy(
                 self.info.get("motion_events", {"posture_fields": [], "fall_phases": []})
             ),
@@ -495,6 +507,37 @@ class Core:
                     "event_type": None,
                 }
             )
+        sonar = self.info.get("sonar", {})
+        for sensor in SONAR_IDS:
+            reading = value.get("readings", {}).get(sensor, {})
+            available = sample["quality"] == "fresh" and reading.get("value") is not None
+            supported = self.connection == "connected" and sensor in sonar.get("sensor_ids", [])
+            items.append(
+                {
+                    "id": sensor,
+                    "label": "Left sonar" if sensor.endswith("left") else "Right sonar",
+                    "unit": "m",
+                    "value_type": "number",
+                    "frame": None,
+                    "state_group": "sensors",
+                    "state_field": "readings",
+                    "state_path": ["readings", sensor, "value"],
+                    "producer": "sonar",
+                    "source": {
+                        "status": "available" if supported else "unavailable",
+                        "reason": None if supported else "not_connected_or_discovered",
+                    },
+                    "state": {
+                        "status": "available" if available else "unavailable",
+                        "reason": None
+                        if available
+                        else sample["reason"] or reading.get("reason") or "not_sampled",
+                    },
+                    "events": {"status": "unsupported", "reason": "use_state_samples"},
+                    "event_type": None,
+                    "reliable_range": sonar.get("reliable_range_m"),
+                }
+            )
         return {"items": items, "connection_generation": self.generation}
 
     def joint_catalog(self) -> dict[str, Any]:
@@ -546,7 +589,9 @@ class Core:
             starts.append((sample["started"] - self.origin) * 1000)
             ends.append((sample["finished"] - self.origin) * 1000)
             values[name] = {
-                "value": copy.deepcopy(sample["value"]),
+                "value": self.sensor_observers.project(copy.deepcopy(sample["value"]))
+                if name == "sensors"
+                else copy.deepcopy(sample["value"]),
                 "quality": "fresh" if age <= max_age_ms else "stale",
                 "reason": None if age <= max_age_ms else "sample_too_old",
                 "sampled_at": sample["sampled_at"],
@@ -689,6 +734,8 @@ class Core:
                     if result["id"] in self.sessions
                     else "listener"
                     if result["id"] in self.listeners.items
+                    else "sensor_observer"
+                    if result["id"] in self.sensor_observers.items
                     else "recording"
                     if result["id"] in self.recordings.items
                     else "subscription"
@@ -1274,6 +1321,7 @@ class Core:
         session.retained_until = self.clock() + self.settings.history_seconds
         self.emit("session.changed", session.public, session.public["id"])
         self.listeners.stop_session(session.public["id"])
+        self.sensor_observers.stop_session(session.public["id"])
         self.recordings.stop_session(session.public["id"], status)
         for sub in list(self.subscriptions.values()):
             if sub.public["session_id"] == session.public["id"]:
@@ -1348,20 +1396,26 @@ class Core:
             }
         unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
         unresolved_listeners = await self.listeners.cleanup(sid, force, fenced)
+        unresolved_observers = await self.sensor_observers.cleanup(sid, force, fenced)
         unresolved_recordings = await self.recordings.settle(sid)
         unresolved.extend(unresolved_recordings)
         listeners_released = not self.listeners.owns(sid)
         if not listeners_released:
             unresolved_resources.append("speech.recognition")
+        observers_released = not self.sensor_observers.owns(sid)
+        if not observers_released:
+            unresolved_resources.append("sensors.sonar")
         return {
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
             "unresolved_resources": unresolved_resources,
             "unresolved_listener_ids": unresolved_listeners,
+            "unresolved_sensor_observer_ids": unresolved_observers,
             "force_release": force
             and fenced
             and controls_released
             and listeners_released
+            and observers_released
             and not unresolved_recordings,
         }
 
@@ -1424,6 +1478,7 @@ class Core:
 
     async def stop_all(self) -> dict[str, Any]:
         self.listeners.stop_all()
+        self.sensor_observers.stop_all()
         self.recordings.stop_all()
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
@@ -1453,6 +1508,10 @@ class Core:
             }
         )
         await self.listeners.settled()
+        await self.sensor_observers.settled()
+        stopped["unresolved_sensor_observer_ids"] = [
+            item.public["id"] for item in self.sensor_observers.items.values() if not item.released
+        ]
         stopped["unresolved_listener_ids"] = [
             item.public["id"] for item in self.listeners.items.values() if not item.released
         ]
@@ -1477,7 +1536,9 @@ class Core:
             self.finish(
                 op,
                 "unknown"
-                if result["unresolved_ids"] or result["unresolved_listener_ids"]
+                if result["unresolved_ids"]
+                or result["unresolved_listener_ids"]
+                or result["unresolved_sensor_observer_ids"]
                 else "succeeded",
                 result,
             )
@@ -1569,6 +1630,8 @@ class Core:
                 recover.append("listeners")
             if "recording.changed" in sub.public["events"]:
                 recover.append("recordings")
+            if "sensor.observer_changed" in sub.public["events"]:
+                recover.append("sensor_observers")
             if "asset.created" in sub.public["events"]:
                 recover.append("assets")
             initial.append(
@@ -1638,6 +1701,13 @@ class Core:
         ]
         if unknown_listeners:
             quarantined["speech.recognition"] = unknown_listeners
+        unknown_observers = [
+            item.public["id"]
+            for item in self.sensor_observers.items.values()
+            if item.public["status"] == "unknown" and not item.released
+        ]
+        if unknown_observers:
+            quarantined["sensors.sonar"] = unknown_observers
         return {
             "bridge_instance_id": self.instance,
             "connection_generation": self.generation,
@@ -1656,6 +1726,7 @@ class Core:
             "sessions": len(self.sessions),
             "subscriptions": len(self.subscriptions),
             "listeners": len(self.listeners.items),
+            "sensor_observers": len(self.sensor_observers.items),
             "recordings": len(self.recordings.items),
             "active_recordings": len(self.recordings.active()),
             "streams": len(self.streams),
@@ -1721,6 +1792,7 @@ class Core:
                 )
                 or sid in self.configuration_owners.values()
                 or self.listeners.owns(sid)
+                or self.sensor_observers.owns(sid)
                 or self.recordings.owns(sid)
             ):
                 continue
@@ -1730,6 +1802,7 @@ class Core:
     def sweep(self) -> None:
         now = self.clock()
         self.listeners.sweep()
+        self.sensor_observers.sweep()
         self.recordings.tick()
         for session in list(self.sessions.values()):
             if session.public["status"] == "active" and session.deadline <= now:
@@ -1739,6 +1812,7 @@ class Core:
                 and session.retained_until <= now
                 and session.public["id"] not in self.configuration_owners.values()
                 and not self.listeners.owns(session.public["id"])
+                and not self.sensor_observers.owns(session.public["id"])
                 and not self.recordings.owns(session.public["id"])
                 and not any(
                     o.public["session_id"] == session.public["id"] and not o.released
@@ -1770,6 +1844,10 @@ class Core:
             elif record.resource_kind == "listener":
                 listener = self.listeners.items.get(rid)
                 if listener and (not listener.released or (listener.retained_until or 0) > now):
+                    continue
+            elif record.resource_kind == "sensor_observer":
+                observer = self.sensor_observers.items.get(rid)
+                if observer and (not observer.released or (observer.retained_until or 0) > now):
                     continue
             elif record.resource_kind == "recording":
                 recording = self.recordings.items.get(rid)

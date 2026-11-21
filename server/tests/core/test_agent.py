@@ -26,6 +26,7 @@ def agent_module(monkeypatch):
     sys.modules.pop("sampling", None)
     sys.modules.pop("observations", None)
     sys.modules.pop("recognition", None)
+    sys.modules.pop("sonar", None)
 
 
 class DrainQueue:
@@ -555,7 +556,7 @@ def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_mo
     )
     driver.posture = types.SimpleNamespace(sample=lambda: "StandInit")
     driver.autonomy = types.SimpleNamespace(sample=lambda: {"life_state": "disabled"})
-    driver.sample_sensors = lambda memory, passive: {
+    driver.sample_sensors = lambda memory, passive, sonar: {
         "old_connection": memory is old_memory and passive is old_passive
     }
     readers = driver.sample_readers()
@@ -572,13 +573,16 @@ def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_mo
             unavailable[group]()
 
 
-def test_priority_stop_leaves_internal_recognition_transition_to_ordered_cleanup(agent_module):
+@pytest.mark.parametrize("producer", ["recognition", "sonar"])
+def test_priority_stop_leaves_internal_producer_transition_to_ordered_cleanup(
+    agent_module, producer
+):
     agent = bare_agent(agent_module)
     agent.driver.stop = lambda: None
     agent.driver.stop_motion = lambda *args, **kwargs: None
     record = {
         "session_id": None,
-        "action": "recognition",
+        "action": producer,
         "phase": "dispatch_started",
         "status": "accepted",
     }
@@ -589,30 +593,32 @@ def test_priority_stop_leaves_internal_recognition_transition_to_ordered_cleanup
 
 
 @pytest.mark.parametrize("poisoned,status", [(False, "rejected"), (True, "unknown")])
+@pytest.mark.parametrize("producer", ["recognition", "sonar"])
 def test_recognition_rpc_does_not_turn_uncertain_mutation_into_known_rejection(
-    agent_module, poisoned, status
+    agent_module, poisoned, status, producer
 ):
     agent = bare_agent(agent_module)
 
     def configure(*args):
         raise ValueError("setter failed")
 
-    agent.driver.recognition = types.SimpleNamespace(poisoned=poisoned, configure=configure)
+    setattr(agent.driver, producer, types.SimpleNamespace(poisoned=poisoned, configure=configure))
     replies = queue.Queue()
     record = {}
-    agent.run_recognition({"id": "configure", "payload": {}}, record, replies)
+    agent.run_producer({"id": "configure", "payload": {}, "action": producer}, record, replies)
     assert replies.get_nowait()["status"] == status
     assert record["status"] == status
 
 
-def test_authority_loss_fences_recognition_without_waiting_for_native_cleanup(agent_module):
+@pytest.mark.parametrize("producer", ["recognition", "sonar"])
+def test_authority_loss_fences_producer_without_waiting_for_native_cleanup(agent_module, producer):
     agent = bare_agent(agent_module)
     calls = []
     adapter = types.SimpleNamespace(
         invalidate=lambda: calls.append("fenced"),
         close=lambda: pytest.fail("native close on authority lock"),
     )
-    agent.driver.recognition = adapter
+    setattr(agent.driver, producer, adapter)
     agent.lose_authority("watchdog")
     assert calls == ["fenced"]
-    assert agent.recognition_cleanup is adapter
+    assert getattr(agent, producer + "_cleanup") is adapter

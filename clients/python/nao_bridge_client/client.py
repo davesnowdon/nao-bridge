@@ -21,11 +21,13 @@ from .models import (
     RecordingData,
     RobotInfo,
     Sensor,
+    SensorObserverData,
     State,
     StreamNotice,
     SubscriptionData,
 )
 from .recordings import AsyncRecording
+from .sensor_observers import AsyncSensorObserver
 from .trajectory import Trajectory
 
 T = TypeVar("T")
@@ -359,6 +361,19 @@ class Sensors:
     def __init__(self, nao: Nao):
         self._nao = nao
 
+    def observe(self, sources: list[str], *, idempotency_key: str | None = None) -> SensorObserver:
+        return SensorObserver(
+            self._nao,
+            self._nao._run(
+                self._nao._async.sensors.observe(sources, idempotency_key=idempotency_key)
+            ),
+        )
+
+    def get_observer(self, observer_id: str) -> SensorObserver:
+        return SensorObserver(
+            self._nao, self._nao._run(self._nao._async.sensors.get_observer(observer_id))
+        )
+
     def list(self) -> list[Sensor]:
         return self._nao._run(self._nao._async.sensors.list())
 
@@ -545,6 +560,54 @@ class Listener:
         return self
 
     def stop(self, *, wait: bool = True, timeout: float | None = None) -> Listener:
+        self._nao._run(self._async.stop(wait=wait, timeout=timeout))
+        return self
+
+    def close(self) -> None:
+        self._nao._run(self._async.close())
+
+
+class SensorObserver:
+    def __init__(self, nao: Nao, observer: AsyncSensorObserver):
+        self._nao = nao
+        self._async = observer
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def data(self) -> SensorObserverData:
+        return self._async.data
+
+    @property
+    def status(self) -> str:
+        return self._async.status
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    def __enter__(self) -> SensorObserver:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+    def refresh(self) -> SensorObserver:
+        self._nao._run(self._async.refresh())
+        return self
+
+    def wait_ready(self, *, timeout: float | None = 10) -> SensorObserver:
+        self._nao._run(self._async.wait_ready(timeout=timeout))
+        return self
+
+    def wait_configured(self, *, timeout: float | None = 10) -> SensorObserver:
+        self._nao._run(self._async.wait_configured(timeout=timeout))
+        return self
+
+    def stop(self, *, wait: bool = True, timeout: float | None = None) -> SensorObserver:
         self._nao._run(self._async.stop(wait=wait, timeout=timeout))
         return self
 

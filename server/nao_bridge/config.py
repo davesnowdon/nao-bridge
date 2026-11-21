@@ -26,6 +26,8 @@ class Settings:
     max_subscriptions: int = 16
     max_listeners: int = 32
     max_listener_history: int = 256
+    max_sensor_observers: int = 32
+    max_sensor_observer_history: int = 256
     asset_directory: Path | None = None
     asset_quota_bytes: int = 268435456
     max_assets: int = 256
@@ -76,6 +78,8 @@ class Settings:
             "max_subscriptions",
             "max_listeners",
             "max_listener_history",
+            "max_sensor_observers",
+            "max_sensor_observer_history",
             "asset_quota_bytes",
             "max_assets",
             "max_asset_downloads",

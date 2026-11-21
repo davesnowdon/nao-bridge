@@ -114,6 +114,23 @@ session cleanup ends it. SDKs must document these independently from scope exit,
 which requests cleanup and surfaces uncertainty. See the
 [Python listener guide](../clients/python/README.md#vocabulary-listeners).
 
+## Sensor observer lifecycle
+
+A sensor observer owns demand for an active source; an SSE subscription owns event
+transport. They have independent lifetimes. For sonar, create the observer with
+`sources: ["sonar"]`, retain its identity, and reconcile its status through GET.
+`wait_configured` can finish while warming; `wait_ready` waits for active, which
+means the subscription and software settling policy completed. Still check group
+freshness, individual validity and distance quality before using a reading.
+
+A local timeout or cancellation does not stop demand. Explicit stop, scope exit or
+session cleanup releases the observer; shared demand from another observer remains.
+Unknown cleanup retains ownership and must be surfaced. Reconnection never resumes
+an observer or moves a handle to a new session/generation. Reconcile missed lifecycle
+events, without replaying missed samples. The [HTTP guide](http-api.md#managed-sonar)
+and [Python guide](../clients/python/README.md#managed-sonar) describe implemented
+status, cleanup and recovery behavior independently of any client language.
+
 ## Portable motion, media, and sequences
 
 Sample-recording clients create an owned Recording and track its associated

@@ -41,6 +41,7 @@ from .models import (
     PosturesData,
     RobotInfo,
     Sensor,
+    SensorObserverData,
     SensorsData,
     SessionData,
     State,
@@ -49,6 +50,7 @@ from .models import (
     WireModel,
 )
 from .recordings import AsyncRecordings
+from .sensor_observers import AsyncSensorObserver
 from .sse import SSEParser
 from .trajectory import Trajectory
 
@@ -726,6 +728,37 @@ class AsyncMotion:
 class AsyncSensors:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def observe(
+        self, sources: list[str], *, idempotency_key: str | None = None
+    ) -> AsyncSensorObserver:
+        await self._nao._ensure_session()
+        return AsyncSensorObserver(
+            self._nao,
+            decode(
+                SensorObserverData,
+                await self._nao._request(
+                    "POST",
+                    "/api/sensors/observers",
+                    body={"sources": sources},
+                    key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+                ),
+            ),
+        )
+
+    async def get_observer(self, observer_id: str) -> AsyncSensorObserver:
+        if self._nao.session_id is None:
+            raise SessionLost("A sensor observer must belong to the current client session")
+        return AsyncSensorObserver(
+            self._nao,
+            decode(
+                SensorObserverData,
+                await self._nao._request(
+                    "GET",
+                    "/api/sensors/observers/" + observer_id,
+                ),
+            ),
+        )
 
     async def list(self) -> list[Sensor]:
         return decode(SensorsData, await self._nao._request("GET", "/api/sensors")).items

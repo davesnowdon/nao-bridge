@@ -157,7 +157,7 @@ async def test_passive_catalog_exposes_paths_validity_and_staleness_without_new_
             current = value
             for part in item["state_path"]:
                 current = current[part]
-            assert current is not None
+            assert current is not None or item.get("producer") == "sonar"
         items = {item["id"]: item for item in sensors["items"]}
         assert items["foot.left.load"]["unit"] == "kg"
         assert items["inertial.angle.x"]["frame"] == "torso"

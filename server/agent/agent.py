@@ -21,6 +21,7 @@ from autonomy import valid_autonomy, TransitionStopped
 from controls import JointControls, ControlError
 from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
+from sonar import valid_configuration as valid_sonar
 from wire import VERSION, encode, frames, monotonic
 
 
@@ -42,12 +43,14 @@ class Agent(object):
         self.lock = threading.RLock()
         self.work = queue.Queue(16)
         self.recognition_work = queue.Queue(1)
+        self.sonar_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
         self.records = collections.OrderedDict()
         self.dropped = 0
         self.recognition_cleanup = None
+        self.sonar_cleanup = None
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
         self.driver = FixtureDriver(self.observe, self.lock) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe, self.lock)
@@ -77,15 +80,19 @@ class Agent(object):
             if recognition:
                 recognition.invalidate()
                 self.recognition_cleanup = recognition
+            sonar = getattr(self.driver, "sonar", None)
+            if sonar:
+                sonar.invalidate()
+                self.sonar_cleanup = sonar
         self.emergency_stop.set()
 
-    def recognition_recovery(self):
+    def producer_recovery(self, name):
         while True:
-            target = self.recognition_cleanup
+            target = getattr(self, name + "_cleanup")
             if target and target.close():
                 with self.lock:
-                    if self.recognition_cleanup is target:
-                        self.recognition_cleanup = None
+                    if getattr(self, name + "_cleanup") is target:
+                        setattr(self, name + "_cleanup", None)
             time.sleep(0.1)
 
     def watchdog(self):
@@ -146,8 +153,8 @@ class Agent(object):
             self.reply(replies, request, "accepted")
             future = None
             try:
-                if request["action"] == "recognition":
-                    self.run_recognition(request, record, replies)
+                if request["action"] in ("recognition", "sonar"):
+                    self.run_producer(request, record, replies)
                     continue
                 if request["action"] == "autonomy":
                     self.run_autonomy(request, record, replies)
@@ -193,10 +200,11 @@ class Agent(object):
                     record.update(status="unknown", finished=monotonic())
                     self.reply(replies, request, "unknown", message="Native completion unconfirmed")
 
-    def run_recognition(self, request, record, replies):
-        adapter = self.driver.recognition
+    def run_producer(self, request, record, replies):
+        name = request["action"]
+        adapter = getattr(self.driver, name)
         if adapter is None:
-            raise ValueError("Recognition unavailable")
+            raise ValueError("Producer unavailable")
         record["phase"] = "dispatch_started"
         try:
             result = adapter.configure(request["payload"],
@@ -204,7 +212,7 @@ class Agent(object):
         except Exception as error:
             if adapter.poisoned or not isinstance(error, ValueError):
                 record.update(status="unknown", finished=monotonic())
-                self.reply(replies, request, "unknown", message="Recognition transition unconfirmed")
+                self.reply(replies, request, "unknown", message="Producer transition unconfirmed")
             else:
                 record.update(status="rejected", finished=monotonic())
                 self.reply(replies, request, "rejected", code=getattr(error, "code", "unsupported"), message=str(error))
@@ -247,7 +255,7 @@ class Agent(object):
                                      "result": {"cancelled": True, "dispatched": False}}
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
-                        and (record.get("action") != "recognition" or key == oid)
+                        and (record.get("action") not in ("recognition", "sonar") or key == oid)
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
                 record["stop_requested"] = True
@@ -270,7 +278,7 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if record.get("action") in ("autonomy", "recognition") and record["phase"] != "queued":
+            if record.get("action") in ("autonomy", "recognition", "sonar") and record["phase"] != "queued":
                 # A completed individual setter does not finish a multi-setting transition.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
                 continue
@@ -456,17 +464,17 @@ class Agent(object):
                                 self.reply(replies, request, result=value)
                             except ValueError as error:
                                 self.reply(replies, request, "rejected", code=getattr(error, "code", "invalid_request"), message=str(error))
-                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition"):
+                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition", "sonar"):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration}[action](request.get("payload")) and (action == "recognition" or bool(request.get("session_id")))):
+                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration, "sonar": valid_sonar}[action](request.get("payload")) and (action in ("recognition", "sonar") or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
-                                (self.recognition_work if action == "recognition" else self.work).put_nowait((request, replies))
+                                (getattr(self, action + "_work") if action in ("recognition", "sonar") else self.work).put_nowait((request, replies))
                                 self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
@@ -501,9 +509,12 @@ class Agent(object):
 
     def run(self):
         background(self.run_critical, self.worker, self.recognition_work)
+        background(self.run_critical, self.worker, self.sonar_work)
+        for name in ("recognition", "sonar"):
+            background(self.run_critical, self.producer_recovery, name)
         for group in GROUPS:
             background(self.run_critical, self.sampler.run, group)
-        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling, self.recognition_recovery):
+        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling):
             background(self.run_critical, worker)
         for lane in ("priority", "command", "controls", "events"):
             background(self.run_critical, self.serve, lane)

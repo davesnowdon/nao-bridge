@@ -30,6 +30,7 @@ class Backend(Protocol):
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
@@ -62,6 +63,16 @@ class FakeBackend:
         self.recognition: dict[str, Any] | None = None
         self.recognition_calls: list[dict[str, Any]] = []
         self.recognition_failure: str | None = None
+        self.sonar: dict[str, Any] = {
+            "producer_id": None,
+            "revision": 0,
+            "enabled": False,
+            "status": "stopped",
+            "reason": None,
+        }
+        self.sonar_ready_at = 0.0
+        self.sonar_calls: list[dict[str, Any]] = []
+        self.sonar_failure: str | None = None
         self.chains = {
             "Head": ["HeadYaw", "HeadPitch"],
             "LArm": ["LShoulderPitch", "LHand"],
@@ -146,6 +157,13 @@ class FakeBackend:
 
     async def connection(self, connected: bool) -> None:
         self.connected = connected
+        self.sonar = {
+            "producer_id": None,
+            "revision": 0,
+            "enabled": False,
+            "status": "stopped",
+            "reason": None,
+        }
         if self.sink:
             await self.sink(
                 "connection",
@@ -183,6 +201,14 @@ class FakeBackend:
                         "max_vocabulary": 64,
                         "max_vocabulary_characters": 2048,
                     },
+                    "sonar": {
+                        "available": connected,
+                        "reason": None if connected else "disconnected",
+                        "sensor_ids": ["sonar.left", "sonar.right"],
+                        "warmup_seconds": 0.5,
+                        "reliable_range_m": [0.2, 0.8],
+                        "estimated_beyond_m": 0.8,
+                    },
                     "joint_controls": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -194,6 +220,27 @@ class FakeBackend:
         while True:
             if self.connected and self.sink:
                 now = time.monotonic()
+                if (
+                    self.sonar["enabled"]
+                    and self.sonar["status"] == "warming"
+                    and now >= self.sonar_ready_at
+                ):
+                    self.sonar["status"] = "active"
+                    await self.sink("sonar.state", dict(self.sonar))
+                readings = copy.deepcopy(self.sensor_readings)
+                for name, distance in [("sonar.left", 0.4), ("sonar.right", 1.2)]:
+                    available = self.sonar["enabled"] and self.sonar["status"] == "active"
+                    readings[name] = {
+                        "value": distance if available else None,
+                        "reason": None
+                        if available
+                        else "warming"
+                        if self.sonar["enabled"]
+                        else "producer_stopped",
+                        "quality": ("measured" if distance <= 0.8 else "estimated")
+                        if available
+                        else "unavailable",
+                    }
                 await self.sink(
                     "sample",
                     {
@@ -202,7 +249,8 @@ class FakeBackend:
                                 "touch": dict(self.touch),
                                 "touch_unavailable": {},
                                 "battery": {"charge": 76, "reason": None},
-                                "readings": copy.deepcopy(self.sensor_readings),
+                                "readings": readings,
+                                "_sonar": dict(self.sonar),
                             },
                             "joints": {key: dict(value) for key, value in self.joint_state.items()},
                             "motion": dict(self.motion_state),
@@ -230,6 +278,26 @@ class FakeBackend:
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         return await self._execute(operation_id, session_id, payload, "speech")
+
+    async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.sonar_calls.append(copy.deepcopy(payload))
+        if self.sonar_failure == "unknown":
+            raise BackendUnknown("Injected sonar uncertainty")
+        if self.sonar_failure:
+            raise BridgeError("unsupported", "Injected sonar rejection", 422)
+        enabled = payload["enabled"]
+        if enabled and not self.sonar["enabled"]:
+            self.sonar_ready_at = time.monotonic() + 0.5
+        self.sonar = {
+            **payload,
+            "status": ("warming" if time.monotonic() < self.sonar_ready_at else "active")
+            if enabled
+            else "stopped",
+            "reason": None,
+        }
+        if self.sink:
+            await self.sink("sonar.state", dict(self.sonar))
+        return dict(self.sonar)
 
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]:
         import copy

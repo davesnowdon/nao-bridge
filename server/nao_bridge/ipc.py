@@ -298,6 +298,9 @@ class AgentBackend:
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._rpc("command", "recognition", payload, timeout=8)
 
+    async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("command", "sonar", payload, timeout=3)
+
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]:
         return await self._rpc("priority", "release_controls", {}, session_id)
 

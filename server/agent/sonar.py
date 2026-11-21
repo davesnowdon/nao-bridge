@@ -68,6 +68,7 @@ class Sonar(object):
         self.reason = None
         self.keys = []
         self.catalog = {"available": False, "reason": "native_sonar_unavailable",
+                        "sensor_ids": [],
                         "warmup_seconds": WARMUP_SECONDS,
                         "reliable_range_m": [0.2, 0.8], "estimated_beyond_m": 0.8}
         try:
@@ -80,6 +81,7 @@ class Sonar(object):
                 self.catalog.update(available=True, reason=None)
         except Exception:
             pass
+        self.catalog["sensor_ids"] = [name for key, name in zip(KEYS, IDS) if key in self.keys]
 
     def snapshot(self):
         with self.lock:
@@ -214,3 +216,14 @@ class Sonar(object):
             return True
         finally:
             self.transition_lock.release()
+
+
+class FixtureSonar(object):
+    def __init__(self):
+        self.names = set()
+
+    def subscribe(self, name):
+        self.names.add(name)
+
+    def unsubscribe(self, name):
+        self.names.discard(name)

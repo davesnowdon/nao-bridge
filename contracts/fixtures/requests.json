@@ -140,6 +140,56 @@
         "max_bytes": 1
       },
       "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "sonar"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {},
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": []
+      },
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "sonar",
+          "sonar"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "all"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "schema": "SensorObserverCreate",
+      "value": {
+        "sources": [
+          "sonar"
+        ],
+        "extra": true
+      },
+      "valid": false
     }
   ]
 }

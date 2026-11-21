@@ -370,6 +370,42 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "recordings", 202)
 
+    @app.post("/api/sensors/observers")
+    async def create_sensor_observer(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "SensorObserverCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /sensors/observers",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.sensor_observers.create(owner, value),
+        )
+        return created(result, "sensors/observers", 201)
+
+    @app.get("/api/sensors/observers/{observer_id}")
+    async def get_sensor_observer(request: Request, observer_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.sensor_observers.get(observer_id, session(request, False).public["id"]).public
+        )
+
+    @app.post("/api/sensors/observers/{observer_id}/stop")
+    async def stop_sensor_observer(request: Request, observer_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.sensor_observers.get(observer_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /sensors/observers/" + observer_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.sensor_observers.stop(item),
+        )
+        return created(result, "sensors/observers", 202)
+
     @app.post("/api/speech/listeners")
     async def create_listener(request: Request) -> Response:
         query(request, set())
@@ -569,6 +605,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     if name in {"motion.posture_changed", "motion.fall_changed"}
                     else core.capabilities()["features"]["speech.listeners"]
                     if name in {"speech.recognized", "speech.listener_changed"}
+                    else core.capabilities()["features"]["sensors.observers"]
+                    if name == "sensor.observer_changed"
                     else core.capabilities()["features"]["recordings"]
                     if name == "recording.changed"
                     else core.capabilities()["features"]["assets"]

@@ -250,12 +250,15 @@ No echo cannot establish clear space, and a distant estimate is not a precise
 obstacle boundary. Verify actual sentinels, torso transforms and source update
 behavior on both target robots before physical acceptance.
 
-The initial private adapter uses a 0.5-second settling window after confirmed
+The native adapter uses a 0.5-second settling window after confirmed
 subscription, with null warming readings. This is a software policy, not measured
 hardware readiness or proof of a new native sample. It distinguishes in-range
 values, estimates, too-close indications and invalid/no-echo returns. It retains
 an unfinished subscribe future before cleanup: an unsubscribe that overtakes a
 late subscribe cannot prove the producer stopped. Pending unsubscribe work is
-retained rather than repeatedly queued. Agent/API integration and public observer
-sharing remain separate unfinished work.
+retained rather than repeatedly queued. Agent/API integration now exposes explicit
+owned sensor observers that share this native subscription. Reads and recordings
+do not activate it; source lifecycle and per-reading quality remain separate from
+acquisition freshness. These are software guarantees; physical readiness, range
+interpretation and source transforms remain acceptance work.
 

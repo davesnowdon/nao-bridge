@@ -52,6 +52,63 @@ class Probe:
             format_checker=FormatChecker(),
         ).validate(value)
 
+    def sensor_observers(self):
+        first = self.request(
+            "POST",
+            "/api/sensors/observers",
+            {"sources": ["sonar"]},
+            status=201,
+            schema="SensorObserver",
+        )
+        second = self.request(
+            "POST",
+            "/api/sensors/observers",
+            {"sources": ["sonar"]},
+            status=201,
+            schema="SensorObserver",
+        )
+
+        def wait(item, expected):
+            deadline = time.monotonic() + 5
+            while True:
+                value = self.request(
+                    "GET", "/api/sensors/observers/" + item["id"], schema="SensorObserver"
+                )
+                if value["status"] == expected:
+                    return value
+                assert time.monotonic() < deadline and value["status"] not in {
+                    "unknown",
+                    "failed",
+                }, value
+                time.sleep(0.02)
+
+        wait(first, "active")
+        wait(second, "active")
+        deadline = time.monotonic() + 5
+        while True:
+            state = self.request(
+                "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
+            )
+            values = state["groups"]["sensors"]["value"]
+            if values and all(
+                values["readings"][name]["value"] is not None
+                for name in ("sonar.left", "sonar.right")
+            ):
+                break
+            assert time.monotonic() < deadline, state
+            time.sleep(0.02)
+        self.validate("SensorStateValue", values)
+        assert "_sonar" not in values
+        assert values["readings"]["sonar.left"]["quality"] == "measured"
+        assert values["readings"]["sonar.right"]["quality"] == "estimated"
+        self.request("POST", "/api/sensors/observers/" + first["id"] + "/stop", {}, status=202)
+        wait(first, "stopped")
+        wait(second, "active")
+        self.request("POST", "/api/sensors/observers/" + second["id"] + "/stop", {}, status=202)
+        wait(second, "stopped")
+        state = self.request("GET", "/api/state?include=sensors", schema="State")
+        assert state["groups"]["sensors"]["value"]["readings"]["sonar.left"]["value"] is None
+
     def sample_recording(self):
         assert self.request("GET", "/api/robot")["backend"] in {"fake", "native-fixture"}
         recording = self.request(
@@ -206,7 +263,7 @@ def run(url):
         value = sensor_value
         for key in item["state_path"]:
             value = value[key]
-        assert value is not None, item
+        assert value is not None or item.get("producer") == "sonar", item
     assert sensor_value["readings"]["inertial.angle.x"] == {"value": 0.0, "reason": None}
     assert sensor_value["readings"]["foot.contact"] == {"value": True, "reason": None}
     assert sensor_value["readings"]["joint.HeadYaw.temperature"] == {"value": 35.0, "reason": None}
@@ -240,6 +297,7 @@ def run(url):
     assert again["id"] == session["id"]
     probe.session = session["id"]
     try:
+        probe.sensor_observers()
         operation = probe.request(
             "POST",
             "/api/speech/utterances",
@@ -380,6 +438,7 @@ def run(url):
         "checks": [
             "discovery",
             "state",
+            "shared_sonar_observers",
             "session",
             "idempotency",
             "speech",

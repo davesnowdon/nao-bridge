@@ -1,6 +1,6 @@
 # NAO Bridge Python client
 
-The replacement client provides `Nao` and `AsyncNao` for the version 1.2 HTTP/SSE
+The replacement client provides `Nao` and `AsyncNao` for the version 1.3 HTTP/SSE
 contract. Package version 0.2 removes the old `NAOBridgeClient` API. Python 3.10+
 is supported; a NAOqi installation is unnecessary on the client.
 
@@ -37,6 +37,7 @@ asyncio.run(main())
 | `robot.info()`, `robot.capabilities()` | Discovery without creating a session |
 | `robot.state(include=..., require_fresh=True)` | Shared observations; raises `StaleState` for stale/unavailable requested groups |
 | `sensors.list()`, `.state(...)` | Sensor units/paths/source availability and shared touch, battery, inertial, foot-load/contact and temperature readings |
+| `sensors.observe(["sonar"])`, `.get_observer(id)` | Owned demand sharing one native sonar producer; readiness and explicit stop |
 | `speech.say(text, wait=True, ...)` | Server-defaulted plain speech; returns an Operation |
 | `speech.listen(vocabulary, ...)`, `.get_listener(id)` | Owned vocabulary listener and current readiness |
 | `listener.configure(...)`, `.pause()`, `.resume()`, `.stop()` | Accepted configuration changes and explicit cleanup |
@@ -82,6 +83,36 @@ native discovery while `state` describes latest reading availability. Keep the
 state's connection generation and acquisition window when combining observations.
 See the [HTTP guide](../../docs/http-api.md#discovery-and-state) for all IDs, frames
 and units. Sensor samples also travel through SSE and bounded sample recordings.
+
+### Managed sonar
+
+Create an observer explicitly to activate sonar. Ordinary reads, SSE samples and
+sample recordings do not start it. Observers share a native subscription; closing
+one leaves the others running. Session expiry/close also releases its observers.
+
+```python
+with Nao() as nao:
+    with nao.sensors.observe(["sonar"]) as observer:
+        observer.wait_ready(timeout=5)
+        state = nao.sensors.state(require_fresh=True, wait_for_fresh_ms=1000)
+        reading = state.groups["sensors"].value["readings"]["sonar.left"]
+        print(reading["value"], reading["reason"], reading["quality"])
+```
+
+Use `async with await nao.sensors.observe(["sonar"])` with `AsyncNao`.
+`wait_configured()` accepts warming; `wait_ready()` waits for active. Active means
+subscription and the software settling window completed, not that every reading
+is usable or that the robot produced a new measurement. The next shared sample
+can still be pending. Inspect individual readings and group freshness each time.
+`quality` distinguishes measured, estimated, too-close and unavailable returns;
+null or no echo does not mean clear space.
+
+`refresh()` reconciles `sensor.observer_changed` events after a stream gap.
+`SensorObserverTimeout` and cancellation of a local wait leave the observer owned;
+explicit `stop()` or context exit requests cleanup. Unknown cleanup raises
+`SensorObserverError` and is retained in `cleanup_error`. Handles stay pinned to
+the original session/generation and never resume themselves after reconnection.
+See the [HTTP lifecycle](../../docs/http-api.md#managed-sonar) for recovery.
 
 ## Joint controls
 

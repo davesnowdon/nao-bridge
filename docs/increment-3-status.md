@@ -10,7 +10,7 @@ are unchanged. This document tracks further robot-free work against the full
 | --- | --- | --- |
 | Hand/foot bumper state and events | Delivered in increment 2 | Integrated API verification pending |
 | Passive inertial, foot load/contact and joint temperature observations | Adapter, shared state/catalog, schemas, SDK metadata and raw HTTP/native-container verification implemented | Both firmware generations pending |
-| Demand-managed sonar, warm-up and stale/invalid handling | Private adapter implemented/tested; agent/API ownership, shared sampling and public observer integration pending | Pending |
+| Demand-managed sonar, warm-up and stale/invalid handling | Native adapter, dedicated agent lane, HTTP lifecycle, shared sampling, sync/async SDK and conformance implemented | Pending |
 | Finite displacement/turn, speed mapping, priority stop | Pending | Pending |
 | Odometry, origin changes and observation frames | Pending | Pending |
 | Threshold/hysteresis observations | Pending | Pending |
@@ -42,5 +42,19 @@ container scenario for named subscription, warm-up, distance quality, preservati
 of another native subscriber, and a subscribe that finishes after timeout.
 Cleanup waits for the unfinished write and retains a pending unsubscribe rather
 than claiming success or queuing duplicates. The full native-container suite also
-passes. This adapter is not yet wired into the running agent or public HTTP API;
-it establishes the producer mechanism before adding multi-client ownership.
+passes.
+
+The integrated sonar lifecycle is contract 1.3.0. Session-owned observers share
+one source, including across clients. Last-release cleanup, priority stop, expiry,
+unknown-outcome quarantine, generation fencing and explicit recovery are wired
+through the API and dedicated native producer lane. The SDK exposes synchronous
+and asynchronous scopes, readiness waits and cleanup uncertainty. Cached readings
+are masked as soon as demand ends; old source revisions cannot leak valid distances.
+
+Integration verification: `make check` passed lint, formatting, types, 456 server
+and 47 client tests. A subsequent focused run passed 30 observer/SDK/contract tests,
+including two additional expiry and malformed/stale-producer regressions. The raw
+HTTP scenario creates two observers, waits for usable readings, stops each in turn
+and checks the shared source lifetime. The native suite also exercises start,
+sampling and stop with all four ordinary command workers blocked. Physical sonar
+accuracy, actual initialization/update behavior and frame geometry remain unverified.

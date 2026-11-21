@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1.0",
+  "contract_version": "1.3.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -7,7 +7,8 @@
     "operation_id",
     "subscription_id",
     "recording_id",
-    "asset_id"
+    "asset_id",
+    "sensor_observer_id"
   ],
   "scenarios": [
     {
@@ -129,6 +130,34 @@
       "nondeterminism": [
         "acquisition timestamps and actual sample cadence",
         "gaps and unavailable groups are explicit, never interpolated"
+      ]
+    },
+    {
+      "name": "shared sonar observers",
+      "steps": [
+        "GET /api/sensors and cached sensors state without a session",
+        "create two session-owned POST /api/sensors/observers with sources [sonar]",
+        "GET both observers until active",
+        "read sensors state and per-reading quality",
+        "POST first observer stop and reconcile",
+        "read remaining observer and state",
+        "POST remaining observer stop and reconcile",
+        "read state immediately after stopping"
+      ],
+      "expected": [
+        "sonar discovered but not activated; values null",
+        "201 starting resources sharing one native subscription",
+        "warming then active within 5s in software fixture",
+        "left 0.4m measured, right 1.2m estimated; acquisition window retained",
+        "first stopped; remaining observer active",
+        "remaining observer still receives fresh readings",
+        "stopped after native own-name unsubscribe confirmation",
+        "sonar values null; no old cached distances presented as active"
+      ],
+      "nondeterminism": [
+        "events can precede HTTP responses",
+        "active is producer state, not a guarantee that an individual reading is valid",
+        "hardware range/update behavior is unverified"
       ]
     }
   ]

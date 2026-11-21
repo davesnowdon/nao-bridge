@@ -407,6 +407,29 @@ async def check_native_controls():
         )
         assert stopped_recognition["status"] == "stopped"
         assert all(not task.done() for task in blocked)
+        sonar = await backend.configure_sonar(
+            {"producer_id": "blocked-workers-sonar", "revision": 1, "enabled": True}
+        )
+        assert sonar["status"] == "warming"
+        async with asyncio.timeout(3):
+            while (
+                state.get("sample", {})
+                .get("groups", {})
+                .get("sensors", {})
+                .get("readings", {})
+                .get("sonar.left", {})
+                .get("value")
+                != 0.4
+            ):
+                await asyncio.sleep(0.01)
+        stopped_sonar = await backend.configure_sonar(
+            {"producer_id": "blocked-workers-sonar", "revision": 2, "enabled": False}
+        )
+        assert stopped_sonar["status"] == "stopped" and all(not task.done() for task in blocked)
+        print(
+            "Native sonar IPC: start, shared samples and stop with four blocked workers passed",
+            flush=True,
+        )
         payload = {
             "operation_id": "control-one",
             "control_id": "fixture-control",
