@@ -771,7 +771,10 @@ class Core:
         if "speech.recognition" in resources and self.listeners.busy():
             raise BridgeError("resource_busy", "Vocabulary listeners own recognition", 409)
         if kind in NATIVE_KINDS and self.stop_pending(kind):
-            raise BridgeError("resource_busy", "Stop is in progress for this activity", 409)
+            message = (
+                "Robot stop is in progress" if self.stop_pending() else "Motion stop is in progress"
+            )
+            raise BridgeError("resource_busy", message, 409)
         recovery = kind in RECOVERY_KINDS
         if recovery and kind not in STOP_KINDS:
             self.trim_recovery_history(self.settings.max_recovery_operations - 1)
