@@ -317,6 +317,13 @@ class AgentBackend:
             "command", "autonomy", payload, session_id, operation_id, timeout=None
         )
 
+    async def light_transition(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "light_transition", payload, session_id, operation_id, timeout=None
+        )
+
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._rpc("controls", "joint_setpoint", payload, session_id)
 

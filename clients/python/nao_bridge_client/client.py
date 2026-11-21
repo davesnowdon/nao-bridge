@@ -16,6 +16,8 @@ from .models import (
     Capabilities,
     Event,
     JointCatalog,
+    LightCatalog,
+    LightSample,
     ListenerData,
     OdometrySample,
     OperationData,
@@ -51,6 +53,7 @@ class Nao:
         self.vision = Vision(self)
         self.motion = Motion(self)
         self.autonomy = Autonomy(self)
+        self.lights = Lights(self)
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
@@ -524,6 +527,49 @@ class Vision:
             self._nao._async.vision.capture(
                 camera,
                 resolution=resolution,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
+
+
+class Lights:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def groups(self) -> LightCatalog:
+        return self._nao._run(self._nao._async.lights.groups())
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> LightSample:
+        return self._nao._run(
+            self._nao._async.lights.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
+
+    def set(
+        self,
+        group: str,
+        *,
+        color: str | None = None,
+        brightness: float | None = None,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.lights.set(
+                group,
+                color=color,
+                brightness=brightness,
+                duration=duration,
                 wait=wait,
                 timeout=timeout,
                 idempotency_key=idempotency_key,

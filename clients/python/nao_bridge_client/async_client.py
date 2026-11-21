@@ -37,6 +37,8 @@ from .models import (
     ErrorDetail,
     Event,
     JointCatalog,
+    LightCatalog,
+    LightSample,
     ListenerData,
     OdometrySample,
     OperationData,
@@ -119,6 +121,7 @@ class AsyncNao:
         self.vision = AsyncVision(self)
         self.motion = AsyncMotion(self)
         self.autonomy = AsyncAutonomy(self)
+        self.lights = AsyncLights(self)
         self.speech = AsyncSpeech(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
@@ -941,6 +944,60 @@ class AsyncSensors:
             wait_for_fresh_ms=wait_for_fresh_ms,
             require_fresh=require_fresh,
         )
+
+
+class AsyncLights:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def groups(self) -> LightCatalog:
+        return decode(LightCatalog, await self._nao._request("GET", "/api/lights"))
+
+    async def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> LightSample:
+        state = await self._nao.robot.state(
+            include=["lights"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+        return decode(
+            LightSample,
+            {
+                **state.groups["lights"].model_dump(),
+                "bridge_instance_id": state.bridge_instance_id,
+                "connection_generation": state.connection_generation,
+            },
+        )
+
+    async def set(
+        self,
+        group: str,
+        *,
+        color: str | None = None,
+        brightness: float | None = None,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"group": group}
+        body.update(
+            (field, value)
+            for field, value in (
+                ("color", color),
+                ("brightness", brightness),
+                ("duration", duration),
+            )
+            if value is not None
+        )
+        result = await self._nao._request(
+            "POST", "/api/lights/transitions", body=body, key=idempotency_key or uuid.uuid4().hex
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, result))
+        return await op.wait(timeout=timeout) if wait else op
 
 
 class AsyncAutonomy:

@@ -17,6 +17,7 @@ from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 from camera import VideoDevice, FixtureVideo
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
+from lights import Lights, FixtureLights
 from velocity import MAX_ROTATION, MAX_TRANSLATION
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
@@ -69,6 +70,7 @@ class NativeDriver(object):
         self.sonar = None
         self.camera = None
         self.faces = None
+        self.lights = None
         self.passive_sensors = None
         self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
@@ -148,6 +150,8 @@ class NativeDriver(object):
         self.description["cameras"] = self.camera.items
         self.faces = FaceDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
         self.description["faces"] = self.faces.catalog
+        self.lights = Lights(self.session, self.memory, self.call)
+        self.description["lights"] = self.lights.catalog()
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -193,6 +197,7 @@ class NativeDriver(object):
         passive_sensors = self.passive_sensors
         sonar = self.sonar
         odometry = self.odometry
+        lights = self.lights
 
         def unavailable():
             raise ValueError("native_service_unavailable")
@@ -207,7 +212,13 @@ class NativeDriver(object):
         return {"sensors": lambda: self.sample_sensors(memory, passive_sensors, sonar),
                 "joints": motion.sample_joints if motion else unavailable,
                 "motion": motion_state if motion else unavailable,
-                "autonomy": autonomy.sample if autonomy else unavailable}
+                "autonomy": autonomy.sample if autonomy else unavailable,
+                "lights": lights.sample if lights and lights.groups else unavailable}
+
+    def light_transition(self, payload):
+        if not self.lights:
+            raise ValueError("Lights unavailable")
+        return self.lights.dispatch(payload)
 
     def speak(self, payload):
         # Voice changes are a later capability; do not mutate global voice preferences silently.
@@ -343,6 +354,7 @@ class NativeDriver(object):
     def close(self):
         self._connected.clear()
         self.locomotion = self.odometry = None
+        self.lights = None
         if self.faces:
             self.faces.close()
             self.faces = None
@@ -464,6 +476,7 @@ class FixtureDriver(NativeDriver):
         self.sonar_impl = qi.multiThreaded()(FixtureSonar)()
         self.video_impl = qi.multiThreaded()(FixtureVideo)()
         self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
+        self.lights_impl = qi.multiThreaded()(FixtureLights)(self.memory_impl)
         self.face_sequence = 0
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
@@ -476,6 +489,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALSonar", self.sonar_impl)
         self.server.registerService("ALVideoDevice", self.video_impl)
         self.server.registerService("ALFaceDetection", self.faces_impl)
+        self.server.registerService("ALLeds", self.lights_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 

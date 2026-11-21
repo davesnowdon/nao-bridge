@@ -16,7 +16,7 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.9.0 replaces the old API without compatibility
+remain available. Contract 1.10.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
@@ -30,6 +30,9 @@ finite moves, live stop handling, a local occupancy map and pose-associated stil
 Velocity leases are available in software fixtures. Hardware velocity remains
 disabled pending measured stop and expiry tests. Physical walking, stopping,
 camera and sensor acceptance remain pending.
+
+[Increment-4 work](docs/increment-4-status.md) starts with RGB and monochrome
+light groups, session-owned fades, and actuator read-back via shared state and SSE.
 
 Robot-free tests cover real SDK loopback services and injected process failures.
 Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the

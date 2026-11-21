@@ -471,6 +471,48 @@ Python provides `nao.autonomy.state(...)` and
 `nao.autonomy.configure({"life_state":"disabled","basic_awareness":False})`, with
 matching sync/async methods and the usual `wait`, timeout and operation handles.
 
+## Lights
+
+`GET /lights` returns the groups discovered on the connected robot, their
+`rgb` or `mono` mode, and the resource IDs used to arbitrate overlapping
+groups. The common IDs are `eyes`, `eyes.left`, `eyes.right`, `chest`,
+`feet.left`, `feet.right`, `ears`, `ears.left`, `ears.right` and `head`.
+The catalog only contains groups confirmed by that connection's discovery.
+
+`POST /lights/transitions` requires a session and returns a `lights.transition`
+Operation. For example, this body fades both eyes to half-strength blue over
+half a second.
+
+```json
+{"group": "eyes", "color": "#0000ff", "brightness": 0.5, "duration": 0.5}
+```
+
+Send `color`, `brightness`, or both for RGB. An RGB brightness-only request
+sets white at that level. With a color, brightness scales each normalized
+channel and defaults to 1. Monochrome groups accept brightness alone. Brightness
+is a ratio from 0 to 1, and duration is 0–10 seconds with a default of 0.
+Concurrent transitions need disjoint resources. After a successful transition,
+the session holds the affected resources until it ends. Cleanup releases
+ownership and leaves the applied light levels in place.
+
+`GET /state?include=lights` and optional `lights` groups in `state.sample`
+provide read-back independently of operation status. The group value conforms
+to `LightStateValue`. Each RGB reading contains normalized red, green and blue
+levels; each monochrome reading contains `intensity`. Uniform, valid native
+actuator values produce `observed`. Differing values within a channel produce
+a null channel and `mixed`. An absent or invalid native value yields a null
+channel and `unavailable`. The enclosing sample still carries its own age
+and freshness. Read-back describes the actuator registers, so robot-side
+controllers can change values after a bridge command completes.
+
+Cancellation fences queued work. An already dispatched native fade may continue
+to completion. The bridge can report `unknown` while retaining the resource,
+then reconcile the same operation when native completion arrives. Wait for
+that result and take a fresh state sample before deciding what to apply next.
+
+Both Python clients offer `lights.groups()`, `lights.state()`, and
+`lights.set("eyes", color="#0000ff", brightness=0.5, duration=0.5)`.
+
 ## Speech
 
 Speech capabilities expose the discovered supported language/default voice. Native

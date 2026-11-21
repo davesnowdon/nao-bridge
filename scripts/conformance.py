@@ -297,6 +297,65 @@ class Probe:
             self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
         stop(observers[1])
 
+    def light_transitions(self):
+        catalog = self.request("GET", "/api/lights", schema="LightCatalog")
+        groups = {group["id"]: group for group in catalog["items"]}
+        assert groups["eyes.left"]["mode"] == "rgb"
+        assert groups["ears.left"]["mode"] == "mono"
+        assert set(groups["eyes.left"]["resources"]) < set(groups["eyes"]["resources"])
+        path = "/api/lights/transitions"
+        payload = {"group": "eyes.left", "color": "#0000ff", "brightness": 0.5}
+        key = {"Idempotency-Key": "raw-light"}
+        action = self.request("POST", path, payload, status=202, schema="Operation", headers=key)
+        duplicate = self.request("POST", path, payload, status=202, headers=key)
+        assert action["id"] == duplicate["id"] and action["kind"] == "lights.transition"
+        assert self.wait(action)["status"] == "succeeded"
+        invalid = self.request(
+            "POST", path, {"group": "ears.left", "color": "#ff0000"}, status=422, schema="Error"
+        )
+        assert invalid["error"]["code"] == "unsupported"
+        mono = self.request(
+            "POST", path, {"group": "ears.left", "brightness": 0.375, "duration": 0.05}, status=202
+        )
+        assert self.wait(mono)["status"] == "succeeded"
+        deadline = time.monotonic() + 3
+        while True:
+            state = self.request("GET", "/api/state?include=lights&wait_for_fresh_ms=1000")
+            values = state["groups"]["lights"]["value"]
+            if values and values["groups"]["ears.left"]["channels"]["intensity"] == 0.375:
+                break
+            assert time.monotonic() < deadline, state
+            time.sleep(0.02)
+        self.validate("LightStateValue", values)
+        observed = values["groups"]
+        assert observed["eyes.left"] == {
+            "quality": "observed",
+            "channels": {"red": 0, "green": 0, "blue": 0.5},
+        }
+        assert (
+            observed["eyes"]["quality"] == "mixed" and observed["eyes"]["channels"]["blue"] is None
+        )
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"samples": [{"groups": ["lights"], "rate_hz": 5}]},
+            status=201,
+            schema="Subscription",
+        )
+        try:
+            self.stream(
+                sub,
+                observations=[
+                    (
+                        "state.sample",
+                        "StateSample",
+                        lambda data: data["state"]["groups"]["lights"]["value"] == values,
+                    )
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+
     def velocity_control(self):
         path = "/api/motion/velocity"
         self.request(
@@ -466,6 +525,9 @@ def run(url):
             probe.camera_capture()
         if faces:
             probe.vision_observers()
+        lights = probe.request("GET", "/api/lights", schema="LightCatalog")["support"]["status"]
+        if lights == "available":
+            probe.light_transitions()
         operation = probe.request(
             "POST",
             "/api/speech/utterances",
@@ -621,7 +683,8 @@ def run(url):
         ]
         + (["camera_capture_and_download"] if captures else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
-        + (["ordered_velocity_expiry"] if velocity else []),
+        + (["ordered_velocity_expiry"] if velocity else [])
+        + (["light_transitions_and_readback"] if lights == "available" else []),
     }
 
 

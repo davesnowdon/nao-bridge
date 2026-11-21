@@ -24,12 +24,13 @@ from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
 from camera import CameraError, CameraUnknown, handoff, valid_capture, valid_capture_id
 from faces import valid_configuration as valid_faces
+from lights import valid_light
 from velocity import VelocityControls
 from wire import VERSION, encode, frames, monotonic
 
 PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
 COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
-                autonomy=valid_autonomy, camera_capture=valid_capture)
+                autonomy=valid_autonomy, camera_capture=valid_capture, light_transition=valid_light)
 
 
 def valid_stop(request):
@@ -142,7 +143,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "camera_capture") and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "camera_capture", "light_transition") and request.get("session_id") in self.revoked:
             return "fenced_session"
         return None
 
@@ -221,6 +222,8 @@ class Agent(object):
                     continue
                 with self.lock:
                     result = {"cancelled": record.get("stop_requested", False), "backend": "naoqi"}
+                    if request["action"] == "light_transition":
+                        result["cancelled"] = False
                     if request["action"] == "motion_action" and request["payload"]["kind"] == "posture":
                         if not isinstance(native_result, bool):
                             raise RuntimeError("Invalid native posture result")
@@ -230,7 +233,7 @@ class Agent(object):
             except Exception as error:
                 if record.get("motion_kind") == "walk" and record["phase"] != "queued":
                     self.finish_walk(request, replies, record, None, failed=True)
-                elif future is not None and future.isCanceled():
+                elif future is not None and future.isCanceled() and request["action"] != "light_transition":
                     # qi reports confirmed cancellation by raising from value().
                     result = {"cancelled": True, "backend": "naoqi"}
                     with self.lock:
@@ -451,8 +454,9 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if (record.get("action") in PRODUCERS or record.get("action") in ("autonomy", "camera_capture")) and record["phase"] != "queued":
-                # A completed individual setter does not finish a multi-setting transition.
+            if (record.get("action") in PRODUCERS or record.get("action") in ("autonomy", "camera_capture", "light_transition")) and record["phase"] != "queued":
+                # These operations require their own completion record. A light fade has
+                # no confirmed native interruption and may settle after this stop request.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
                 continue
             if record["phase"] == "queued":
@@ -500,7 +504,7 @@ class Agent(object):
                 and not any(key in unresolved for key in velocity_ids),
                 joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
-                        if key in self.records and self.records[key].get("action") == "autonomy" and "result" in self.records[key])
+                        if key in self.records and self.records[key].get("action") in ("autonomy", "light_transition") and "result" in self.records[key])
         if outcomes:
             result["results"] = outcomes
         if control_ids:

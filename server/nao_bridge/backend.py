@@ -11,6 +11,7 @@ from .camera_frames import CAMERA_SIZES
 from .contract import CONTACTS, PASSIVE_SENSORS
 from .errors import BackendUnknown, BridgeError
 from .fake_controls import FakeControls, FakeVelocityControls
+from .lights import RGB_CHANNELS
 
 EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -30,6 +31,9 @@ class Backend(Protocol):
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
     async def configure_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
+    async def light_transition(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -73,6 +77,7 @@ class FakeBackend:
         self.posture_reached = True
         self.calls: list[dict[str, Any]] = []
         self.autonomy_results: dict[str, dict[str, Any]] = {}
+        self.light_results: dict[str, dict[str, Any]] = {}
         self.controls = FakeControls(self)
         self.velocity_controls = FakeVelocityControls(self)
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
@@ -178,6 +183,26 @@ class FakeBackend:
             }
             for name, value in self.autonomy_state.items()
         }
+        self.light_channels = {
+            "eyes.left": dict.fromkeys(RGB_CHANNELS, 0.0),
+            "eyes.right": dict.fromkeys(RGB_CHANNELS, 0.0),
+            "ears.left": {"intensity": 0.0},
+        }
+        self.light_members = {
+            "eyes": ("eyes.left", "eyes.right"),
+            "eyes.left": ("eyes.left",),
+            "eyes.right": ("eyes.right",),
+            "ears": ("ears.left",),
+            "ears.left": ("ears.left",),
+        }
+        self.light_catalog = [
+            {
+                "id": group,
+                "mode": "mono" if group.startswith("ears") else "rgb",
+                "resources": [f"lights.{group.split('.')[0]}+{leaf}" for leaf in members],
+            }
+            for group, members in self.light_members.items()
+        ]
 
     async def start(self, sink: EventSink) -> None:
         self.sink = sink
@@ -234,6 +259,7 @@ class FakeBackend:
                     "chains": self.chains,
                     "postures": ["StandInit", "Sit", "Crouch"],
                     "autonomy": self.autonomy_catalog,
+                    "lights": self.light_catalog,
                     "motion_events": {
                         "posture_fields": ["family", "posture"],
                         "fall_phases": ["fallen", "falling"],
@@ -345,6 +371,7 @@ class FakeBackend:
                                     if value is None
                                 },
                             },
+                            "lights": self.sample_lights() if self.light_catalog else None,
                         },
                         "started": now,
                         "finished": now,
@@ -356,6 +383,22 @@ class FakeBackend:
         self.touch[sensor] = pressed
         if self.sink:
             await self.sink("touch.changed", {"sensor": sensor, "pressed": pressed})
+
+    def sample_lights(self) -> dict[str, Any]:
+        groups = {}
+        for group, members in self.light_members.items():
+            first = self.light_channels[members[0]]
+            channels = {
+                name: value
+                if all(self.light_channels[member][name] == value for member in members)
+                else None
+                for name, value in first.items()
+            }
+            groups[group] = {
+                "quality": "mixed" if None in channels.values() else "observed",
+                "channels": channels,
+            }
+        return {"groups": groups}
 
     async def speak(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
@@ -566,8 +609,26 @@ class FakeBackend:
         self.autonomy_results[operation_id] = result
         return result
 
+    async def light_transition(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._execute(
+            operation_id, session_id, payload, "light_transition", delay=payload["duration"]
+        )
+        if not result.get("cancelled"):
+            for member in self.light_members[payload["group"]]:
+                self.light_channels[member] = dict(payload["channels"])
+        self.light_results[operation_id] = result
+        return result
+
     async def _execute(
-        self, operation_id: str, session_id: str, payload: dict[str, Any], action: str
+        self,
+        operation_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+        action: str,
+        *,
+        delay: float = 0.0,
     ) -> dict[str, Any]:
         if not self.connected:
             raise BackendUnknown("Robot disconnected before dispatch could be established")
@@ -593,7 +654,7 @@ class FakeBackend:
         self.active[operation_id] = (session_id, cancel)
         try:
             try:
-                await asyncio.wait_for(cancel.wait(), timeout=self.duration)
+                await asyncio.wait_for(cancel.wait(), timeout=max(self.duration, delay))
                 return {"cancelled": True}
             except TimeoutError:
                 if not self.connected:
@@ -654,7 +715,7 @@ class FakeBackend:
                 if (
                     call["action"] == "walk"
                     if motion_scope == "locomotion"
-                    else call["action"] not in {"speech", "camera_capture"}
+                    else call["action"] not in {"speech", "camera_capture", "light_transition"}
                 )
             }
             if motion_scope
@@ -696,11 +757,18 @@ class FakeBackend:
             }
         if motion_scope:
             self.motion_stop_ids.extend(operation_ids or [])
+        deferred = {
+            call["id"]
+            for call in self.calls
+            if call["action"] == "light_transition" and call["id"] in matched
+        }
         for key in matched:
-            self.active[key][1].set()
+            if key not in deferred:
+                self.active[key][1].set()
+        outcomes = {**self.autonomy_results, **self.light_results}
         completed = [
             key
-            for key in self.autonomy_results
+            for key in outcomes
             if (operation_id is None or key == operation_id)
             and (motion_scope is None or key in selected)
             and (
@@ -712,7 +780,7 @@ class FakeBackend:
         ]
         unresolved = {
             oid for oid, value in {**controls, **velocity}.items() if not value["released"]
-        }
+        } | deferred
         return {
             "confirmed_ids": list(
                 set(
@@ -728,7 +796,7 @@ class FakeBackend:
             "unresolved_ids": list(unresolved),
             "controls": controls,
             "velocity_controls": velocity,
-            "results": {key: self.autonomy_results[key] for key in completed},
+            "results": {key: outcomes[key] for key in completed},
             **scope_result,
         }
 

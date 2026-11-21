@@ -810,7 +810,9 @@ try:
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")
     recovery_probe.schemas = probe.schemas
-    print(json.dumps(conformance.run("http://127.0.0.1:3000")))
+    summary = conformance.run("http://127.0.0.1:3000")
+    assert "light_transitions_and_readback" in summary["checks"], summary
+    print(json.dumps(summary))
     observers, streams = [], []
     try:
         for _ in range(2):

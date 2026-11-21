@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.9.0",
-    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots."
+    "version": "1.10.0",
+    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots. Increment 4 begins with discovered light groups and state."
   },
   "servers": [
     {
@@ -3086,6 +3086,104 @@
         ],
         "description": "Sequence zero creates an owned base-velocity operation. Newer sequences replace the entire robot-frame target. The planar vector magnitude is bounded by the discovered limit. Duplicate updates leave expiry unchanged. Use operation cancellation or motion stop for a controlled stop. Physical availability requires hardware acceptance."
       }
+    },
+    "/lights": {
+      "get": {
+        "operationId": "listLightGroups",
+        "summary": "Discover common RGB and monochrome light groups and their shared resources",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LightCatalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lights/transitions": {
+      "post": {
+        "operationId": "setLights",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LightTransitionCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Set brightness or RGB color on a discovered light group",
+        "description": "Duration is in seconds. A native fade already in flight may finish after cancellation is requested."
+      }
     }
   },
   "components": {
@@ -3365,6 +3463,21 @@
       },
       "VelocityControlCapability": {
         "$ref": "schemas.json#/$defs/VelocityControlCapability"
+      },
+      "LightGroup": {
+        "$ref": "schemas.json#/$defs/LightGroup"
+      },
+      "LightCatalog": {
+        "$ref": "schemas.json#/$defs/LightCatalog"
+      },
+      "LightReading": {
+        "$ref": "schemas.json#/$defs/LightReading"
+      },
+      "LightStateValue": {
+        "$ref": "schemas.json#/$defs/LightStateValue"
+      },
+      "LightTransitionCreate": {
+        "$ref": "schemas.json#/$defs/LightTransitionCreate"
       }
     }
   }

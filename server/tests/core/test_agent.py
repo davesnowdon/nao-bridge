@@ -184,6 +184,40 @@ def test_stop_does_not_confuse_finished_autonomy_setter_with_finished_transition
     assert agent.stop(request)["results"]["operation"] == outcome
 
 
+def test_stop_during_light_fade_waits_for_actual_completion(agent_module):
+    agent = bare_agent(agent_module)
+    request = {
+        "id": "fade",
+        "session_id": "session",
+        "action": "light_transition",
+        "payload": {"group": "eyes", "channels": {"red": 0, "green": 0, "blue": 1}, "duration": 1},
+        "agent": "agent",
+        "api": "api",
+        "epoch": 1,
+        "deadline": agent_module.monotonic() + 1,
+    }
+    stop = {"session_id": "session", "payload": {"operation_id": "fade"}}
+
+    def complete_fade():
+        assert agent.stop(stop) == {"confirmed_ids": [], "unresolved_ids": ["fade"]}
+
+    agent.driver.light_transition = lambda _: types.SimpleNamespace(value=complete_fade)
+    agent.records["fade"] = {
+        "session_id": "session",
+        "action": "light_transition",
+        "status": "accepted",
+        "phase": "queued",
+    }
+    replies = queue.Queue(8)
+    agent.work = DrainQueue((request, replies))
+    with pytest.raises(StopIteration):
+        agent.worker()
+    assert replies.get_nowait()["status"] == "accepted"
+    reply = replies.get_nowait()
+    assert reply["status"] == "completed" and reply["result"]["cancelled"] is False
+    assert agent.stop(stop)["results"]["fade"] == reply["result"]
+
+
 def test_finite_control_thread_can_finish_normally_without_killing_agent(agent_module, monkeypatch):
     agent = bare_agent(agent_module)
     monkeypatch.setattr(

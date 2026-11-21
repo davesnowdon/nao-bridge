@@ -581,6 +581,25 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/lights")
+    async def light_groups(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.light_catalog()
+
+    @app.post("/api/lights/transitions")
+    async def light_transition(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "LightTransitionCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /lights/transitions",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.light_transition(owner, value),
+        )
+        return created(result, "operations", 202)
+
     @app.post("/api/autonomy/transitions")
     async def configure_autonomy(request: Request) -> Response:
         value = await body(request, "AutonomyTransitionCreate")

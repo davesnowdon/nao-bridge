@@ -4048,6 +4048,212 @@
         "max_rotation_rad_s"
       ],
       "additionalProperties": true
+    },
+    "LightGroup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z.]*$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "rgb",
+            "mono"
+          ]
+        },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "mode",
+        "resources"
+      ],
+      "additionalProperties": true
+    },
+    "LightCatalog": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LightGroup"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "support": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation",
+        "support"
+      ],
+      "additionalProperties": true
+    },
+    "LightReading": {
+      "type": "object",
+      "properties": {
+        "quality": {
+          "type": "string",
+          "enum": [
+            "observed",
+            "mixed",
+            "unavailable"
+          ]
+        },
+        "channels": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "red": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "green": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "blue": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "red",
+                "green",
+                "blue"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "intensity": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "intensity"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "quality",
+        "channels"
+      ],
+      "additionalProperties": true
+    },
+    "LightStateValue": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/LightReading"
+          }
+        }
+      },
+      "required": [
+        "groups"
+      ],
+      "additionalProperties": true
+    },
+    "LightTransitionCreate": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z.]*$"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "minLength": 7,
+          "maxLength": 7
+        },
+        "brightness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "color"
+          ]
+        },
+        {
+          "required": [
+            "brightness"
+          ]
+        }
+      ],
+      "additionalProperties": false
     }
   }
 }

@@ -19,6 +19,7 @@ from .face_observers import CHANGED as FACE_OBSERVER_CHANGED
 from .face_observers import DETECTIONS, MAX_HISTORY, MAX_OBSERVERS, FaceObservers
 from .joint_controls import KIND as CONTROL_KIND
 from .joint_controls import VELOCITY_KIND, JointControls, VelocityControls
+from .lights import LIGHT_KIND, transition_payload
 from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
 from .recordings import KIND as RECORDING_KIND
@@ -42,10 +43,11 @@ ORDINARY_KINDS = {
     "motion.joint_move",
     "motion.trajectory_run",
     "autonomy.transition",
+    LIGHT_KIND,
 } | MOTION_ACTIONS
 CONTROL_KINDS = {CONTROL_KIND, VELOCITY_KIND}
 NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS
-MOTION_KINDS = NATIVE_KINDS - {"speech.utterance"}
+MOTION_KINDS = NATIVE_KINDS - {"speech.utterance", LIGHT_KIND}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -412,6 +414,8 @@ class Core:
                         for item in self.info.get("autonomy", {}).values()
                     )
                 ),
+                "lights.groups": feature(available and bool(self.info.get("lights"))),
+                "lights.transitions": feature(available and bool(self.info.get("lights"))),
                 "recordings": feature(available and self.recordings.available()),
                 "assets": feature(self.recordings.store is not None),
                 "vision.cameras": feature(available and bool(self.info.get("cameras"))),
@@ -469,7 +473,7 @@ class Core:
                 "joint_control_default_speed": 0.1,
             },
             "event_types": list(EVENT_TYPES),
-            "state_groups": ["sensors", "joints", "motion", "autonomy"],
+            "state_groups": ["sensors", "joints", "motion", "autonomy", "lights"],
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
             "recognition": copy.deepcopy(self.info.get("recognition", {})),
             "sonar": copy.deepcopy(self.info.get("sonar", {})),
@@ -628,6 +632,15 @@ class Core:
                 "status": "available" if items else "unavailable",
                 "reason": None if items else "not_connected_or_discovered",
             },
+        }
+
+    def light_catalog(self) -> dict[str, Any]:
+        return {
+            "items": copy.deepcopy(self.info.get("lights", []))
+            if self.connection == "connected"
+            else [],
+            "connection_generation": self.generation,
+            "support": self.capabilities()["features"]["lights.groups"],
         }
 
     def state(self, groups: list[str] | None = None, max_age_ms: int = 250) -> dict[str, Any]:
@@ -1228,6 +1241,22 @@ class Core:
             except TimeoutError:
                 return False
 
+    def light_transition(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        group = next(
+            (item for item in self.info.get("lights", []) if item["id"] == body["group"]),
+            None,
+        )
+        if not group:
+            raise BridgeError("unsupported", "Light group is unavailable", 422)
+        payload = transition_payload(group["mode"], body)
+        resources = list(group["resources"])
+        op = self.new_operation(session, LIGHT_KIND, resources)
+        op.retained_resources = resources
+        op.task = self.spawn(self.run_native(op, payload))
+        return copy.deepcopy(op.public)
+
     async def run_native(self, op: Operation, payload: dict[str, Any]) -> None:
         if op.public["status"] != "accepted":
             return
@@ -1256,6 +1285,8 @@ class Core:
                 if op.public["kind"] == "speech.utterance"
                 else self.backend.configure_autonomy
                 if op.public["kind"] == "autonomy.transition"
+                else self.backend.light_transition
+                if op.public["kind"] == LIGHT_KIND
                 else self.backend.motion_action
                 if op.public["kind"] in MOTION_ACTIONS
                 else self.backend.trajectory
@@ -1405,6 +1436,12 @@ class Core:
                 )
             return
         result = stopped.get("results", {}).get(op.public["id"])
+        if op.public["kind"] == LIGHT_KIND:
+            result = (
+                result if isinstance(result, dict) else {"cancelled": True, "dispatched": False}
+            )
+            self.finish(op, "cancelled" if result.get("cancelled") else "succeeded", result)
+            return
         if op.public["kind"] == "autonomy.transition" and isinstance(result, dict):
             outcome = result.get("outcome", "unknown")
             self.finish(
@@ -1768,7 +1805,7 @@ class Core:
             raise BridgeError("invalid_request", "Threshold events require at least one rule")
         samples = []
         for request in body.get("samples", []):
-            if set(request["groups"]) - {"sensors", "joints", "motion", "autonomy"}:
+            if set(request["groups"]) - GROUPS:
                 raise BridgeError("unsupported", "Sample group not implemented", 422)
             rate = request["rate_hz"]
             if rate > self.settings.sample_rate_hz and not body.get("allow_lower_rate", False):

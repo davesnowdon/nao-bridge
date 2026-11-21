@@ -323,6 +323,33 @@ class State(WireModel):
     groups: dict[str, StateGroup]
 
 
+class LightGroup(WireModel):
+    id: str
+    mode: Literal["rgb", "mono"]
+    resources: list[str]
+
+
+class LightCatalog(WireModel):
+    items: list[LightGroup]
+    connection_generation: int
+    support: Capability
+
+
+class LightReading(WireModel):
+    quality: Literal["observed", "mixed", "unavailable"]
+    channels: dict[str, float | None]
+
+
+class LightStateValue(WireModel):
+    groups: dict[str, LightReading]
+
+
+class LightSample(StateGroup):
+    value: LightStateValue | None
+    bridge_instance_id: str
+    connection_generation: int
+
+
 class PlanarVector(WireModel):
     x: float
     y: float

@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.9.0",
+  "contract_version": "1.10.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -264,6 +264,29 @@
       ],
       "nondeterminism": [
         "opaque IDs, native image timestamps, and callback ordering"
+      ]
+    },
+    {
+      "name": "light transitions and read-back",
+      "steps": [
+        "GET /api/lights and compare the eyes and eyes.left resource lists",
+        "POST /api/lights/transitions for eyes.left with color #0000ff and brightness 0.5",
+        "repeat the POST with the same key, then await completion",
+        "send a color to a mono group",
+        "apply brightness to the mono group and await completion",
+        "GET /api/state?include=lights and subscribe to light samples"
+      ],
+      "expected": [
+        "available RGB and mono groups and overlapping eye resources",
+        "202 lights.transition",
+        "same operation ID and succeeded",
+        "422 unsupported",
+        "succeeded with mono brightness applied",
+        "the left eye reports observed blue at 0.5, the eyes group is mixed, and SSE carries the same readings"
+      ],
+      "client_decisions": [
+        "Use listed modes and overlapping resource IDs when choosing targets.",
+        "Read fresh actuator state independently of the operation result."
       ]
     },
     {
