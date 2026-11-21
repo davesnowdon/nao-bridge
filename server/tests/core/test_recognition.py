@@ -213,6 +213,30 @@ def test_active_or_unknown_external_recognizer_is_not_reconfigured(recognition, 
     assert not native.calls and not adapter.links
 
 
+def test_failed_engine_probe_rejects_without_mutating_and_can_retry(recognition, monkeypatch):
+    adapter, native, seen = make(recognition)
+
+    def failed_read(key):
+        raise RuntimeError("native read failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(native, "getData", failed_read)
+        with pytest.raises(recognition.RecognitionError) as error:
+            adapter.configure(request())
+        assert error.value.code == "resource_busy"
+    assert not adapter.poisoned and not native.calls and not seen
+    assert adapter.snapshot()["status"] == "stopped"
+    assert adapter.configure(request())["status"] == "listening"
+
+
+def test_utf8_native_hypotheses_match_unicode_vocabulary(recognition):
+    raw = ["café".encode(), 0.9, b"\xff", 0.8, b"cafe", 0.7, "café", 0.6, b"play", 0.5]
+    assert recognition.hypotheses(raw, ["café", "play"]) == [
+        {"text": "café", "confidence": 0.9},
+        {"text": "play", "confidence": 0.5},
+    ]
+
+
 def test_fenced_transition_never_dispatches_later_writes(recognition):
     adapter, native, seen = make(recognition)
     authorized = [True]

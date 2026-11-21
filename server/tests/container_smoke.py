@@ -205,16 +205,22 @@ try:
     assert words[-1]['revision'] == 1 and words[-1]['hypotheses'][0]['text'] == 'capture'
     assert adapter.configure(request(2, paused=True))['status'] == 'paused'
     driver.recognition_impl.emit(['capture', 0.8])
-    assert adapter.configure(request(3, ['capture', 'save']))['status'] in ('warming', 'listening')
+    accent = u'caf\\u00e9'
+    vocabulary = [u'capture', u'save', accent]
+    assert adapter.configure(request(3, vocabulary))['status'] in ('warming', 'listening')
     wait(lambda: adapter.snapshot()['status'] == 'listening')
+    native_words = [word.decode('utf-8') if isinstance(word, str) else word
+                    for word in driver.recognition_impl.vocabulary]
+    assert native_words == vocabulary
     count = len([data for kind, data in seen if kind == 'recognition.words'])
     old_callback(['capture', 0.8])
     assert len([data for kind, data in seen if kind == 'recognition.words']) == count
-    driver.recognition_impl.emit(['play', 0.9, 'save', 0.8])
+    driver.recognition_impl.emit(['play', 0.9, 'save', 0.8, accent.encode('utf-8'), 0.7])
     wait(lambda: len([data for kind, data in seen if kind == 'recognition.words']) > count)
     latest = [data for kind, data in seen if kind == 'recognition.words'][-1]
     assert latest['revision'] == 3
-    assert latest['hypotheses'] == [{'text': 'save', 'confidence': 0.8}]
+    assert latest['hypotheses'] == [{'text': 'save', 'confidence': 0.8},
+                                    {'text': accent, 'confidence': 0.7}]
     adapter.configure({'producer_id': 'fixture-producer', 'revision': 4, 'configuration': None})
     assert not adapter.links and not driver.recognition_impl.subscribers
     print('Native recognition: discovery, phrases, pause/configure, callbacks and cleanup passed')

@@ -47,6 +47,12 @@ def hypotheses(value, vocabulary):
         return []
     result, seen = [], set()
     for word, confidence in zip(value[::2], value[1::2]):
+        # The Python 2 SDK returns UTF-8 bytes while JSON vocabulary is Unicode.
+        if isinstance(word, bytes):
+            try:
+                word = word.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
         if (not isinstance(word, string_type) or word not in vocabulary or word in seen
                 or isinstance(confidence, bool) or not isinstance(confidence, numbers.Real)
                 or not 0 <= confidence <= 1):
@@ -181,7 +187,10 @@ class Recognition(object):
                 generation = self.generation
 
             if config and not self.subscribed:
-                running = self.call(self.memory, "getData", "ALSpeechRecognition/IsRunning")
+                try:
+                    running = self.call(self.memory, "getData", "ALSpeechRecognition/IsRunning")
+                except Exception:
+                    raise RecognitionError("resource_busy", "Native recognition state could not be read")
                 if running is not False:
                     raise RecognitionError("resource_busy", "Recognition is active elsewhere or its state is unknown")
 
