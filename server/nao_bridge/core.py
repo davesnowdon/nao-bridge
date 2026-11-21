@@ -12,7 +12,7 @@ from typing import Any
 from . import __version__
 from .backend import Backend
 from .config import Settings
-from .contract import CONTACTS, VERSION, canonical
+from .contract import CONTACTS, SCHEMAS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
 from .face_observers import CHANGED as FACE_OBSERVER_CHANGED
@@ -38,16 +38,29 @@ STOP_ROUTES = {"POST /robot/stop", "POST /motion/stop"}
 RECOVERY_KINDS = {"session.close", "session.revoke"} | STOP_KINDS
 CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
 MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change", "motion.move"}
-ORDINARY_KINDS = {
-    "speech.utterance",
-    "motion.joint_move",
-    "motion.trajectory_run",
-    "autonomy.transition",
-    LIGHT_KIND,
-} | MOTION_ACTIONS
+PLAIN_SPEECH = "speech.utterance"
+ANIMATED_SPEECH = "speech.animated_utterance"
+SPEECH_KINDS = {PLAIN_SPEECH, ANIMATED_SPEECH}
+SPEECH_RANGES = {
+    name: {
+        key: SCHEMAS["$defs"]["SpeechCreate"]["properties"][name][key]
+        for key in ("minimum", "maximum", "default")
+    }
+    for name in ("volume", "rate")
+}
+ORDINARY_KINDS = (
+    {
+        "motion.joint_move",
+        "motion.trajectory_run",
+        "autonomy.transition",
+        LIGHT_KIND,
+    }
+    | MOTION_ACTIONS
+    | SPEECH_KINDS
+)
 CONTROL_KINDS = {CONTROL_KIND, VELOCITY_KIND}
 NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS
-MOTION_KINDS = NATIVE_KINDS - {"speech.utterance", LIGHT_KIND}
+MOTION_KINDS = NATIVE_KINDS - {PLAIN_SPEECH, LIGHT_KIND}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -357,6 +370,7 @@ class Core:
                 "speech.utterances": feature(
                     available and self.info.get("speech", {}).get("available", False)
                 ),
+                "speech.animated_utterances": self.speech_options()["animated"],
                 "speech.listeners": feature(
                     available and self.info.get("recognition", {}).get("available", False)
                 ),
@@ -990,8 +1004,34 @@ class Core:
             finished_at=utc(),
         )
         op.done.set()
-        if op.public["kind"] == "speech.utterance" and status != "unknown":
+        if op.public["kind"] in SPEECH_KINDS and status != "unknown":
             self.listeners.end_output(op.public["id"])
+
+    def speech_options(self) -> dict[str, Any]:
+        connected = self.connection == "connected"
+        speech = self.info.get("speech", {}) if connected else {}
+        available = bool(speech.get("available"))
+        animated = speech.get("animated", {})
+        animated_available = available and bool(animated.get("available"))
+        return {
+            "support": {
+                "status": "available" if available else "unavailable",
+                "reason": None if available else "not_connected_or_discovered",
+            },
+            "animated": {
+                "status": "available" if animated_available else "unavailable",
+                "reason": None
+                if animated_available
+                else animated.get("reason") or "not_connected_or_discovered",
+            },
+            "animated_languages": [speech["default_language"]] if animated_available else [],
+            "languages": list(speech.get("languages", [])),
+            "voices": list(speech.get("voices", [])),
+            "default_language": speech.get("default_language"),
+            "default_voice": speech.get("default_voice"),
+            "connection_generation": self.generation,
+            **copy.deepcopy(SPEECH_RANGES),
+        }
 
     def utterance(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         if self.connection != "connected":
@@ -999,9 +1039,9 @@ class Core:
         speech = self.info.get("speech", {})
         if not speech.get("available"):
             raise BridgeError("unsupported", "Speech service is unavailable", 422)
-        if body.get("animated", False):
-            raise BridgeError("unsupported", "Animated speech is not implemented", 422)
-        if not body["text"].strip() or "\\" in body["text"] or "\x00" in body["text"]:
+        animated = body.get("animated", False)
+        text = body["text"]
+        if not text.strip() or "\\" in text or "\x00" in text or (animated and "^" in text):
             raise BridgeError(
                 "invalid_request", "Speech must be plain text without native control markup"
             )
@@ -1010,14 +1050,39 @@ class Core:
         if "voice" in body and body["voice"] not in speech.get("voices", []):
             raise BridgeError("unsupported", "Unknown speech voice", 422)
         payload = {
-            "text": body["text"],
-            "volume": body.get("volume", 0.5),
-            "rate": body.get("rate", 1.0),
+            "text": text,
+            "animated": animated,
             "language": body.get("language", speech.get("default_language")),
             "voice": body.get("voice", speech.get("default_voice")),
+            **{name: body.get(name, options["default"]) for name, options in SPEECH_RANGES.items()},
         }
+        resources = ["speech.output"]
+        if animated:
+            options = self.speech_options()
+            if options["animated"]["status"] != "available":
+                raise BridgeError(
+                    "unsupported",
+                    "Animated speech is unavailable",
+                    422,
+                    {
+                        "reason": options["animated"]["reason"],
+                    },
+                )
+            if payload["language"] not in options["animated_languages"]:
+                raise BridgeError(
+                    "unsupported", "Animated speech uses the current native language", 422
+                )
+            joints = ["joint." + item["name"] for item in self.info.get("joints", [])]
+            self.require_joint_motion(joints)
+            lights = {
+                resource for group in self.info.get("lights", []) for resource in group["resources"]
+            }
+            resources.extend(["locomotion", *joints, *sorted(lights)])
         op = self.new_operation(
-            session, "speech.utterance", ["speech.output"], speech.get("cancellable", False)
+            session,
+            ANIMATED_SPEECH if animated else PLAIN_SPEECH,
+            resources,
+            speech.get("cancellable", False),
         )
         op.task = self.spawn(self.run_native(op, payload))
         return copy.deepcopy(op.public)
@@ -1272,7 +1337,7 @@ class Core:
         generation = self.generation
         self.update(op, status="running", started_at=utc())
         try:
-            if op.public["kind"] == "speech.utterance":
+            if op.public["kind"] in SPEECH_KINDS:
                 await self.listeners.begin_output(op.public["id"])
                 if (
                     op.public["status"] != "running"
@@ -1282,7 +1347,7 @@ class Core:
                     return
             dispatch = (
                 self.backend.speak
-                if op.public["kind"] == "speech.utterance"
+                if op.public["kind"] in SPEECH_KINDS
                 else self.backend.configure_autonomy
                 if op.public["kind"] == "autonomy.transition"
                 else self.backend.light_transition
@@ -1436,7 +1501,9 @@ class Core:
                 )
             return
         result = stopped.get("results", {}).get(op.public["id"])
-        if op.public["kind"] == LIGHT_KIND:
+        if op.public["kind"] == LIGHT_KIND or (
+            op.public["kind"] == ANIMATED_SPEECH and isinstance(result, dict)
+        ):
             result = (
                 result if isinstance(result, dict) else {"cancelled": True, "dispatched": False}
             )
@@ -1528,7 +1595,7 @@ class Core:
                 )
                 if force and fenced and op.public["kind"] not in unreleased_controls:
                     op.released = True
-                    if op.public["kind"] == "speech.utterance":
+                    if op.public["kind"] in SPEECH_KINDS:
                         self.listeners.end_output(op.public["id"])
                     op.retained_until = self.clock() + self.settings.history_seconds
                     for resource in op.public["resources"]:

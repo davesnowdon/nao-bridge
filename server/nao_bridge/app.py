@@ -278,6 +278,11 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/speech/options")
+    async def speech_options(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.speech_options()
+
     @app.post("/api/speech/utterances")
     async def speech(request: Request) -> Response:
         value = await body(request, "SpeechCreate")

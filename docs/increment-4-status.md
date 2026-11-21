@@ -34,3 +34,27 @@ See [the lights HTTP/SDK contract](http-api.md#lights),
 and the documented LED layouts for
 [NAOv5](https://doc.aldebaran.com/2-1/family/robots/leds_robot.html) and
 [NAO6](https://doc.aldebaran.com/2-8/family/nao_technical/leds_naov6.html).
+
+## Speech options and animated speech
+
+Contract 1.11.0 adds session-free options discovery and typed sync/async Python
+helpers. The route reports voice, language and bounds from the active contract.
+Existing plain utterances retain their per-call settings and audio-only
+ownership. Contextual animated speech routes through the separate NAOqi service.
+The bridge also reserves every discovered joint and light resource and
+locomotion. Animated utterances verify motion readiness before dispatch.
+
+Both software fixtures support animated speech. The native-container fixture
+exercised the documented local configuration and stopped independent fixture
+audio and motion before the operation reported cancellation. Physical
+availability remains gated. Both generations still need measured acceptance
+for contextual movement, per-utterance audio settings and cancellation.
+The native backend currently exposes the discovered default voice. Guarded
+selection of other installed voices remains separate work.
+
+`make check` passed 622 server/integration tests and 47 SDK tests.
+`make test-container` passed, including animated-speech completion and stop.
+The contract guard passed against PR #38 and contract 1.10.0.
+
+See the [speech contract](http-api.md#speech) and the
+[NAOqi local animated-speech configuration](https://doc.aldebaran.com/2-8/naoqi/audio/alanimatedspeech-api.html).

@@ -26,6 +26,7 @@ from .models import (
     RobotInfo,
     Sensor,
     SensorObserverData,
+    SpeechOptions,
     State,
     StreamNotice,
     SubscriptionData,
@@ -621,6 +622,9 @@ class Autonomy:
 class Speech:
     def __init__(self, nao: Nao):
         self._nao = nao
+
+    def options(self) -> SpeechOptions:
+        return self._nao._run(self._nao._async.speech.options())
 
     def listen(
         self,

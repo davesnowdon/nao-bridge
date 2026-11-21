@@ -48,6 +48,7 @@ from .models import (
     SensorObserverData,
     SensorsData,
     SessionData,
+    SpeechOptions,
     State,
     StreamNotice,
     SubscriptionData,
@@ -1042,6 +1043,9 @@ class AsyncAutonomy:
 class AsyncSpeech:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def options(self) -> SpeechOptions:
+        return decode(SpeechOptions, await self._nao._request("GET", "/api/speech/options"))
 
     async def listen(
         self,

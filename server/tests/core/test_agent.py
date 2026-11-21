@@ -218,6 +218,41 @@ def test_stop_during_light_fade_waits_for_actual_completion(agent_module):
     assert agent.stop(stop)["results"]["fade"] == reply["result"]
 
 
+@pytest.mark.parametrize("unconfirmed", [None, "speech", "joints", "locomotion", "future"])
+def test_animated_speech_stop_requires_all_native_confirmations(agent_module, unconfirmed):
+    agent = bare_agent(agent_module)
+    calls = []
+
+    def stop(domain):
+        calls.append(domain)
+        if domain == unconfirmed:
+            raise RuntimeError("Unconfirmed " + domain)
+        return {"native_inactive": True}
+
+    agent.driver.stop = lambda: stop("speech")
+    agent.driver.stop_motion = lambda *args, **kwargs: stop("joints")
+    agent.driver.safety_motion = object()
+    agent.driver.locomotion = types.SimpleNamespace(stop=lambda: stop("locomotion"))
+    agent.records["animation"] = {
+        "session_id": "session",
+        "action": "speak",
+        "motion_kind": "animated_speech",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "future": types.SimpleNamespace(
+            isFinished=lambda: unconfirmed != "future",
+            value=lambda timeout: None,
+        ),
+    }
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "animation"}})
+    assert calls == ["locomotion", "speech", "joints"]
+    if unconfirmed is None:
+        assert result["confirmed_ids"] == ["animation"]
+        assert result["results"]["animation"]["animated"] is True
+    else:
+        assert result["confirmed_ids"] == [] and result["unresolved_ids"] == ["animation"]
+
+
 def test_finite_control_thread_can_finish_normally_without_killing_agent(agent_module, monkeypatch):
     agent = bare_agent(agent_module)
     monkeypatch.setattr(
@@ -474,7 +509,7 @@ def test_walk_stop_needs_native_inactivity_and_ended_future(agent_module, inacti
     agent.records["move"] = record
     result = agent.stop({"payload": {"operation_id": "move"}})
     replies = queue.Queue(8)
-    agent.finish_walk({"id": "move"}, replies, record, False)
+    agent.finish_guarded_motion({"id": "move"}, replies, record, False)
     reply = replies.get_nowait()
     if inactive and ended:
         assert result["confirmed_ids"] == ["move"] and reply["result"]["cancelled"]

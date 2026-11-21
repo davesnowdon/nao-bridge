@@ -47,6 +47,7 @@ def contact_values(values):
 class NativeDriver(object):
     joint_hold_verified = False
     velocity_stop_verified = False
+    animated_speech_stop_verified = False
 
     def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
@@ -54,6 +55,7 @@ class NativeDriver(object):
         self.session = None
         self.safety_session = None
         self.tts = None
+        self.animated_speech = None
         self.safety = None
         self.memory = None
         self.subscribers = []
@@ -152,6 +154,7 @@ class NativeDriver(object):
         self.description["faces"] = self.faces.catalog
         self.lights = Lights(self.session, self.memory, self.call)
         self.description["lights"] = self.lights.catalog()
+        self.discover_animated_speech()
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -220,6 +223,30 @@ class NativeDriver(object):
             raise ValueError("Lights unavailable")
         return self.lights.dispatch(payload)
 
+    def discover_animated_speech(self):
+        try:
+            self.animated_speech = self.session.service("ALAnimatedSpeech", _async=True).value(500)
+        except Exception:
+            self.animated_speech = None
+        available = bool(self.animated_speech and self.motion and self.safety_motion
+                         and self.locomotion and self.locomotion.catalog["available"])
+        enabled = available and self.animated_speech_stop_verified
+        self.description["speech"]["animated"] = {
+            "available": enabled,
+            "reason": None if enabled else (
+                "hardware_animated_stop_unverified" if available else "native_service_unavailable"),
+        }
+
+    def prepare_animated_speech(self, payload):
+        speech = self.description["speech"]
+        if not speech["animated"]["available"] or not self.animated_speech:
+            raise ValueError("Animated speech is unavailable")
+        if payload["language"] != self.call(self.tts, "getLanguage"):
+            raise ValueError("Animated speech requires the current native language")
+        if payload["voice"] != self.call(self.tts, "getVoice"):
+            raise ValueError("Animated speech requires the current native voice")
+        self.require_stiff(self.motion.names)
+
     def speak(self, payload):
         # Voice changes are a later capability; do not mutate global voice preferences silently.
         if payload.get("voice") != self.description["speech"]["default_voice"]:
@@ -229,6 +256,8 @@ class NativeDriver(object):
             raise ValueError("The tested per-utterance Acapela controls are unavailable for Japanese")
         text = "\\vol=%d\\\\rspd=%d\\%s" % (
             int(round(payload["volume"] * 100)), int(round(payload["rate"] * 100)), payload["text"])
+        if payload.get("animated"):
+            return self.animated_speech.say(text, {"bodyLanguageMode": "contextual"}, _async=True)
         return self.tts.say(text, language, _async=True)
 
     def stop(self):
@@ -355,6 +384,7 @@ class NativeDriver(object):
         self._connected.clear()
         self.locomotion = self.odometry = None
         self.lights = None
+        self.animated_speech = None
         if self.faces:
             self.faces.close()
             self.faces = None
@@ -418,6 +448,22 @@ class FixtureSafety(object):
         self.speech.stop_event.set()
 
 
+class FixtureAnimatedSpeech(object):
+    def __init__(self, speech, motion):
+        self.speech = speech
+        self.motion = motion
+
+    def say(self, text, configuration):
+        if configuration != {"bodyLanguageMode": "contextual"} or "^" in text:
+            raise ValueError("Unexpected animated speech configuration")
+        duration = 30 if "[fixture:block]" in text else 0.15
+        animation = threading.Thread(target=self.motion._run,
+                                     args=(self.motion.names, duration, lambda: None))
+        animation.start()
+        self.speech.say(text, "English")
+        animation.join()
+
+
 class FixtureTouch(object):
     def __init__(self):
         self.signal = qi.Signal("m")
@@ -460,6 +506,7 @@ class FixtureMemory(object):
 class FixtureDriver(NativeDriver):
     joint_hold_verified = True
     velocity_stop_verified = True
+    animated_speech_stop_verified = True
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
@@ -471,6 +518,7 @@ class FixtureDriver(NativeDriver):
         self.memory_impl = FixtureMemory()
         self.motion_impl = qi.multiThreaded()(FixtureMotion)()
         self.posture_impl = qi.multiThreaded()(FixturePosture)(self.motion_impl)
+        self.animated_impl = qi.multiThreaded()(FixtureAnimatedSpeech)(self.work_impl, self.motion_impl)
         self.autonomy_impl = qi.multiThreaded()(FixtureAutonomy)()
         self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
         self.sonar_impl = qi.multiThreaded()(FixtureSonar)()
@@ -483,6 +531,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("FixtureSafety", self.safety_impl)
         self.server.registerService("ALMemory", self.memory_impl)
         self.server.registerService("ALMotion", self.motion_impl)
+        self.server.registerService("ALAnimatedSpeech", self.animated_impl)
         self.server.registerService("ALRobotPosture", self.posture_impl)
         self.server.registerService("ALAutonomousLife", self.autonomy_impl)
         self.server.registerService("ALSpeechRecognition", self.recognition_impl)

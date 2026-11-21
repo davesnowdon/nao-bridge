@@ -42,6 +42,25 @@ class AutonomySetting(Capability):
     mechanism: str | None
 
 
+class SpeechRange(WireModel):
+    minimum: float
+    maximum: float
+    default: float
+
+
+class SpeechOptions(WireModel):
+    support: Capability
+    animated: Capability
+    animated_languages: list[str]
+    languages: list[str]
+    voices: list[str]
+    default_language: str | None
+    default_voice: str | None
+    volume: SpeechRange
+    rate: SpeechRange
+    connection_generation: int
+
+
 class Capabilities(WireModel):
     contract_version: str
     connection_generation: int

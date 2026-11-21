@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.10.0",
+  "contract_version": "1.11.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -33,6 +33,27 @@
       "nondeterminism": [
         "operation can complete before first GET",
         "opaque IDs and timestamps"
+      ]
+    },
+    {
+      "name": "speech options and contextual animated speech",
+      "steps": [
+        "GET /api/speech/options without a session",
+        "POST a plain utterance and await completion",
+        "POST an animated utterance while awake and await completion",
+        "start an animated utterance with a fixture long enough to be interrupted",
+        "POST /api/motion/stop with scope all and read both operations"
+      ],
+      "expected": [
+        "supported languages, voice, ranges and animated capability for this connection",
+        "speech.utterance owns speech.output",
+        "speech.animated_utterance owns speech, locomotion, joints and lights; succeeded",
+        "running in the fixture with independent audio and motion",
+        "confirmed stop cancels the utterance; missing confirmation preserves unknown and ownership"
+      ],
+      "client_decisions": [
+        "Request animated speech only when the capability is available for the selected language.",
+        "Reconcile both operation results before issuing more motion after an uncertain stop."
       ]
     },
     {

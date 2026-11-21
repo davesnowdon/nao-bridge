@@ -251,6 +251,7 @@ class FakeBackend:
                         "voices": ["default"],
                         "default_language": "English",
                         "default_voice": "default",
+                        "animated": {"available": True, "reason": None},
                     },
                     "touch_available": connected,
                     "touch_events": list(self.touch) if connected else [],
@@ -403,7 +404,15 @@ class FakeBackend:
     async def speak(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        return await self._execute(operation_id, session_id, payload, "speech")
+        animated = payload.get("animated", False)
+        result = await self._execute(
+            operation_id, session_id, payload, "animated_speech" if animated else "speech"
+        )
+        if animated:
+            result["animated"] = True
+            if result.get("cancelled") and result.get("dispatched") is not False:
+                result["stop_confirmed"] = True
+        return result
 
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.sonar_calls.append(copy.deepcopy(payload))

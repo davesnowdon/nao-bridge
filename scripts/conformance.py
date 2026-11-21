@@ -553,6 +553,24 @@ def run(url):
             headers={"Idempotency-Key": "speech"},
         )
         assert probe.wait(operation)["status"] == "succeeded"
+        speech_options = probe.request("GET", "/api/speech/options", schema="SpeechOptions")
+        assert speech_options["support"]["status"] == "available"
+        assert speech_options["default_language"] in speech_options["languages"]
+        assert speech_options["volume"] == {"minimum": 0, "maximum": 1, "default": 0.5}
+        assert speech_options["rate"] == {"minimum": 0.5, "maximum": 2, "default": 1}
+        animated = speech_options["animated"]["status"] == "available"
+        if animated:
+            utterance = probe.request(
+                "POST",
+                "/api/speech/utterances",
+                {"text": "The animated speech fixture is ready.", "animated": True},
+                status=202,
+                schema="Operation",
+            )
+            assert utterance["kind"] == "speech.animated_utterance"
+            assert {"speech.output", "locomotion", "joint.HeadYaw"} <= set(utterance["resources"])
+            outcome = probe.wait(utterance)
+            assert outcome["status"] == "succeeded" and outcome["result"]["animated"] is True
         autonomy = probe.request(
             "POST",
             "/api/autonomy/transitions",
@@ -674,6 +692,7 @@ def run(url):
             "session",
             "idempotency",
             "speech",
+            "speech_options",
             "joint_discovery_and_trajectory",
             "motion_configuration_and_ownership",
             "validation",
@@ -684,7 +703,8 @@ def run(url):
         + (["camera_capture_and_download"] if captures else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["ordered_velocity_expiry"] if velocity else [])
-        + (["light_transitions_and_readback"] if lights == "available" else []),
+        + (["light_transitions_and_readback"] if lights == "available" else [])
+        + (["animated_speech"] if animated else []),
     }
 
 

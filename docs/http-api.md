@@ -515,12 +515,31 @@ Both Python clients offer `lights.groups()`, `lights.state()`, and
 
 ## Speech
 
-Speech capabilities expose the discovered supported language/default voice. Native
-non-default voice selection and Japanese per-utterance controls are unavailable in
-this slice. Animated speech is unsupported. Speech text must be plain text without
-backslash control markup; defaults are volume `0.5`, rate `1.0`, and the discovered
-language/voice. Volume is 0–1; rate is 0.5–2.0. The rate maps to native percentage,
-not a promise of physical speech duration.
+`GET /speech/options` reports available languages and voices, defaults,
+volume and rate bounds, and availability of animated speech for the current
+connection generation. Both Python clients expose this as `speech.options()`
+without creating a session. The native backend currently exposes the discovered
+default voice. It can speak in the reported plain-speech languages with local
+volume and rate controls.
+
+`POST /speech/utterances` defaults to plain speech, volume `0.5`, rate `1.0`,
+and the discovered language and voice. Volume ranges from 0 to 1. Rate ranges
+from 0.5 to 2 and maps to the native speed percentage. Text is unannotated.
+The bridge rejects backslash control markup and rejects caret markup in
+animated utterances.
+
+To use contextual gestures, pass `animated: true` in HTTP or
+`animated=True` in `speech.say()`. Check the `animated` availability and
+`animated_languages` list in speech options. Animated speech also needs fresh
+state showing an awake robot and stiff joints. It requests neither wake nor
+stiffness. The resulting `speech.animated_utterance` Operation owns speech
+output, locomotion, and all discovered joint and light resources.
+
+Cancel and all-motion stop can target animated speech. Confirmation requires
+audio stop, native motion stop and a settled utterance. The bridge reports an
+unknown outcome and retains resources if confirmation is missing. The
+animated mode is enabled in the fixtures and remains gated on physical
+robots pending acceptance.
 
 ## Vocabulary listeners
 

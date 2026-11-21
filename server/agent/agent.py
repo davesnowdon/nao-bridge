@@ -31,6 +31,7 @@ from wire import VERSION, encode, frames, monotonic
 PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
 COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
                 autonomy=valid_autonomy, camera_capture=valid_capture, light_transition=valid_light)
+GUARDED_MOTION = ("walk", "animated_speech")
 
 
 def valid_stop(request):
@@ -149,12 +150,20 @@ class Agent(object):
 
     def validate_speech(self, request):
         payload = request.get("payload", {})
+        if not isinstance(payload, dict):
+            return False
         text = payload.get("text")
         try:
             string_type = basestring
         except NameError:
             string_type = str
         if not isinstance(text, string_type) or not 0 < len(text) <= 2000 or "\\" in text or "\x00" in text:
+            return False
+        animated = payload.get("animated", False)
+        if not isinstance(animated, bool) or (animated and "^" in text):
+            return False
+        if animated and any(not isinstance(payload.get(key), string_type)
+                            or not payload[key] for key in ("language", "voice")):
             return False
         for name, lower, upper in [("volume", 0, 1), ("rate", 0.5, 2)]:
             value = payload.get(name)
@@ -202,6 +211,8 @@ class Agent(object):
                     self.driver.prepare_trajectory(request["payload"])
                 elif request["action"] == "motion_action":
                     self.driver.prepare_motion_action(request["payload"])
+                elif record.get("motion_kind") == "animated_speech":
+                    self.driver.prepare_animated_speech(request["payload"])
                 with self.lock:
                     if record.get("stop_requested"):
                         result = {"cancelled": True, "dispatched": False}
@@ -217,8 +228,8 @@ class Agent(object):
                     future = getattr(self.driver, request["action"])(request["payload"])
                     record["future"] = future
                 native_result = future.value()
-                if record.get("motion_kind") == "walk":
-                    self.finish_walk(request, replies, record, native_result)
+                if record.get("motion_kind") in GUARDED_MOTION:
+                    self.finish_guarded_motion(request, replies, record, native_result)
                     continue
                 with self.lock:
                     result = {"cancelled": record.get("stop_requested", False), "backend": "naoqi"}
@@ -231,8 +242,8 @@ class Agent(object):
                     record.update(status="completed", result=result, finished=monotonic())
                 self.reply(replies, request, result=result)
             except Exception as error:
-                if record.get("motion_kind") == "walk" and record["phase"] != "queued":
-                    self.finish_walk(request, replies, record, None, failed=True)
+                if record.get("motion_kind") in GUARDED_MOTION and record["phase"] != "queued":
+                    self.finish_guarded_motion(request, replies, record, None, failed=True)
                 elif future is not None and future.isCanceled() and request["action"] != "light_transition":
                     # qi reports confirmed cancellation by raising from value().
                     result = {"cancelled": True, "backend": "naoqi"}
@@ -246,27 +257,28 @@ class Agent(object):
                     record.update(status="unknown", finished=monotonic())
                     self.reply(replies, request, "unknown", message="Native completion unconfirmed")
 
-    def finish_walk(self, request, replies, record, native_result, failed=False):
+    def finish_guarded_motion(self, request, replies, record, native_result, failed=False):
+        animated = record.get("motion_kind") == "animated_speech"
         with self.lock:
-            stop_done = record.get("walk_stop_done")
+            stop_done = record.get("native_stop_done")
             if stop_done is None:
-                if not failed and (native_result is None or isinstance(native_result, bool)):
-                    result = {"backend": "naoqi", "cancelled": False,
-                              "reached": native_result}
+                if not failed and (native_result is None or not animated and isinstance(native_result, bool)):
+                    result = {"backend": "naoqi", "cancelled": False}
+                    result["animated" if animated else "reached"] = True if animated else native_result
                     record.update(status="completed", result=result, finished=monotonic())
                     self.reply(replies, request, result=result)
                     return
                 record.update(status="unknown", finished=monotonic())
         if stop_done is not None:
             stop_done.wait(1.8)
-            if record.get("walk_stop_confirmed"):
-                self.reply(replies, request, result={"cancelled": True, "backend": "naoqi",
-                                                      "stop_confirmed": True})
+            if record.get("native_stop_confirmed"):
+                self.reply(replies, request, result=record["result"])
                 return
         with self.lock:
             if record["status"] != "completed":
                 record.update(status="unknown", finished=monotonic())
-        self.reply(replies, request, "unknown", message="Walking outcome unconfirmed")
+        message = "Animated speech outcome unconfirmed" if animated else "Walking outcome unconfirmed"
+        self.reply(replies, request, "unknown", message=message)
 
     def run_producer(self, request, record, replies):
         name = request["action"]
@@ -391,24 +403,29 @@ class Agent(object):
                         and (record.get("action") != "camera_capture" or record["status"] != "unknown" or key == oid)
                         and (not scope
                              or scope == "locomotion" and record.get("motion_kind") == "walk"
-                             or scope == "all" and record.get("action") in ("trajectory", "motion_action", "autonomy"))
+                             or scope == "all" and (
+                                 record.get("action") in ("trajectory", "motion_action", "autonomy")
+                                 or record.get("motion_kind") == "animated_speech"))
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
                 record["stop_requested"] = True
-                if record.get("motion_kind") == "walk" and record["phase"] != "queued":
-                    record.setdefault("walk_stop_done", threading.Event()).clear()
+                if record.get("motion_kind") in GUARDED_MOTION and record["phase"] != "queued":
+                    record.setdefault("native_stop_done", threading.Event()).clear()
         active = [record for _, record in selected if record["phase"] != "queued"]
         walks = [record for record in active if record.get("motion_kind") == "walk"]
+        animations = [record for record in active if record.get("motion_kind") == "animated_speech"]
         locomotion = getattr(self.driver, "locomotion", None)
         walk_stopped = False
-        if locomotion and (walks or (broad_stop and not velocity_stopping)):
+        if locomotion and (walks or animations or (broad_stop and not velocity_stopping)):
             try:
                 walk_stopped = locomotion.stop()["native_inactive"]
             except Exception:
                 logging.warning("Native locomotion stop did not confirm", exc_info=True)
-        if not scope and (any(record.get("action", "speak") == "speak" for record in active) or broad_stop):
+        speech_stopped = False
+        if animations or (not scope and (any(record.get("action", "speak") == "speak" for record in active) or broad_stop)):
             try:
                 self.driver.stop()
+                speech_stopped = True
             except Exception:
                 logging.warning("stopAll did not confirm", exc_info=True)
         if velocity_stopping:
@@ -421,6 +438,8 @@ class Agent(object):
             if not walks:
                 walk_stopped = velocity_stopped
         motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") and record.get("motion_kind") != "walk" for name in record["names"]))
+        if animations:
+            motion_names = ["Body"]
         walk_deadline = monotonic() + 0.2
         if walk_stopped:
             for record in walks:
@@ -440,7 +459,7 @@ class Agent(object):
         if (scope != "locomotion" and (scope != "all" or (walk_stopped and not walk_pending))
                 and (motion_names or (broad_stop and not walk_pending))):
             try:
-                if scope == "all" and not getattr(self.driver, "safety_motion", None):
+                if (scope == "all" or animations) and not getattr(self.driver, "safety_motion", None):
                     raise ValueError("Native joint stop unavailable")
                 self.driver.stop_motion(["Body"] if scope == "all" else motion_names or ["Body"],
                                         stop_posture=broad_stop or any(
@@ -463,14 +482,26 @@ class Agent(object):
                 confirmed.append(key)
                 continue
             future = record.get("future")
-            if record.get("motion_kind") == "walk":
+            if record.get("motion_kind") in GUARDED_MOTION:
+                animated = record["motion_kind"] == "animated_speech"
+                stop_acknowledged = walk_stopped and (
+                    not animated or speech_stopped and joint_stop_confirmed
+                )
+                if animated and stop_acknowledged and future is not None and not future.isFinished():
+                    try:
+                        future.value(max(1, int((deadline - monotonic()) * 1000)))
+                    except Exception:
+                        pass
                 with self.lock:
-                    stopped = walk_stopped and future is not None and future.isFinished()
+                    stopped = stop_acknowledged and future is not None and future.isFinished()
                     if stopped:
+                        outcome = {"cancelled": True, "stop_confirmed": True, "backend": "naoqi"}
+                        if animated:
+                            outcome["animated"] = True
                         record.update(status="completed", finished=monotonic(),
-                                      result={"cancelled": True, "stop_confirmed": True})
-                    record["walk_stop_confirmed"] = stopped
-                    record["walk_stop_done"].set()
+                                      result=outcome)
+                    record["native_stop_confirmed"] = stopped
+                    record["native_stop_done"].set()
                 (confirmed if stopped else unresolved).append(key)
                 continue
             if future is not None:
@@ -504,7 +535,9 @@ class Agent(object):
                 and not any(key in unresolved for key in velocity_ids),
                 joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
-                        if key in self.records and self.records[key].get("action") in ("autonomy", "light_transition") and "result" in self.records[key])
+                        if key in self.records and "result" in self.records[key]
+                        and (self.records[key].get("action") in ("autonomy", "light_transition")
+                             or self.records[key].get("motion_kind") == "animated_speech"))
         if outcomes:
             result["results"] = outcomes
         if control_ids:
@@ -695,7 +728,10 @@ class Agent(object):
                                 except queue.Full:
                                     self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent command queue full")
                                 else:
-                                    self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
+                                    payload = request["payload"]
+                                    motion_kind = ("animated_speech" if action == "speak" and payload.get("animated")
+                                                   else payload.get("kind") if action == "motion_action" else None)
+                                    self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": payload.get("names", []), "motion_kind": motion_kind}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
             except (socket.error, ValueError, StopIteration, queue.Full):

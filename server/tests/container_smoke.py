@@ -811,8 +811,33 @@ try:
     probe.schemas = probe.request("GET", "/api/schemas.json")
     recovery_probe.schemas = probe.schemas
     summary = conformance.run("http://127.0.0.1:3000")
-    assert "light_transitions_and_readback" in summary["checks"], summary
+    assert {"light_transitions_and_readback", "animated_speech"} <= set(summary["checks"]), summary
     print(json.dumps(summary))
+    speech_session = probe.request("POST", "/api/sessions", {"name": "animated-stop"}, status=201)
+    probe.session = speech_session["id"]
+    try:
+        animation = probe.request(
+            "POST",
+            "/api/speech/utterances",
+            {"text": "[fixture:block]", "animated": True},
+            status=202,
+        )
+        path = "/api/operations/" + animation["id"]
+        until(lambda: probe.request("GET", path)["status"] == "running", timeout=2)
+        time.sleep(0.15)
+        stop = probe.request("POST", "/api/motion/stop", {"scope": "all"}, status=202)
+        assert probe.wait(stop)["status"] == "succeeded"
+        interrupted = probe.wait(animation)
+        assert interrupted["status"] == "cancelled", interrupted
+        assert interrupted["result"]["animated"] and interrupted["result"]["stop_confirmed"]
+    finally:
+        cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
+        assert probe.wait(cleanup)["status"] == "succeeded"
+        probe.session = None
+    print(
+        "Native animated speech: contextual dispatch and confirmed audio/motion stop passed",
+        flush=True,
+    )
     observers, streams = [], []
     try:
         for _ in range(2):

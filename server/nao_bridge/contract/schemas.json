@@ -4254,6 +4254,94 @@
         }
       ],
       "additionalProperties": false
+    },
+    "SpeechRange": {
+      "type": "object",
+      "properties": {
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "default": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum",
+        "default"
+      ],
+      "additionalProperties": true
+    },
+    "SpeechOptions": {
+      "type": "object",
+      "properties": {
+        "support": {
+          "$ref": "#/$defs/Feature"
+        },
+        "animated": {
+          "$ref": "#/$defs/Feature"
+        },
+        "animated_languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "voices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "default_language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_voice": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "volume": {
+          "$ref": "#/$defs/SpeechRange"
+        },
+        "rate": {
+          "$ref": "#/$defs/SpeechRange"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "support",
+        "animated",
+        "animated_languages",
+        "languages",
+        "voices",
+        "default_language",
+        "default_voice",
+        "volume",
+        "rate",
+        "connection_generation"
+      ],
+      "additionalProperties": true
     }
   }
 }
