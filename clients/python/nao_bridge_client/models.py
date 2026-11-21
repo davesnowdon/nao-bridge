@@ -179,6 +179,47 @@ class SpeechRecognizedData(WireModel):
     hypotheses: list[SpeechHypothesis]
 
 
+class RecordingSource(WireModel):
+    kind: Literal["samples"]
+    groups: list[str]
+    rate_hz: float = Field(gt=0)
+
+
+class RecordingData(WireModel):
+    id: str
+    session_id: str
+    operation_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    source: RecordingSource
+    duration: float = Field(gt=0)
+    max_bytes: int = Field(ge=65536)
+    status: Literal["starting", "recording", "stopping", "completed", "failed"]
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    asset_id: str | None
+    error: ErrorDetail | None
+
+
+class AssetData(WireModel):
+    id: str
+    kind: str
+    content_type: str
+    size_bytes: int = Field(ge=0, le=9007199254740991)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: str
+    expires_at: str
+    status: Literal["completed", "partial"]
+    error: ErrorDetail | None
+    metadata: dict[str, Any]
+
+
+class AssetsPage(WireModel):
+    items: list[AssetData]
+    next_cursor: str | None
+
+
 class StateGroup(WireModel):
     value: Any
     quality: Literal["fresh", "stale", "unavailable"]

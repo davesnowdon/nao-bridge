@@ -1,12 +1,13 @@
 """NAO Bridge HTTP/SSE client. The replacement contract intentionally removes the v1 API."""
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .client import JointControl, Listener, Nao, Operation, Subscription
+from .client import JointControl, Listener, Nao, Operation, Recording, Subscription
 from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
     CleanupError,
+    DownloadIntegrityError,
     ListenerError,
     ListenerTimeout,
     OperationCancelled,
@@ -15,16 +16,22 @@ from .errors import (
     OperationUnknown,
     PendingRequest,
     ProtocolError,
+    RecordingFailed,
+    RecordingTimeout,
     SessionLost,
     StaleState,
 )
 from .listeners import AsyncListener
 from .models import (
+    AssetData,
+    AssetsPage,
     Capabilities,
     Event,
     ListenerConfiguration,
     ListenerData,
     OperationData,
+    RecordingData,
+    RecordingSource,
     RobotInfo,
     SessionData,
     SpeechHypothesis,
@@ -32,10 +39,20 @@ from .models import (
     State,
     StreamNotice,
 )
+from .recordings import AsyncRecording
 from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "AssetData",
+    "AssetsPage",
+    "AsyncRecording",
+    "Recording",
+    "RecordingData",
+    "RecordingSource",
+    "RecordingFailed",
+    "RecordingTimeout",
+    "DownloadIntegrityError",
     "AsyncNao",
     "AsyncOperation",
     "AsyncSubscription",

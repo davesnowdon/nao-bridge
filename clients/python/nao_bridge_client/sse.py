@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from .errors import ProtocolError
 from .json_wire import loads
 from .models import (
+    AssetData,
     Capabilities,
     ConnectionChangedData,
     Event,
@@ -15,6 +16,7 @@ from .models import (
     MotionFallChangedData,
     MotionPostureChangedData,
     OperationData,
+    RecordingData,
     SessionData,
     SpeechRecognizedData,
     StateSampleData,
@@ -29,6 +31,8 @@ PAYLOADS = {
     "touch.changed": TouchChangedData,
     "speech.listener_changed": ListenerData,
     "speech.recognized": SpeechRecognizedData,
+    "recording.changed": RecordingData,
+    "asset.created": AssetData,
     "motion.posture_changed": MotionPostureChangedData,
     "motion.fall_changed": MotionFallChangedData,
     "state.sample": StateSampleData,

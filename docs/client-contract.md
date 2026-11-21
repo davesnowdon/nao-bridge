@@ -130,7 +130,11 @@ poses or trajectories. An incomplete recording may have no end row; its asset
 status/error is authoritative. File checksums verify downloaded bytes, not missing
 acquisitions. A client must explicitly select/resample valid intervals instead of
 interpolating across gaps without user intent. The recording HTTP and asset routes
-are implemented; Python recording/download helpers remain pending.
+and Python sync/async recording/download helpers are implemented. Python waits
+track recording finalization separately from the associated operation outcome;
+a cancelled operation may retain a completed asset. Downloads verify size and
+checksum before publishing, and resume only on explicit request. See the
+[Python recording guide](../clients/python/README.md#sample-recordings-and-assets).
 
 Use discovered names/units and fresh measured state to build Recorder poses. Save schema-versioned trajectory JSON; submit it directly to the server. A Python builder and a future Rust editor must produce interchangeable documents. The same applies to finite sequence JSON and server-side dry validation. Resource checks and scheduling cannot rely on a particular builder having validated them first.
 

@@ -17,7 +17,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Explicit autonomy settings for manual capture | Implemented; discovery, observed state, per-setting results and ownership | Effects and firmware-specific availability pending |
 | Shared joint/touch/battery sampling; posture/fall events | Implemented with independent bounded acquisition workers and connection fencing | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | HTTP/SSE lifecycle, sharing, cleanup, speech suppression and sync/async Python handles implemented | Pending |
-| Bounded sample recordings and finalized assets/checksums/ranges | HTTP lifecycle, bounded shared-feed writer, gap records, retained assets and range downloads implemented; SDK helpers pending | Real acquisition pending |
+| Bounded sample recordings and finalized assets/checksums/ranges | HTTP lifecycle, bounded shared-feed writer, gap records, retained assets and sync/async SDK with verified/resumable downloads implemented | Real acquisition pending |
 | Public-API Recorder example and raw-HTTP acceptance scenario | Raw HTTP state/trajectory/recording checks implemented; reference application pending | Three-pose replay pending |
 
 Further increment-3/4 software work can follow. Network-loss and Apple Silicon
@@ -36,7 +36,8 @@ never evicted for quota. Quotas cover content bytes; bounded manifests are addit
 metadata overhead. No sessions or operations are persisted or resumed.
 
 The storage foundation has now been connected to public routes and the shared
-sampler as described below. SDK/application access remains the next delivery step.
+sampler as described below. SDK access is implemented; the reference application
+remains the next delivery step.
 Twenty storage tests pass, covering fault-injected short writes, interrupted
 finalization/deletion/admission, retention, competing reservations, checksum
 verification and directory ownership. Lint and type checks also pass. These are
@@ -79,6 +80,24 @@ SDK acquisition into NDJSON, checksums/ranges, retained finalized assets, and an
 API kill during recording recovered as partial. The contract compatibility guard
 passed. No physical robot was contacted; actual source timing and motion remain
 hardware gates.
+
+Python recording handles now expose acceptance, status/finalization waits, graceful
+stop, associated operations and scoped cleanup in both clients. Timeouts/cancelled
+waits leave the activity running; failed recordings retain access to partial assets.
+Asset helpers provide pagination, metadata/deletion and bounded streaming downloads
+without creating a robot session. Downloads verify length/SHA-256 before atomically
+publishing, preserve existing destinations by default, and resume only on explicit
+request using bound metadata and Range/If-Range. Disk work runs outside the transport
+loop; even repeated cancellation waits for an in-flight file write before closing it.
+
+Python recording/asset validation: the full suite passed 370 server/integration
+tests and 47 client tests, plus lint/types. After tightening repeated-cancellation
+handling, all 18 focused recording SDK tests and client type checks passed. Coverage
+includes real-socket sync/async scopes and events, partial assets after disconnect,
+explicit retry after lost creation, waits that leave recording active, interrupted
+download/resume and full-response fallback, malformed ranges/lengths/ETags/checksums,
+destination protection and a blocked local disk. The server and native agent are
+unchanged in this SDK step; their preceding native-container evidence still applies.
 
 Battery/posture/fall observation validation: `make check` passed 257 server/integration
 and 41 standalone client tests, lint and types; the contract compatibility guard

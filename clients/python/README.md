@@ -166,6 +166,73 @@ accepted configuration. `speech.listener_changed` and `speech.recognized` payloa
 are validated by the SSE reader. Filter recognized events by listener ID in the
 application; listener creation itself does not create an event subscription.
 
+## Sample recordings and assets
+
+```python
+from nao_bridge_client import Nao, RecordingFailed
+
+with Nao("http://localhost:3000") as nao:
+    recording = nao.recordings.samples(["joints", "sensors"], duration=10)
+    try:
+        recording.wait(timeout=15)
+    except RecordingFailed as error:
+        print("Partial recording:", error.code)
+    if recording.asset_id is not None:
+        asset = nao.assets.download(recording.asset_id, "take.ndjson")
+        print(asset.status, asset.sha256)
+```
+
+`recordings.start(source, duration=...)` accepts the language-neutral source object;
+`samples(groups, duration=..., rate_hz=..., max_bytes=..., allow_lower_rate=...)`
+is its convenience form. Omitted rate/size/policy values use server defaults.
+Both return an accepted handle immediately. Use `recordings.get(id)` to recover
+a handle in its owning session, including after an explicitly retried ambiguous
+creation. Creation never automatically retries or resumes a recording.
+
+`recording.data` is typed; `refresh()` reads current status and `operation()` gets
+the associated operation handle. `wait(timeout=None)` polls until file finalization.
+`RecordingTimeout` and cancelling an async wait leave the recording running.
+`RecordingFailed` carries the last recording record, including any partial asset ID.
+Recording completion describes the artifact: cancelling its operation can finalize
+a completed asset while the operation still correctly reports `cancelled`.
+
+`stop()` requests graceful finalization and waits within the client's
+`cleanup_timeout`; use `stop(wait=False)` to return after acceptance. A recording
+is also a context manager: `with nao.recordings.samples(...) as recording` or
+`async with await nao.recordings.samples(...) as recording`. Scope exit stops it;
+failures surface through `cleanup_error` and an exception (a warning preserves an
+existing application exception). Parent client closure finalizes recordings through
+session cleanup. Old handles cannot act in a reopened session.
+
+`assets.get(id)`, `list(limit=50, cursor=None)` and `delete(id)` work without creating
+a session, including while the robot is disconnected. Lists return typed
+`AssetsPage` with `items` and `next_cursor`; page explicitly until the cursor is null.
+Assets may expire or be deleted between listing and downloading.
+
+`assets.download(id, destination, resume=False, overwrite=False)` streams bounded
+chunks, checks length and SHA-256, then atomically publishes the file. It returns
+typed `AssetData`, preserving `partial` status and the recording error. Local disk
+work runs off the async transport loop. Existing destinations are protected unless
+`overwrite=True`. The sync and async methods have the same arguments; await async
+calls.
+
+A failed/cancelled transfer leaves `destination.part` and `destination.part.json`.
+To continue it, call `download` again with `resume=True`; content transfers never
+retry automatically. Resume checks the saved bridge/asset identity, hashes the local
+prefix and uses Range/If-Range. A full response restarts the partial file; a complete
+local prefix is verified without another content request. Invalid ranges, changed
+ETags, sizes or checksums never publish the destination. `DownloadIntegrityError`
+distinguishes integrity failures from transport/server errors. Restart a corrupt
+download by explicitly removing its two auxiliary files first. `overwrite=True`
+does not overwrite auxiliary files. Use one writer per destination, including across
+clients/processes; do not edit these files during a download. The destination's
+directory must already exist.
+
+Inspect asset status, NDJSON gap rows and source quality before choosing samples
+for playback. A valid file checksum does not prove uninterrupted acquisition.
+`recording.changed` and `asset.created` SSE payloads are validated; subscription
+creation and application handling remain explicit.
+
 ## Lifecycle and errors
 
 Enter the client context before use. The first mutation/subscription creates a

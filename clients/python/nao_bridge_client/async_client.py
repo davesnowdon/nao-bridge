@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from pydantic import ValidationError
 
+from .assets import AsyncAssets
 from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
@@ -47,6 +48,7 @@ from .models import (
     SubscriptionData,
     WireModel,
 )
+from .recordings import AsyncRecordings
 from .sse import SSEParser
 from .trajectory import Trajectory
 
@@ -114,6 +116,8 @@ class AsyncNao:
         self.speech = AsyncSpeech(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
+        self.recordings = AsyncRecordings(self)
+        self.assets = AsyncAssets(self)
 
     async def __aenter__(self) -> AsyncNao:
         if self._http is not None:

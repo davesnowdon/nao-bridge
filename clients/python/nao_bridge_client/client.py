@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from collections.abc import Coroutine
 from typing import Any, TypeVar
@@ -9,18 +10,22 @@ from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
 from .controls import AsyncJointControl
 from .listeners import AsyncListener
 from .models import (
+    AssetData,
+    AssetsPage,
     Capabilities,
     Event,
     JointCatalog,
     ListenerData,
     OperationData,
     PosturesData,
+    RecordingData,
     RobotInfo,
     Sensor,
     State,
     StreamNotice,
     SubscriptionData,
 )
+from .recordings import AsyncRecording
 from .trajectory import Trajectory
 
 T = TypeVar("T")
@@ -40,6 +45,8 @@ class Nao:
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
+        self.recordings = Recordings(self)
+        self.assets = Assets(self)
 
     def __enter__(self) -> Nao:
         if self._loop is not None:
@@ -543,6 +550,146 @@ class Listener:
 
     def close(self) -> None:
         self._nao._run(self._async.close())
+
+
+class Recordings:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def start(
+        self,
+        source: dict[str, Any],
+        *,
+        duration: float,
+        max_bytes: int | None = None,
+        allow_lower_rate: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.start(
+                    source,
+                    duration=duration,
+                    max_bytes=max_bytes,
+                    allow_lower_rate=allow_lower_rate,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def samples(
+        self,
+        groups: list[str],
+        *,
+        duration: float,
+        rate_hz: float | None = None,
+        max_bytes: int | None = None,
+        allow_lower_rate: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.samples(
+                    groups,
+                    duration=duration,
+                    rate_hz=rate_hz,
+                    max_bytes=max_bytes,
+                    allow_lower_rate=allow_lower_rate,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def get(self, recording_id: str) -> Recording:
+        return Recording(self._nao, self._nao._run(self._nao._async.recordings.get(recording_id)))
+
+
+class Recording:
+    def __init__(self, nao: Nao, recording: AsyncRecording):
+        self._nao = nao
+        self._async = recording
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def data(self) -> RecordingData:
+        return self._async.data
+
+    @property
+    def status(self) -> str:
+        return self._async.status
+
+    @property
+    def operation_id(self) -> str:
+        return self._async.operation_id
+
+    @property
+    def asset_id(self) -> str | None:
+        return self._async.asset_id
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    def operation(self) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.operation()))
+
+    def refresh(self) -> Recording:
+        self._nao._run(self._async.refresh())
+        return self
+
+    def wait(self, *, timeout: float | None = None) -> Recording:
+        self._nao._run(self._async.wait(timeout=timeout))
+        return self
+
+    def stop(self, *, wait: bool = True, timeout: float | None = None) -> Recording:
+        self._nao._run(self._async.stop(wait=wait, timeout=timeout))
+        return self
+
+    def close(self) -> None:
+        self._nao._run(self._async.close())
+
+    def __enter__(self) -> Recording:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+
+class Assets:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def get(self, asset_id: str) -> AssetData:
+        return self._nao._run(self._nao._async.assets.get(asset_id))
+
+    def list(self, *, limit: int = 50, cursor: str | None = None) -> AssetsPage:
+        return self._nao._run(self._nao._async.assets.list(limit=limit, cursor=cursor))
+
+    def delete(self, asset_id: str) -> None:
+        self._nao._run(self._nao._async.assets.delete(asset_id))
+
+    def download(
+        self,
+        asset_id: str,
+        destination: str | os.PathLike[str],
+        *,
+        resume: bool = False,
+        overwrite: bool = False,
+    ) -> AssetData:
+        return self._nao._run(
+            self._nao._async.assets.download(
+                asset_id,
+                destination,
+                resume=resume,
+                overwrite=overwrite,
+            )
+        )
 
 
 class Operations:
