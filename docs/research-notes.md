@@ -262,3 +262,31 @@ do not activate it; source lifecycle and per-reading quality remain separate fro
 acquisition freshness. These are software guarantees; physical readiness, range
 interpretation and source transforms remain acceptance work.
 
+## Finite walking and odometry adapter
+
+The [2.1 locomotion API](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk-api.html)
+and [2.8 API](https://doc.aldebaran.com/2-8/naoqi/motion/control-walk-api.html)
+distinguish world-frame planar position from robot-frame velocity.
+`getRobotPosition(True)` selects joint-sensor feedback; `getRobotVelocity()` is
+reported as a native estimate. The private adapter rebases the first valid pose
+to a local odometry origin, including its heading. A new connection or lost pose
+observation starts a new origin; failed velocity alone does not discard position.
+This does not detect every native frame reset, slip or physical relocation.
+Application maps must still support explicit relocalization.
+
+`moveTo` accepts a relative planar displacement and a configuration. The initial
+mapping discovers minimum/default/maximum `MaxStepFrequency` and scales the default
+by the requested speed fraction, rejecting values below the native minimum.
+This is a gait-frequency fraction, not a linear metres-per-second guarantee;
+the [gait reference](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk.html)
+distinguishes frequency and step geometry. Other gait settings remain native
+defaults. The bridge policy bounds each displacement to 1 m translation and pi
+radians rotation; this is not a collision or physical safety envelope.
+
+Controlled stop uses `stopMove`, which finishes at double support, then checks
+`moveIsActive` within a shared deadline. An acknowledgement alone is insufficient.
+No wake, stiffness, posture or safeguard changes are added. The adapter passes
+isolated tests and a pinned-SDK loopback service, but still needs production IPC,
+resource ownership and HTTP/SDK integration before use. Physical speed mapping,
+origin behavior and stopping distance remain hardware gates on both targets.
+

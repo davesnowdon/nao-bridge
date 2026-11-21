@@ -311,6 +311,93 @@ finally:
     print(result.strip(), flush=True)
 
 
+def check_native_locomotion():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys, threading, time
+sys.path.insert(0, '/opt/nao-bridge/agent')
+import qi
+from locomotion import Locomotion, Odometry
+from wire import monotonic
+
+class Motion(object):
+    def __init__(self):
+        self.pose = [0., 0., 0.]
+        self.active = False
+        self.stop_event = threading.Event()
+        self.calls = []
+    def getMoveConfig(self, which):
+        return [['MaxStepFrequency', 0. if which == 'Min' else 1.]]
+    def robotIsWakeUp(self):
+        return True
+    def getStiffnesses(self, names):
+        return [0.5] * len(names)
+    def moveIsActive(self):
+        return self.active
+    def getRobotPosition(self, sensors):
+        assert sensors
+        return self.pose
+    def getRobotVelocity(self):
+        return [0.1 if self.active else 0., 0., 0.]
+    def moveTo(self, x, y, yaw, config):
+        self.calls.append([x, y, yaw, config])
+        self.stop_event.clear()
+        self.active = True
+        try:
+            if not self.stop_event.wait(0.25):
+                self.pose = [self.pose[0] + x, self.pose[1] + y, self.pose[2] + yaw]
+        finally:
+            self.active = False
+    def stopMove(self):
+        self.stop_event.set()
+
+server = qi.Session()
+server.listenStandalone('tcp://127.0.0.1:0')
+source = qi.multiThreaded()(Motion)()
+server.registerService('ALMotion', source)
+client, safety = qi.Session(), qi.Session()
+client.connect(server.endpoints()[0])
+safety.connect(server.endpoints()[0])
+try:
+    motion, stop_motion = client.service('ALMotion'), safety.service('ALMotion')
+    call = lambda obj, method, *args: getattr(obj, method)(*args, **{'_async': True}).value(1000)
+    adapter = Locomotion(motion, stop_motion, ['LLeg', 'RLeg'], call, monotonic)
+    observation = Odometry(motion, call)
+    before = observation.sample()
+    assert before['pose'] == {'x': 0., 'y': 0., 'yaw': 0.}
+    payload = {'x': 0.2, 'y': 0., 'yaw': 0., 'speed': 0.3}
+    adapter.prepare(payload)
+    adapter.dispatch(payload).value(2000)
+    after = observation.sample()
+    assert abs(after['pose']['x'] - 0.2) < 1e-6
+    assert before['origin_id'] == after['origin_id']
+    assert source.calls[0][3] == [['MaxStepFrequency', 0.3]]
+    future = adapter.dispatch(payload)
+    deadline = monotonic() + 1
+    while not source.active:
+        assert monotonic() < deadline
+        time.sleep(0.005)
+    result = adapter.stop()
+    future.value(1000)
+    assert result['native_inactive'] and not source.active
+    assert abs(observation.sample()['pose']['x'] - 0.2) < 1e-6
+    print('Native locomotion: finite move, speed mapping, odometry and controlled stop passed')
+finally:
+    source.stop_event.set()
+    client.close()
+    safety.close()
+    server.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
 async def check_native_controls():
     from nao_bridge.config import Settings
     from nao_bridge.errors import BridgeError
@@ -525,6 +612,7 @@ try:
     check_native_sampling()
     check_native_recognition()
     check_native_sonar()
+    check_native_locomotion()
     asyncio.run(check_native_controls())
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")
