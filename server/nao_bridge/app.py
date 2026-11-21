@@ -501,6 +501,11 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     async def posture(request: Request) -> Response:
         return await submit_motion_action(request, "posture", "PostureCreate", "posture_changes")
 
+    @app.post("/api/motion/moves")
+    async def walk(request: Request) -> Response:
+        query(request, set())
+        return await submit_motion_action(request, "walk", "MoveCreate", "moves")
+
     @app.post("/api/motion/trajectory_runs")
     async def trajectory(request: Request) -> Response:
         value = await body(request, "TrajectoryRunCreate")

@@ -37,6 +37,7 @@ from .models import (
     Event,
     JointCatalog,
     ListenerData,
+    OdometrySample,
     OperationData,
     PosturesData,
     RobotInfo,
@@ -511,6 +512,51 @@ class AsyncMotion:
 
     async def postures(self) -> PosturesData:
         return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
+
+    async def move(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body = {"x": x, "y": y, "yaw": yaw}
+        if speed is not None:
+            body["speed"] = speed
+        return await self._submit(
+            "moves", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def odometry(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> OdometrySample:
+        state = await self._nao.robot.state(
+            ["motion"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+        group = state.groups["motion"]
+        value = group.value.get("odometry") if isinstance(group.value, dict) else None
+        sample = decode(
+            OdometrySample,
+            {
+                **group.model_dump(),
+                "value": value,
+                "quality": group.quality if value is not None else "unavailable",
+                "reason": group.reason or ("odometry_unavailable" if value is None else None),
+                "bridge_instance_id": state.bridge_instance_id,
+                "connection_generation": state.connection_generation,
+                "acquisition_finished_bridge_time_ms": state.acquisition_finished_bridge_time_ms,
+            },
+        )
+        if require_fresh and (sample.value is None or sample.value.pose is None):
+            raise StaleState(["motion"])
+        return sample
 
     async def set_joint_targets(
         self,

@@ -178,6 +178,9 @@ class Agent(object):
                     future = getattr(self.driver, request["action"])(request["payload"])
                     record["future"] = future
                 native_result = future.value()
+                if record.get("motion_kind") == "walk":
+                    self.finish_walk(request, replies, record, native_result)
+                    continue
                 with self.lock:
                     result = {"cancelled": record.get("stop_requested", False), "backend": "naoqi"}
                     if request["action"] == "motion_action" and request["payload"]["kind"] == "posture":
@@ -187,7 +190,9 @@ class Agent(object):
                     record.update(status="completed", result=result, finished=monotonic())
                 self.reply(replies, request, result=result)
             except Exception as error:
-                if future is not None and future.isCanceled():
+                if record.get("motion_kind") == "walk" and record["phase"] != "queued":
+                    self.finish_walk(request, replies, record, None, failed=True)
+                elif future is not None and future.isCanceled():
                     # qi reports confirmed cancellation by raising from value().
                     result = {"cancelled": True, "backend": "naoqi"}
                     with self.lock:
@@ -199,6 +204,28 @@ class Agent(object):
                 else:
                     record.update(status="unknown", finished=monotonic())
                     self.reply(replies, request, "unknown", message="Native completion unconfirmed")
+
+    def finish_walk(self, request, replies, record, native_result, failed=False):
+        with self.lock:
+            stop_done = record.get("walk_stop_done")
+            if stop_done is None:
+                if not failed and (native_result is None or isinstance(native_result, bool)):
+                    result = {"backend": "naoqi", "cancelled": False,
+                              "reached": native_result}
+                    record.update(status="completed", result=result, finished=monotonic())
+                    self.reply(replies, request, result=result)
+                    return
+                record.update(status="unknown", finished=monotonic())
+        if stop_done is not None:
+            stop_done.wait(1.8)
+            if record.get("walk_stop_confirmed"):
+                self.reply(replies, request, result={"cancelled": True, "backend": "naoqi",
+                                                      "stop_confirmed": True})
+                return
+        with self.lock:
+            if record["status"] != "completed":
+                record.update(status="unknown", finished=monotonic())
+        self.reply(replies, request, "unknown", message="Walking outcome unconfirmed")
 
     def run_producer(self, request, record, replies):
         name = request["action"]
@@ -259,6 +286,8 @@ class Agent(object):
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
                 record["stop_requested"] = True
+                if record.get("motion_kind") == "walk" and record["phase"] != "queued":
+                    record.setdefault("walk_stop_done", threading.Event()).clear()
         # Do not stop a different session's native output when the selected set is empty.
         active = [record for _, record in selected if record["phase"] != "queued"]
         if any(record.get("action", "speak") == "speak" for record in active) or (not oid and not sid):
@@ -267,8 +296,16 @@ class Agent(object):
             except Exception:
                 # The say future can confirm cancellation before stopAll replies.
                 logging.warning("stopAll did not confirm", exc_info=True)
-        motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") for name in record["names"]))
-        if motion_names or (not oid and not sid):
+        walks = [record for record in active if record.get("motion_kind") == "walk"]
+        locomotion = getattr(self.driver, "locomotion", None)
+        walk_stopped = False
+        if walks or (not oid and not sid and locomotion):
+            try:
+                walk_stopped = locomotion.stop()["native_inactive"]
+            except Exception:
+                logging.warning("Native locomotion stop did not confirm", exc_info=True)
+        motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") and record.get("motion_kind") != "walk" for name in record["names"]))
+        if motion_names or (not oid and not sid and not walks):
             try:
                 self.driver.stop_motion(motion_names or ["Body"], stop_posture=(not oid and not sid) or any(record.get("motion_kind") in ("wake", "rest", "posture") for record in active))
             except Exception:
@@ -286,6 +323,21 @@ class Agent(object):
                 confirmed.append(key)
                 continue
             future = record.get("future")
+            if record.get("motion_kind") == "walk":
+                if future is not None and walk_stopped and not future.isFinished():
+                    try:
+                        future.value(max(1, int((deadline - monotonic()) * 1000)))
+                    except Exception:
+                        pass
+                with self.lock:
+                    stopped = walk_stopped and future is not None and future.isFinished()
+                    if stopped:
+                        record.update(status="completed", finished=monotonic(),
+                                      result={"cancelled": True, "stop_confirmed": True})
+                    record["walk_stop_confirmed"] = stopped
+                    record["walk_stop_done"].set()
+                (confirmed if stopped else unresolved).append(key)
+                continue
             if future is not None:
                 try:
                     future.value(max(1, int((deadline - monotonic()) * 1000)))

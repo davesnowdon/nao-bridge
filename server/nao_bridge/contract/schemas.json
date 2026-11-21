@@ -478,6 +478,10 @@
         "sonar": {
           "type": "object",
           "additionalProperties": true
+        },
+        "locomotion": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
@@ -1702,6 +1706,9 @@
             "string",
             "null"
           ]
+        },
+        "odometry": {
+          "$ref": "#/$defs/Odometry"
         }
       },
       "required": [
@@ -2970,6 +2977,169 @@
       ],
       "additionalProperties": true,
       "description": "Session-owned demand for shared sensor producers. Active means the native subscription is confirmed and its software settling interval elapsed; it does not guarantee valid readings or a new native producer update. Stop removes this observer only."
+    },
+    "MoveCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "default": 0,
+          "description": "Forward displacement in metres."
+        },
+        "y": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "default": 0,
+          "description": "Left displacement in metres."
+        },
+        "yaw": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793,
+          "default": 0,
+          "description": "Counterclockwise rotation in radians."
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.3,
+          "description": "Fraction of discovered default step frequency."
+        }
+      },
+      "description": "Relative to the robot at native execution start. At least one displacement component must be nonzero. The translation vector magnitude must be at most 1 metre.",
+      "anyOf": [
+        {
+          "required": [
+            "x"
+          ],
+          "properties": {
+            "x": {
+              "not": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "required": [
+            "y"
+          ],
+          "properties": {
+            "y": {
+              "not": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "required": [
+            "yaw"
+          ],
+          "properties": {
+            "yaw": {
+              "not": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PlanarVector": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "yaw": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "yaw"
+      ],
+      "additionalProperties": true
+    },
+    "Odometry": {
+      "type": "object",
+      "properties": {
+        "origin_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frame": {
+          "const": "odometry"
+        },
+        "velocity_frame": {
+          "const": "robot"
+        },
+        "pose": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanarVector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pose_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "velocity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanarVector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "velocity_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pose_source": {
+          "const": "joint_sensors"
+        },
+        "velocity_source": {
+          "const": "native_estimate"
+        }
+      },
+      "required": [
+        "origin_id",
+        "origin_reason",
+        "frame",
+        "velocity_frame",
+        "pose",
+        "pose_reason",
+        "velocity",
+        "velocity_reason",
+        "pose_source",
+        "velocity_source"
+      ],
+      "additionalProperties": true
     }
   }
 }

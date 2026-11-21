@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.3.0",
-    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors and managed sonar observers. Physical motion, hold and new sensor acceptance is pending."
+    "version": "1.4.0",
+    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, finite walking and local odometry. Physical motion, hold and new sensor acceptance remain pending."
   },
   "servers": [
     {
@@ -1178,6 +1178,74 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/JointMoveCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/motion/moves": {
+      "post": {
+        "operationId": "moveRobot",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveCreate"
               }
             }
           }
@@ -2818,6 +2886,15 @@
       },
       "SensorObserver": {
         "$ref": "schemas.json#/$defs/SensorObserver"
+      },
+      "MoveCreate": {
+        "$ref": "schemas.json#/$defs/MoveCreate"
+      },
+      "Odometry": {
+        "$ref": "schemas.json#/$defs/Odometry"
+      },
+      "PlanarVector": {
+        "$ref": "schemas.json#/$defs/PlanarVector"
       }
     }
   }

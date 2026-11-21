@@ -881,6 +881,27 @@ try:
         flush=True,
     )
     retained_asset = probe.sample_recording()
+
+    def motion_state():
+        state = probe.request("GET", "/api/state?include=motion&wait_for_fresh_ms=1000")
+        return state["groups"]["motion"]["value"]
+
+    initial = motion_state()["odometry"]
+    walk = probe.request("POST", "/api/motion/moves", {"x": 0.2, "y": 0.1}, status=202)
+    assert probe.wait(walk)["status"] == "succeeded"
+    current = motion_state()["odometry"]
+    assert current["origin_id"] == initial["origin_id"]
+    assert abs(current["pose"]["x"] - initial["pose"]["x"] - 0.2) < 1e-5
+    assert abs(current["pose"]["y"] - initial["pose"]["y"] - 0.1) < 1e-5
+    walk = probe.request("POST", "/api/motion/moves", {"yaw": 0.2}, status=202)
+    until(lambda: motion_state()["locomotion_active"], timeout=2)
+    probe.request("POST", "/api/operations/" + walk["id"] + "/cancel", {}, status=202)
+    assert probe.wait(walk)["status"] == "cancelled"
+    assert until(lambda: not motion_state()["locomotion_active"])
+    assert motion_state()["odometry"]["pose"] == current["pose"]
+    print(
+        "Native HTTP walking: displacement, origin and controlled cancellation passed", flush=True
+    )
     print(
         "Native sample recording: measured state, NDJSON, checksum and range download passed",
         flush=True,

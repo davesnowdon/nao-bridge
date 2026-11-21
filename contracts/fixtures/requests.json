@@ -190,6 +190,60 @@
         "extra": true
       },
       "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0.2
+      },
+      "valid": true
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "y": -0.1,
+        "yaw": 0.4,
+        "speed": 0.3
+      },
+      "valid": true
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": true
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "yaw": 4
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0.2,
+        "speed": 0
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0.2,
+        "gait": []
+      },
+      "valid": false
+    },
+    {
+      "schema": "MoveCreate",
+      "value": {
+        "x": 0,
+        "speed": 0.3
+      },
+      "valid": false
     }
   ]
 }

@@ -12,6 +12,7 @@ from motion import MotionObservation, PostureObservation, FixtureMotion, Fixture
 from wire import monotonic
 from autonomy import Autonomy, FixtureAutonomy
 from observations import BATTERY_KEY, MotionEvents, PassiveSensors, passive_definitions, battery_value
+from locomotion import Locomotion, Odometry, LocomotionError
 from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 
@@ -53,6 +54,8 @@ class NativeDriver(object):
         self.subscribers = []
         self.description = {}
         self.motion = None
+        self.locomotion = None
+        self.odometry = None
         self.safety_motion = None
         self.posture = None
         self.safety_posture = None
@@ -113,6 +116,11 @@ class NativeDriver(object):
         except Exception:
             self.motion = None
             self.safety_motion = None
+        if self.motion:
+            self.odometry = Odometry(self.motion.motion, self.call)
+            self.locomotion = Locomotion(self.motion.motion, self.safety_motion,
+                                         self.motion.names, self.call, monotonic)
+            self.description["locomotion"] = self.locomotion.catalog
         try:
             self.posture = PostureObservation(self.session, self.call)
             self.safety_posture = self.safety_session.service("ALRobotPosture", _async=True).value(1000)
@@ -168,6 +176,7 @@ class NativeDriver(object):
         memory, motion, posture, autonomy = self.memory, self.motion, self.posture, self.autonomy
         passive_sensors = self.passive_sensors
         sonar = self.sonar
+        odometry = self.odometry
 
         def unavailable():
             raise ValueError("native_service_unavailable")
@@ -175,6 +184,8 @@ class NativeDriver(object):
         def motion_state():
             value = motion.sample_motion()
             value["posture"] = posture.sample() if posture else None
+            if odometry:
+                value["odometry"] = odometry.sample()
             return value
 
         return {"sensors": lambda: self.sample_sensors(memory, passive_sensors, sonar),
@@ -271,6 +282,10 @@ class NativeDriver(object):
         kind = payload["kind"]
         if kind != "stiffness" and names != set(self.motion.names):
             raise ValueError("Whole-body action must declare all joints")
+        if kind == "walk":
+            if not self.locomotion:
+                raise LocomotionError("unsupported", "Walking unavailable")
+            self.locomotion.prepare(payload["move"])
         if kind == "stiffness":
             for joint in self.motion.joints:
                 if joint["name"] in names and set(joint["coupled_with"]) & names:
@@ -282,6 +297,8 @@ class NativeDriver(object):
 
     def motion_action(self, payload):
         kind = payload["kind"]
+        if kind == "walk":
+            return self.locomotion.dispatch(payload["move"])
         if kind == "stiffness":
             return self.motion.motion.stiffnessInterpolation(payload["names"], payload["values"], [payload["duration"]] * len(payload["names"]), _async=True)
         if kind == "posture":
@@ -306,6 +323,7 @@ class NativeDriver(object):
 
     def close(self):
         self._connected.clear()
+        self.locomotion = self.odometry = None
         if self.sonar:
             self.sonar.close()
             self.sonar = None

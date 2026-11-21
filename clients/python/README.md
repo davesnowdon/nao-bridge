@@ -1,6 +1,6 @@
 # NAO Bridge Python client
 
-The replacement client provides `Nao` and `AsyncNao` for the version 1.3 HTTP/SSE
+The replacement client provides `Nao` and `AsyncNao` for the version 1.4 HTTP/SSE
 contract. Package version 0.2 removes the old `NAOBridgeClient` API. Python 3.10+
 is supported; a NAOqi installation is unnecessary on the client.
 
@@ -46,6 +46,7 @@ asyncio.run(main())
 | `motion.joints()`, `.postures()`, `.state(...)` | Joint limits/chains/coupling and shared measured/commanded state |
 | `motion.wake()`, `.rest()`, `.set_stiffness(...)`, `.posture(...)` | Explicit preparation with session ownership |
 | `motion.move_joints(...)`, `.head(...)`, `.hand(...)`, `.play(...)` | Finite absolute targets and portable trajectories; optional same-session replacement |
+| `motion.move(x=..., y=..., yaw=...)`, `.odometry()` | Finite robot-relative walking and typed, timestamped planar observations |
 | `motion.set_joint_targets(...)` | One ordered target update; no background refresh |
 | `motion.joint_control(...)` | Scoped latest-target refresh and cancellation on exit |
 | `autonomy.configure(...)`, `.state(...)` | Explicit discovered settings and observed values |
@@ -113,6 +114,28 @@ explicit `stop()` or context exit requests cleanup. Unknown cleanup raises
 `SensorObserverError` and is retained in `cleanup_error`. Handles stay pinned to
 the original session/generation and never resume themselves after reconnection.
 See the [HTTP lifecycle](../../docs/http-api.md#managed-sonar) for recovery.
+
+## Finite walking
+
+Prepare an awake, stiff robot in a standing posture before moving.
+For a connected fake fixture the software workflow can be exercised directly.
+
+```python
+with Nao() as nao:
+    if nao.robot.capabilities().features["motion.moves"].status == "available":
+        before = nao.motion.odometry(wait_for_fresh_ms=1000, require_fresh=True)
+        move = nao.motion.move(x=0.15, speed=0.3, timeout=15)
+        after = nao.motion.odometry(wait_for_fresh_ms=1000, require_fresh=True)
+        if before.value and after.value and before.value.origin_id == after.value.origin_id:
+            print(move.status, after.value.pose)
+```
+
+The async client uses the same methods with `await`. Use `wait=False` to
+retain the operation immediately and cancel it explicitly if needed. A local
+wait timeout leaves the move running. `odometry(require_fresh=True)` requires
+a fresh motion sample with a usable pose. Velocity may still be unavailable.
+See the [wire contract](../../docs/http-api.md#finite-walking-and-odometry)
+for axes, limits and stop confirmation.
 
 ## Joint controls
 

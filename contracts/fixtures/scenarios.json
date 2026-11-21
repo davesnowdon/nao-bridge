@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.3.0",
+  "contract_version": "1.4.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -158,6 +158,27 @@
         "events can precede HTTP responses",
         "active is producer state, not a guarantee that an individual reading is valid",
         "hardware range/update behavior is unverified"
+      ]
+    },
+    {
+      "name": "finite walking and planar odometry",
+      "steps": [
+        "read fresh motion state and retain odometry origin",
+        "submit bounded displacement with omitted speed",
+        "await operation and read fresh odometry",
+        "submit another move and wait for locomotion_active",
+        "cancel the operation and reconcile current motion state"
+      ],
+      "expected": [
+        "motion state names position and velocity frames",
+        "202 owns locomotion and all discovered joints and uses default speed fraction",
+        "fixture odometry moves by the requested displacement within the same origin",
+        "active locomotion is observed",
+        "cancelled after native inactive and the move call ends"
+      ],
+      "nondeterminism": [
+        "opaque origin and operation IDs, acquisition timestamps, float precision",
+        "physical stop and odometry accuracy are separate acceptance gates"
       ]
     }
   ]

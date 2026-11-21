@@ -31,7 +31,10 @@ from .models import (
     Event,
     ListenerConfiguration,
     ListenerData,
+    Odometry,
+    OdometrySample,
     OperationData,
+    PlanarVector,
     RecordingData,
     RecordingSource,
     RobotInfo,
@@ -49,6 +52,9 @@ from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "Odometry",
+    "OdometrySample",
+    "PlanarVector",
     "AsyncSensorObserver",
     "SensorObserver",
     "SensorObserverData",

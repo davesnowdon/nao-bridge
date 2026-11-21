@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import logging
+import math
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -27,7 +28,7 @@ TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
 KNOWN_TERMINAL = TERMINAL - {"unknown"}
 RECOVERY_KINDS = {"session.close", "session.revoke", "robot.stop"}
 CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
-MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change"}
+MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change", "motion.move"}
 ORDINARY_KINDS = {
     "speech.utterance",
     "motion.joint_move",
@@ -327,6 +328,9 @@ class Core:
                 "sensors.observers": feature(
                     available and self.info.get("sonar", {}).get("available", False)
                 ),
+                "motion.moves": feature(
+                    available and self.info.get("locomotion", {}).get("available", False)
+                ),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "motion.posture_changed": feature(
                     available and bool(self.info.get("motion_events", {}).get("posture_fields"))
@@ -414,6 +418,7 @@ class Core:
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
             "recognition": copy.deepcopy(self.info.get("recognition", {})),
             "sonar": copy.deepcopy(self.info.get("sonar", {})),
+            "locomotion": copy.deepcopy(self.info.get("locomotion", {})),
             "motion_events": copy.deepcopy(
                 self.info.get("motion_events", {"posture_fields": [], "fall_phases": []})
             ),
@@ -1075,6 +1080,26 @@ class Core:
                     )
                 payload.update(name=body["name"], speed=body.get("speed", 0.4))
                 operation_kind = "motion.posture_change"
+            elif kind == "walk":
+                catalog = self.info.get("locomotion", {})
+                if not catalog.get("available"):
+                    raise BridgeError("unsupported", "Native walking unavailable", 422)
+                move = {axis: body.get(axis, 0.0) for axis in ("x", "y", "yaw")}
+                if (
+                    not any(move.values())
+                    or math.hypot(move["x"], move["y"]) > catalog["max_translation_m"]
+                ):
+                    raise BridgeError("invalid_request", "Expected a bounded nonzero displacement")
+                if abs(move["yaw"]) > catalog["max_rotation_rad"]:
+                    raise BridgeError("invalid_request", "Rotation exceeds available range")
+                move["speed"] = body.get("speed", catalog["default_speed"])
+                if move["speed"] < catalog["minimum_speed"]:
+                    raise BridgeError("unsupported", "Speed below native frequency range", 422)
+                self.require_joint_motion(resources[:-1])
+                if self.samples["motion"]["value"]["locomotion_active"]:
+                    raise BridgeError("resource_busy", "Native locomotion already active", 409)
+                payload["move"] = move
+                operation_kind = "motion.move"
         op = self.new_operation(session, operation_kind, resources)
         if operation_kind in CONFIGURATION_KINDS:
             op.retained_resources = [r for r in resources if r.startswith("joint.")]
@@ -1201,7 +1226,11 @@ class Core:
                     "failed",
                     result,
                     BridgeError(
-                        "native_execution_failed", "Requested posture was not reached", 422
+                        "native_execution_failed",
+                        "Requested displacement was not reached"
+                        if op.public["kind"] == "motion.move"
+                        else "Requested posture was not reached",
+                        422,
                     ),
                 )
                 return

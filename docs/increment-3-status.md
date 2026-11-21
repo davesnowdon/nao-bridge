@@ -11,8 +11,8 @@ are unchanged. This document tracks further robot-free work against the full
 | Hand/foot bumper state and events | Delivered in increment 2 | Integrated API verification pending |
 | Passive inertial, foot load/contact and joint temperature observations | Adapter, shared state/catalog, schemas, SDK metadata and raw HTTP/native-container verification implemented | Both firmware generations pending |
 | Demand-managed sonar, warm-up and stale/invalid handling | Native adapter, dedicated agent lane, HTTP lifecycle, shared sampling, sync/async SDK and conformance implemented | Pending |
-| Finite displacement/turn, speed mapping, priority stop | Private native adapter and SDK loopback proof implemented; production ownership/IPC/HTTP integration pending | Pending |
-| Odometry, origin changes and observation frames | Private planar adapter with explicit origins and independent pose/velocity failure implemented; shared public state pending | Pending |
+| Finite displacement/turn, speed mapping, priority stop | Native IPC, HTTP move operation, cancellation, robot-wide priority stop and both SDKs implemented. Dedicated motion stop scopes remain pending. | Pending |
+| Odometry, origin changes and observation frames | Planar adapter, shared motion state, schemas, raw HTTP and typed SDK observations implemented | Pending |
 | Threshold/hysteresis observations | Pending | Pending |
 | Camera discovery/capture and managed face observation | Pending | Pending |
 | Owned velocity controls, independent expiry and controlled stop | Pending; must stay unavailable on hardware until its gate passes | Pending |
@@ -64,9 +64,9 @@ gait-frequency mapping, explicit awake/stiff/idle preconditions and controlled
 stop confirmation. Odometry rebases sensor-backed position to an opaque local
 origin, keeps robot-frame native velocity separate and changes origin after lost
 pose observation. The 28 isolated tests and pinned Python 2/qi loopback scenario
-pass. The fixture explicitly supports concurrent requests so stop can run while
-the finite move is pending. These adapters are not yet connected to the production
-driver or exposed as walking/odometry capabilities. See the
+pass. The fixture supports concurrent requests so stop can run while the finite
+move is pending. Contract 1.4.0 connects the adapters to the production driver,
+owned operations, shared motion state and both Python SDKs. See the
 [research notes](research-notes.md#finite-walking-and-odometry-adapter) for limits.
 
 Increment 3 is draft [PR #38](https://github.com/davesnowdon/nao-bridge/pull/38),

@@ -268,7 +268,7 @@ The [2.1 locomotion API](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk
 and [2.8 API](https://doc.aldebaran.com/2-8/naoqi/motion/control-walk-api.html)
 distinguish world-frame planar position from robot-frame velocity.
 `getRobotPosition(True)` selects joint-sensor feedback; `getRobotVelocity()` is
-reported as a native estimate. The private adapter rebases the first valid pose
+reported as a native estimate. The adapter rebases the first valid pose
 to a local odometry origin, including its heading. A new connection or lost pose
 observation starts a new origin; failed velocity alone does not discard position.
 This does not detect every native frame reset, slip or physical relocation.
@@ -286,7 +286,7 @@ radians rotation; this is not a collision or physical safety envelope.
 Controlled stop uses `stopMove`, which finishes at double support, then checks
 `moveIsActive` within a shared deadline. An acknowledgement alone is insufficient.
 No wake, stiffness, posture or safeguard changes are added. The adapter passes
-isolated tests and a pinned-SDK loopback service, but still needs production IPC,
-resource ownership and HTTP/SDK integration before use. Physical speed mapping,
+isolated tests and a pinned-SDK loopback service. Contract 1.4.0 exposes owned
+finite moves and odometry through HTTP and the SDKs. Physical speed mapping,
 origin behavior and stopping distance remain hardware gates on both targets.
 

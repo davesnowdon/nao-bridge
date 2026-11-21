@@ -55,6 +55,7 @@ class Capabilities(WireModel):
     motion_events: dict[str, list[str]] = Field(default_factory=dict)
     recognition: dict[str, Any] = Field(default_factory=dict)
     sonar: dict[str, Any] = Field(default_factory=dict)
+    locomotion: dict[str, Any] = Field(default_factory=dict)
 
 
 class Sensor(WireModel):
@@ -260,6 +261,32 @@ class State(WireModel):
     acquisition_started_bridge_time_ms: float | None
     acquisition_finished_bridge_time_ms: float | None
     groups: dict[str, StateGroup]
+
+
+class PlanarVector(WireModel):
+    x: float
+    y: float
+    yaw: float
+
+
+class Odometry(WireModel):
+    origin_id: str
+    origin_reason: str
+    frame: Literal["odometry"]
+    velocity_frame: Literal["robot"]
+    pose: PlanarVector | None
+    pose_reason: str | None
+    velocity: PlanarVector | None
+    velocity_reason: str | None
+    pose_source: Literal["joint_sensors"]
+    velocity_source: Literal["native_estimate"]
+
+
+class OdometrySample(StateGroup):
+    value: Odometry | None
+    bridge_instance_id: str
+    connection_generation: int
+    acquisition_finished_bridge_time_ms: float | None
 
 
 class SubscriptionData(WireModel):

@@ -16,6 +16,7 @@ from .models import (
     Event,
     JointCatalog,
     ListenerData,
+    OdometrySample,
     OperationData,
     PosturesData,
     RecordingData,
@@ -161,6 +162,43 @@ class Motion:
 
     def postures(self) -> PosturesData:
         return self._nao._run(self._nao._async.motion.postures())
+
+    def move(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        yaw: float = 0,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.move(
+                    x=x,
+                    y=y,
+                    yaw=yaw,
+                    speed=speed,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def odometry(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> OdometrySample:
+        return self._nao._run(
+            self._nao._async.motion.odometry(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
 
     def set_joint_targets(
         self,

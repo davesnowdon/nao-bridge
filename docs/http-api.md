@@ -1,4 +1,4 @@
-# Using contract 1.3.0 over HTTP
+# Using contract 1.4.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -124,6 +124,49 @@ workers acquire sensors, joints, motion and autonomy separately. A slow/failed
 read affects its group; completed groups continue updating the shared cache.
 In-flight readings from a previous connection are discarded. Native service-side
 serialization can still affect observed rates and must be measured on hardware.
+
+## Finite walking and odometry
+
+Check `features["motion.moves"]` and `locomotion` in robot capabilities.
+`POST /api/motion/moves` accepts a session-owned relative displacement and
+returns a 202 Operation. Send an `Idempotency-Key` so an ambiguous acceptance
+can be retried with the same payload.
+
+```json
+{"x": 0.2, "y": -0.1, "yaw": 0.25, "speed": 0.3}
+```
+
+The axes are metres forward and left, and radians counterclockwise, relative
+to the robot at native execution start. Omitted components default to zero.
+Supply at least one nonzero component, with at most 1 m total translation and
+pi radians rotation. Speed defaults to 0.3 of the discovered default step
+frequency. Values must be positive, at most one, and within the discovered
+frequency bounds. Physical velocity depends on the native gait and surface.
+
+The robot must be awake, idle, and have stiff joints with fresh observations.
+Prepare it explicitly before a move. Walking reserves locomotion and the body
+joints so concurrent joint, posture and autonomy commands cannot interfere.
+The bridge leaves native safeguards enabled. A successful operation reports
+that the native call ended. A native `false` reports a failed move, and
+`reached: null` indicates the service returned no target verdict. Inspect
+odometry to assess the displacement.
+
+Cancel via the operation's cancel endpoint, or use `POST /api/robot/stop` for
+bridge-wide stop. During walking, native `stopMove` requests controlled stop.
+Cancellation requires an inactive native report and the end of the dispatched
+move call. An unconfirmed result retains the reservation with status `unknown`.
+Hardware stop timing and distance require acceptance on each robot model.
+
+Read `GET /api/state?include=motion` and select
+`groups.motion.value.odometry`. The pose is sensor-backed, relative to the
+first valid planar sample of its origin. Velocity is a native estimate in the
+current robot frame, in m/s and rad/s. Either value can be null with its own
+reason even in a fresh group. Motion and sensor groups can be read together
+with `include=motion,sensors`, with an acquisition window in the State response.
+Compare origin, bridge instance, generation and acquisition times before
+combining observations. Reconnection or loss of pose observation creates a new
+origin. Slip, relocation and native resets without a sample gap may remain
+undetected.
 
 ## Managed sonar
 

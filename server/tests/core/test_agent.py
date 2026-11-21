@@ -21,6 +21,7 @@ def agent_module(monkeypatch):
     sys.modules.pop("native", None)
     sys.modules.pop("wire", None)
     sys.modules.pop("motion", None)
+    sys.modules.pop("locomotion", None)
     sys.modules.pop("autonomy", None)
     sys.modules.pop("controls", None)
     sys.modules.pop("sampling", None)
@@ -399,6 +400,30 @@ def test_stop_during_motion_preparation_never_dispatches(agent_module):
         agent.worker()
     assert replies.get_nowait()["status"] == "accepted"
     assert replies.get_nowait()["result"] == {"cancelled": True, "dispatched": False}
+
+
+@pytest.mark.parametrize("inactive,ended", [(True, False), (False, True), (True, True)])
+def test_walk_stop_needs_native_inactivity_and_ended_future(agent_module, inactive, ended):
+    agent = bare_agent(agent_module)
+    agent.driver.locomotion = types.SimpleNamespace(stop=lambda: {"native_inactive": inactive})
+    record = {
+        "session_id": "session",
+        "status": "accepted",
+        "phase": "dispatch_started",
+        "action": "motion_action",
+        "motion_kind": "walk",
+        "names": ["HeadYaw"],
+        "future": types.SimpleNamespace(isFinished=lambda: ended, value=lambda _: None),
+    }
+    agent.records["move"] = record
+    result = agent.stop({"payload": {"operation_id": "move"}})
+    replies = queue.Queue(8)
+    agent.finish_walk({"id": "move"}, replies, record, False)
+    reply = replies.get_nowait()
+    if inactive and ended:
+        assert result["confirmed_ids"] == ["move"] and reply["result"]["cancelled"]
+    else:
+        assert result["unresolved_ids"] == ["move"] and reply["status"] == "unknown"
 
 
 def test_motion_private_payload_validation_rejects_unsafe_shapes(agent_module):

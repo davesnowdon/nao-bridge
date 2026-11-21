@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import math
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -122,7 +123,11 @@ class FakeBackend:
                 else 0.0,
                 "reason": None,
             }
-        self.motion_state = {"awake": True, "posture": "StandInit", "locomotion_active": False}
+        self.motion_state: dict[str, Any] = {
+            "awake": True,
+            "posture": "StandInit",
+            "locomotion_active": False,
+        }
         self.autonomy_state: dict[str, bool | str | None] = {
             "life_state": "solitary",
             **dict.fromkeys(
@@ -157,6 +162,18 @@ class FakeBackend:
 
     async def connection(self, connected: bool) -> None:
         self.connected = connected
+        self.motion_state["odometry"] = {
+            "origin_id": uuid.uuid4().hex,
+            "origin_reason": "connection_started",
+            "frame": "odometry",
+            "velocity_frame": "robot",
+            "pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            "pose_reason": None,
+            "velocity": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            "velocity_reason": None,
+            "pose_source": "joint_sensors",
+            "velocity_source": "native_estimate",
+        }
         self.sonar = {
             "producer_id": None,
             "revision": 0,
@@ -213,6 +230,16 @@ class FakeBackend:
                         "available": connected,
                         "reason": None if connected else "disconnected",
                     },
+                    "locomotion": {
+                        "available": connected,
+                        "reason": None if connected else "disconnected",
+                        "max_translation_m": 1.0,
+                        "max_rotation_rad": math.pi,
+                        "minimum_speed": 0.0,
+                        "default_speed": 0.3,
+                        "speed_mapping": "default_step_frequency_fraction",
+                        "hardware_verified": False,
+                    },
                 },
             )
 
@@ -253,7 +280,7 @@ class FakeBackend:
                                 "_sonar": dict(self.sonar),
                             },
                             "joints": {key: dict(value) for key, value in self.joint_state.items()},
-                            "motion": dict(self.motion_state),
+                            "motion": copy.deepcopy(self.motion_state),
                             "autonomy": {
                                 "settings": dict(self.autonomy_state),
                                 "unavailable": {
@@ -350,6 +377,8 @@ class FakeBackend:
     async def motion_action(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
+        if payload["kind"] == "walk":
+            return await self._walk(operation_id, session_id, payload)
         result = await self._execute(operation_id, session_id, payload, payload["kind"])
         if result.get("cancelled"):
             return result
@@ -372,6 +401,29 @@ class FakeBackend:
             if self.posture_reached:
                 self.motion_state["posture"] = payload["name"]
         return result
+
+    async def _walk(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.motion_state["locomotion_active"]:
+            raise BridgeError("resource_busy", "Native locomotion already active", 409)
+        odometry = self.motion_state["odometry"]
+        self.motion_state["locomotion_active"] = True
+        try:
+            result = await self._execute(operation_id, session_id, payload, "walk")
+            if not result.get("cancelled"):
+                pose, move = odometry["pose"], payload["move"]
+                c, s = math.cos(pose["yaw"]), math.sin(pose["yaw"])
+                yaw = pose["yaw"] + move["yaw"]
+                odometry["pose"] = {
+                    "x": pose["x"] + c * move["x"] - s * move["y"],
+                    "y": pose["y"] + s * move["x"] + c * move["y"],
+                    "yaw": math.atan2(math.sin(yaw), math.cos(yaw)),
+                }
+                result["reached"] = True
+            return result
+        finally:
+            self.motion_state["locomotion_active"] = False
 
     async def configure_autonomy(
         self, operation_id: str, session_id: str, payload: dict[str, Any]

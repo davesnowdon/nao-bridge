@@ -4,6 +4,8 @@ from __future__ import print_function
 import math
 import numbers
 
+from locomotion import valid_move
+
 
 def finite(value):
     return isinstance(value, numbers.Real) and not isinstance(value, bool) and not math.isnan(value) and not math.isinf(value)
@@ -34,6 +36,8 @@ def valid_motion_action(payload):
     if not isinstance(names, list) or not 0 < len(names) <= 32 or not all(isinstance(n, type(u"")) and n for n in names) or len(set(names)) != len(names):
         return False
     fields = set(["kind", "names"])
+    if kind == "walk":
+        return set(payload) == fields | set(["move"]) and valid_move(payload["move"])
     if kind == "stiffness":
         values, duration = payload.get("values"), payload.get("duration")
         return set(payload) == fields | set(["values", "duration"]) and isinstance(values, list) and len(values) == len(names) and all(finite(v) and 0 <= v <= 1 for v in values) and finite(duration) and 0 < duration <= 600
@@ -124,6 +128,8 @@ class FixtureMotion(object):
         self.posture = "StandInit"
         self.breathing = True
         self.idle = True
+        self.base_pose = [0., 0., 0.]
+        self.base_move = None
 
     def getBodyNames(self, group):
         return self.names if group == "Body" else sorted(self.chains) if group == "Chains" else self.chains[group]
@@ -203,7 +209,42 @@ class FixtureMotion(object):
             return self.awake
 
     def moveIsActive(self):
-        return False
+        with self.lock:
+            return self.base_move is not None
+
+    def getMoveConfig(self, which):
+        return [["MaxStepFrequency", 0. if which == "Min" else 1.]]
+
+    def getRobotPosition(self, useSensors):
+        with self.lock:
+            return list(self.base_pose)
+
+    def getRobotVelocity(self):
+        with self.lock:
+            return [0.1 if self.base_move else 0., 0., 0.]
+
+    def moveTo(self, x, y, yaw, config):
+        import threading
+        stopped = threading.Event()
+        with self.lock:
+            self.base_move = stopped
+        try:
+            if stopped.wait(0.8):
+                return False
+            with self.lock:
+                px, py, heading = self.base_pose
+                c, s = math.cos(heading), math.sin(heading)
+                self.base_pose = [px + c * x - s * y, py + s * x + c * y,
+                                  math.atan2(math.sin(heading + yaw), math.cos(heading + yaw))]
+            return True
+        finally:
+            with self.lock:
+                self.base_move = None
+
+    def stopMove(self):
+        with self.lock:
+            if self.base_move:
+                self.base_move.set()
 
     def getBreathEnabled(self, chain):
         return self.breathing
