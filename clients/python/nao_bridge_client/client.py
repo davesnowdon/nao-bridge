@@ -12,6 +12,7 @@ from .listeners import AsyncListener
 from .models import (
     AssetData,
     AssetsPage,
+    CamerasData,
     Capabilities,
     Event,
     JointCatalog,
@@ -43,6 +44,7 @@ class Nao:
         self._thread: threading.Thread | None = None
         self.robot = Robot(self)
         self.sensors = Sensors(self)
+        self.vision = Vision(self)
         self.motion = Motion(self)
         self.autonomy = Autonomy(self)
         self.speech = Speech(self)
@@ -445,6 +447,34 @@ class Sensors:
                 require_fresh=require_fresh,
             )
         )
+
+
+class Vision:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def cameras(self) -> CamerasData:
+        return self._nao._run(self._nao._async.vision.cameras())
+
+    def capture(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.vision.capture(
+                camera,
+                resolution=resolution,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
 
 
 class Autonomy:

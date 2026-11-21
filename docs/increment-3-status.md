@@ -1,7 +1,7 @@
 # Increment 3 implementation
 
 Increment 2 software is in PR #37, including the planned Recorder UI example.
-Both its main checks and native-container CI passed at `a64ab5d`.
+Both its main checks and native-container CI passed at `1e8cf5d`.
 The remaining physical gates in [increment-2-status.md](increment-2-status.md)
 are unchanged. This document tracks further robot-free work against the full
 [increment 3 plan](delivery-plan.md#increment-3-wanderer-foundation).
@@ -14,7 +14,8 @@ are unchanged. This document tracks further robot-free work against the full
 | Finite displacement/turn, speed mapping, priority stop | Native IPC, HTTP move operation, cancellation, locomotion/all-motion priority stop and both SDKs implemented | Pending |
 | Odometry, origin changes and observation frames | Planar adapter, shared motion state, schemas, raw HTTP and typed SDK observations implemented | Pending |
 | Threshold/hysteresis observations | Shared battery and sonar feed, per-subscription hysteresis, SSE schema and both SDKs implemented | Live source behavior pending |
-| Camera discovery/capture and managed face observation | Pending | Pending |
+| Camera discovery and still capture | Native adapter, bounded RGB transfer, PNG assets, HTTP and both Python SDKs implemented | Both firmware generations pending |
+| Managed face observation | Pending | Pending |
 | Owned velocity controls, independent expiry and controlled stop | Pending; must stay unavailable on hardware until its gate passes | Pending |
 | Public-API Wanderer reference application | Pending | Pending |
 
@@ -86,3 +87,19 @@ sets a baseline. Rules use inclusive enter/exit bounds and reset on invalid
 samples, gaps and sonar producer changes. Thresholds use shared samples and
 never start a sonar producer. Robot-free tests cover both crossing directions,
 source lifecycle, stale data, reconnect, and the Python clients.
+
+Contract 1.7.0 adds passive top/bottom camera discovery and finite PNG capture.
+The legacy adapter opens a uniquely named native subscription for each capture
+and releases only that subscription. An unfinished native call stays tracked
+until cleanup can proceed. One private RGB slot carries the frame outside the
+command JSON lane. Image publication uses the existing asset quota, retention,
+checksum and download semantics. Metadata identifies the frame and separates
+the read window from the native source clock. Hardware still needs to establish
+actual frame age, supported modes, and coexistence with another camera consumer.
+
+Camera verification includes passive discovery, both full RGB sizes, preservation
+of a concurrent native subscriber, full-size private transfer with four ordinary
+workers blocked, and PNG download through raw HTTP. `make check` passed 546
+server/integration and 47 client tests, plus lint and types. The final cleanup
+adjustments passed 39 focused tests, the full native-container run and the
+contract compatibility guard against PR #37.

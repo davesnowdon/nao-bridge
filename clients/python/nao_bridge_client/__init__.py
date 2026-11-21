@@ -28,6 +28,8 @@ from .models import (
     AcceptedThreshold,
     AssetData,
     AssetsPage,
+    Camera,
+    CamerasData,
     Capabilities,
     Event,
     ListenerConfiguration,
@@ -54,6 +56,8 @@ from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "Camera",
+    "CamerasData",
     "AcceptedThreshold",
     "SensorThresholdChangedData",
     "Odometry",

@@ -24,6 +24,8 @@ from .recordings import Recordings
 from .sensor_observers import SONAR_IDS, SensorObservers
 from .thresholds import EVENT as THRESHOLD_EVENT
 from .thresholds import MAX_RULES, Threshold
+from .vision import KIND as CAPTURE_KIND
+from .vision import Vision
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -124,6 +126,7 @@ class Core:
         self.listeners = Listeners(self)
         self.sensor_observers = SensorObservers(self)
         self.recordings = Recordings(self)
+        self.vision = Vision(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -230,7 +233,10 @@ class Core:
                         ),
                     )
                     continue
-                if op.public["status"] not in TERMINAL and op.public["kind"] != RECORDING_KIND:
+                if op.public["status"] not in TERMINAL and op.public["kind"] not in {
+                    RECORDING_KIND,
+                    CAPTURE_KIND,
+                }:
                     self.finish(
                         op,
                         "unknown",
@@ -380,6 +386,10 @@ class Core:
                 ),
                 "recordings": feature(available and self.recordings.available()),
                 "assets": feature(self.recordings.store is not None),
+                "vision.cameras": feature(available and bool(self.info.get("cameras"))),
+                "vision.captures": feature(
+                    available and bool(self.info.get("cameras")) and self.recordings.available()
+                ),
                 "sequences": feature(False, False),
             },
             "limits": {
@@ -418,6 +428,7 @@ class Core:
             | {
                 "session_lease_seconds": self.settings.lease_seconds,
                 "max_native_operations": 4,
+                "max_camera_captures": 1,
                 "max_thresholds_per_subscription": MAX_RULES,
                 "max_joint_controls": 4,
                 "max_joint_control_ids": 4096,
@@ -1280,6 +1291,9 @@ class Core:
     async def cancel(self, op: Operation) -> dict[str, Any]:
         if op.public["status"] in TERMINAL:
             return copy.deepcopy(op.public)
+        if op.public["kind"] == CAPTURE_KIND:
+            self.vision.cancel(op)
+            return copy.deepcopy(op.public)
         if not op.public["cancellable"]:
             raise BridgeError("unsupported", "This operation cannot be cancelled", 422)
         if op.public["kind"] == RECORDING_KIND:
@@ -1367,6 +1381,7 @@ class Core:
         self.listeners.stop_session(session.public["id"])
         self.sensor_observers.stop_session(session.public["id"])
         self.recordings.stop_session(session.public["id"], status)
+        self.vision.stop(session.public["id"])
         for sub in list(self.subscriptions.values()):
             if sub.public["session_id"] == session.public["id"]:
                 sub.close(graceful=True)
@@ -1382,6 +1397,7 @@ class Core:
 
     async def cleanup_native(self, session: Session, force: bool = False) -> dict[str, Any]:
         sid = session.public["id"]
+        capture = self.vision.stop(sid)
         affected = [
             op
             for op in self.operations.values()
@@ -1443,6 +1459,8 @@ class Core:
         unresolved_observers = await self.sensor_observers.cleanup(sid, force, fenced)
         unresolved_recordings = await self.recordings.settle(sid)
         unresolved.extend(unresolved_recordings)
+        unresolved_captures = await self.vision.settle(capture)
+        unresolved.extend(unresolved_captures)
         listeners_released = not self.listeners.owns(sid)
         if not listeners_released:
             unresolved_resources.append("speech.recognition")
@@ -1460,7 +1478,8 @@ class Core:
             and controls_released
             and listeners_released
             and observers_released
-            and not unresolved_recordings,
+            and not unresolved_recordings
+            and not unresolved_captures,
         }
 
     def close_session(
@@ -1536,6 +1555,7 @@ class Core:
         self.listeners.stop_all()
         self.sensor_observers.stop_all()
         self.recordings.stop_all()
+        capture = self.vision.stop()
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
                 self.finish(op, "cancelled", {"dispatched": False})
@@ -1572,6 +1592,13 @@ class Core:
             item.public["id"] for item in self.listeners.items.values() if not item.released
         ]
         stopped["unresolved_ids"].extend(await self.recordings.settle())
+        if capture is not None:
+            oid = capture.operation.public["id"]
+            unresolved_capture = await self.vision.settle(capture)
+            if oid in stopped["unresolved_ids"] and not unresolved_capture:
+                stopped["unresolved_ids"].remove(oid)
+            if unresolved_capture and oid not in stopped["unresolved_ids"]:
+                stopped["unresolved_ids"].append(oid)
         return stopped
 
     def priority_stop(self, session: Session, scope: str | None = None) -> dict[str, Any]:

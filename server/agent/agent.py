@@ -22,6 +22,7 @@ from controls import JointControls, ControlError
 from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
+from camera import CameraError, CameraUnknown, handoff, valid_capture, valid_capture_id
 from wire import VERSION, encode, frames, monotonic
 
 
@@ -59,6 +60,7 @@ class Agent(object):
         self.work = queue.Queue(16)
         self.recognition_work = queue.Queue(1)
         self.sonar_work = queue.Queue(1)
+        self.camera_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
@@ -99,6 +101,9 @@ class Agent(object):
             if sonar:
                 sonar.invalidate()
                 self.sonar_cleanup = sonar
+            camera = getattr(self.driver, "camera", None)
+            if camera:
+                camera.invalidate()
         self.emergency_stop.set()
 
     def producer_recovery(self, name):
@@ -129,7 +134,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint") and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "camera_capture") and request.get("session_id") in self.revoked:
             return "fenced_session"
         return None
 
@@ -151,7 +156,14 @@ class Agent(object):
     def worker(self, work=None):
         requests = self.work if work is None else work
         while True:
-            request, replies = requests.get()
+            if requests is self.camera_work:
+                adapter = self.driver.camera
+                if adapter:
+                    adapter.cleanup()
+            try:
+                request, replies = requests.get(timeout=0.1 if requests is self.camera_work else None)
+            except queue.Empty:
+                continue
             rid = request["id"]
             with self.lock:
                 record = self.records[rid]
@@ -173,6 +185,9 @@ class Agent(object):
                     continue
                 if request["action"] == "autonomy":
                     self.run_autonomy(request, record, replies)
+                    continue
+                if request["action"] == "camera_capture":
+                    self.run_camera(request, record, replies)
                     continue
                 if request["action"] == "trajectory":
                     self.driver.prepare_trajectory(request["payload"])
@@ -283,6 +298,47 @@ class Agent(object):
                           result=result, finished=monotonic())
         self.reply(replies, request, result=result)
 
+    def run_camera(self, request, record, replies):
+        adapter = self.driver.camera
+        if adapter is None:
+            raise CameraError("unsupported", "Camera discovery is unavailable")
+
+        def authorized():
+            return (not record.get("stop_requested") and self.driver.connected()
+                    and self.driver.camera is adapter and self.valid(request, initial=False) is None)
+
+        def dispatch(method, *args):
+            with self.lock:
+                if not authorized():
+                    raise CameraError("capture_cancelled", "Camera capture authority ended")
+                record["phase"] = "dispatch_started"
+                return method(*args, _async=True)
+
+        try:
+            result, pixels = adapter.capture(request["payload"], authorized, dispatch)
+            if authorized():
+                try:
+                    handoff(self.root, self.instance, request["id"], pixels)
+                except (IOError, OSError):
+                    raise CameraError("capture_transfer_failed", "Could not transfer the camera image")
+        except CameraError as error:
+            if error.code != "capture_cancelled" and authorized():
+                with self.lock:
+                    record.update(status="rejected", finished=monotonic())
+                self.reply(replies, request, "rejected", code=error.code, message=str(error))
+                return
+            result = {"cancelled": True}
+        except CameraUnknown as error:
+            with self.lock:
+                record.update(status="unknown", finished=monotonic())
+            self.reply(replies, request, "unknown", message=str(error))
+            return
+        with self.lock:
+            if not authorized():
+                result = {"cancelled": True, "dispatched": record["phase"] != "queued"}
+            record.update(status="completed", result=result, finished=monotonic())
+            self.reply(replies, request, result=result)
+
     def stop(self, request):
         with self.lock:
             payload = request.get("payload", {}) if request else {}
@@ -313,6 +369,7 @@ class Agent(object):
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
                         and (record.get("action") not in ("recognition", "sonar") or key == oid)
+                        and (record.get("action") != "camera_capture" or record["status"] != "unknown" or key == oid)
                         and (not scope
                              or scope == "locomotion" and record.get("motion_kind") == "walk"
                              or scope == "all" and record.get("action") in ("trajectory", "motion_action", "autonomy"))
@@ -365,7 +422,7 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if record.get("action") in ("autonomy", "recognition", "sonar") and record["phase"] != "queued":
+            if record.get("action") in ("autonomy", "recognition", "sonar", "camera_capture") and record["phase"] != "queued":
                 # A completed individual setter does not finish a multi-setting transition.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
                 continue
@@ -568,18 +625,26 @@ class Agent(object):
                                 self.reply(replies, request, result=value)
                             except ValueError as error:
                                 self.reply(replies, request, "rejected", code=getattr(error, "code", "invalid_request"), message=str(error))
-                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition", "sonar"):
+                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition", "sonar", "camera_capture"):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration, "sonar": valid_sonar}[action](request.get("payload")) and (action in ("recognition", "sonar") or bool(request.get("session_id")))):
+                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration, "sonar": valid_sonar, "camera_capture": valid_capture}[action](request.get("payload")) and (action in ("recognition", "sonar") or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
+                            elif action == "camera_capture" and not valid_capture_id(rid):
+                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid capture operation ID")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
-                                (getattr(self, action + "_work") if action in ("recognition", "sonar") else self.work).put_nowait((request, replies))
-                                self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
+                                requests = {"recognition": self.recognition_work, "sonar": self.sonar_work,
+                                            "camera_capture": self.camera_work}.get(action, self.work)
+                                try:
+                                    requests.put_nowait((request, replies))
+                                except queue.Full:
+                                    self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent command queue full")
+                                else:
+                                    self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
             except (socket.error, ValueError, StopIteration, queue.Full):
@@ -614,6 +679,7 @@ class Agent(object):
     def run(self):
         background(self.run_critical, self.worker, self.recognition_work)
         background(self.run_critical, self.worker, self.sonar_work)
+        background(self.run_critical, self.worker, self.camera_work)
         for name in ("recognition", "sonar"):
             background(self.run_critical, self.producer_recovery, name)
         for group in GROUPS:

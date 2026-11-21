@@ -291,6 +291,25 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/vision/cameras")
+    async def cameras(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.vision.cameras()
+
+    @app.post("/api/vision/captures")
+    async def capture_image(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "CameraCaptureCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/captures",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.vision.capture(owner, value),
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/assets")
     async def list_assets(request: Request) -> dict[str, Any]:
         query(request, {"cursor", "limit"})

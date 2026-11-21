@@ -24,6 +24,7 @@ from .errors import BridgeError
 
 ASSET_ID = re.compile(r"^[0-9a-f]{32}$")
 LOG = logging.getLogger(__name__)
+STILL_IMAGE = "camera.image"
 
 
 def timestamp(value: float) -> str:
@@ -139,7 +140,9 @@ class AssetStore:
                 raise ValueError("Invalid asset manifest: " + path.name) from exc
             aid = path.stem
             self._validate_record(aid, record)
-            if record["state"] == "deleting":
+            if record["state"] == "deleting" or (
+                record["state"] == "writing" and record["asset"]["kind"] == STILL_IMAGE
+            ):
                 self._remove(aid)
                 continue
             content, partial = self._path(aid, ".bin"), self._path(aid, ".part")
@@ -309,6 +312,28 @@ class AssetStore:
                 raise
             self.writers[aid] = writer
             return writer
+
+    def publish_image(self, png: bytes, metadata: dict[str, Any]) -> dict[str, Any]:
+        writer = self.begin(
+            kind=STILL_IMAGE,
+            content_type="image/png",
+            max_bytes=len(png),
+            metadata=metadata,
+            expire=False,
+        )
+        try:
+            writer.write(png)
+            return writer.finalize()
+        except Exception:
+            with self.lock:
+                writer.file.close()
+                self.writers.pop(writer.id, None)
+                try:
+                    self._remove(writer.id)
+                except OSError:
+                    self.faulted = True
+                    LOG.exception("Could not remove interrupted still image")
+            raise
 
     def get(self, aid: str) -> dict[str, Any]:
         with self.lock:

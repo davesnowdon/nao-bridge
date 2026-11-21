@@ -38,6 +38,7 @@ asyncio.run(main())
 | `robot.state(include=..., require_fresh=True)` | Shared observations; raises `StaleState` for stale/unavailable requested groups |
 | `sensors.list()`, `.state(...)` | Sensor units/paths/source availability and shared touch, battery, inertial, foot-load/contact and temperature readings |
 | `sensors.observe(["sonar"])`, `.get_observer(id)` | Owned demand sharing one native sonar producer; readiness and explicit stop |
+| `vision.cameras()`, `.capture(camera=..., resolution=...)` | Passive camera discovery and a still image operation that produces a PNG asset |
 | `speech.say(text, wait=True, ...)` | Server-defaulted plain speech; returns an Operation |
 | `speech.listen(vocabulary, ...)`, `.get_listener(id)` | Owned vocabulary listener and current readiness |
 | `listener.configure(...)`, `.pause()`, `.resume()`, `.stop()` | Accepted configuration changes and explicit cleanup |
@@ -263,6 +264,25 @@ handle. PATCH has no automatic retry: refresh after a lost response to inspect t
 accepted configuration. `speech.listener_changed` and `speech.recognized` payloads
 are validated by the SSE reader. Filter recognized events by listener ID in the
 application; listener creation itself does not create an event subscription.
+
+## Camera stills
+
+```python
+from nao_bridge_client import Nao
+
+with Nao("http://localhost:3000") as nao:
+    cameras = nao.vision.cameras()
+    camera = cameras.items[0]
+    capture = nao.vision.capture(camera.id, resolution=camera.resolutions[0], timeout=5)
+    asset = nao.assets.download(capture.data.result["asset_id"], "still.png")
+    print(asset.metadata["frame"], asset.metadata["acquisition"])
+```
+
+Check `robot.capabilities().features["vision.captures"]` and the camera catalog
+before capture. The defaults are top camera and 320×240. Capture waits for a
+completed asset by default. Use `wait=False` to get an operation handle
+immediately and wait or cancel separately. An operation wait timeout leaves the
+capture running. The async client exposes the same methods with `await`.
 
 ## Sample recordings and assets
 

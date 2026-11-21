@@ -81,6 +81,20 @@ class SensorsData(WireModel):
     connection_generation: int
 
 
+class Camera(WireModel):
+    id: str
+    frame: str
+    resolutions: list[str]
+    pixel_format: str
+    horizontal_fov_rad: float | None
+    vertical_fov_rad: float | None
+
+
+class CamerasData(WireModel):
+    items: list[Camera]
+    connection_generation: int
+
+
 class Joint(WireModel):
     name: str
     unit: Literal["rad", "ratio"]

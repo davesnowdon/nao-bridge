@@ -32,6 +32,7 @@ from .errors import (
 from .json_wire import loads
 from .listeners import AsyncListener
 from .models import (
+    CamerasData,
     Capabilities,
     ErrorDetail,
     Event,
@@ -114,6 +115,7 @@ class AsyncNao:
         self.cleanup_error: Exception | None = None
         self.robot = AsyncRobot(self)
         self.sensors = AsyncSensors(self)
+        self.vision = AsyncVision(self)
         self.motion = AsyncMotion(self)
         self.autonomy = AsyncAutonomy(self)
         self.speech = AsyncSpeech(self)
@@ -501,6 +503,38 @@ class AsyncRobot:
 
     async def diagnostics(self) -> dict[str, Any]:
         return await self._nao._request("GET", "/api/robot/diagnostics")
+
+
+class AsyncVision:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def cameras(self) -> CamerasData:
+        return decode(CamerasData, await self._nao._request("GET", "/api/vision/cameras"))
+
+    async def capture(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        body = {
+            name: value
+            for name, value in (("camera", camera), ("resolution", resolution))
+            if value is not None
+        }
+        result = await self._nao._request(
+            "POST",
+            "/api/vision/captures",
+            body=body,
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        operation = AsyncOperation(self._nao, decode(OperationData, result))
+        return await operation.wait(timeout=timeout) if wait else operation
 
 
 class AsyncMotion:

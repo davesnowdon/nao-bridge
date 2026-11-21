@@ -290,3 +290,21 @@ isolated tests and a pinned-SDK loopback service. Contract 1.4.0 exposes owned
 finite moves and odometry through HTTP and the SDKs. Physical speed mapping,
 origin behavior and stopping distance remain hardware gates on both targets.
 
+## Still camera acquisition
+
+The adapter uses `getCameraIndexes` and optional FOV methods for discovery.
+`subscribeCamera` selects one camera and returns the handle used to fetch and
+unsubscribe. The bridge uses QVGA or VGA RGB, validates the returned frame's
+camera, dimensions, color space and raw byte count, and keeps angular bounds
+when present. The remote read returns the frame inline and does not require a
+local image release. See the [NAOqi 2.1 video API](https://doc.aldebaran.com/2-1/naoqi/vision/alvideodevice-api.html),
+[2.8 video API](https://doc.aldebaran.com/2-8/naoqi/vision/alvideodevice-api.html)
+and [SDK image example](https://doc.aldebaran.com/2-8/dev/python/examples/vision/get_image.html).
+
+The pinned SDK loopback returned full RGB frames containing NUL and non-ASCII
+bytes. The adapter completed both modes without removing a separate native
+consumer. Production IPC transferred both sizes and honored early cancellation
+with the four ordinary command workers occupied. The acquisition window covers
+the native read. Firmware-specific source clock behavior, actual exposure time,
+camera geometry and concurrent physical consumers remain acceptance work.
+

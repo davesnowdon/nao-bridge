@@ -3403,6 +3403,273 @@
         "sampled_bridge_time_ms"
       ],
       "additionalProperties": true
+    },
+    "Camera": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "resolutions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "320x240",
+              "640x480"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "pixel_format": {
+          "const": "rgb8"
+        },
+        "horizontal_fov_rad": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 3.141592653589793
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vertical_fov_rad": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 3.141592653589793
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "frame",
+        "resolutions",
+        "pixel_format",
+        "horizontal_fov_rad",
+        "vertical_fov_rad"
+      ],
+      "additionalProperties": true
+    },
+    "Cameras": {
+      "type": "object",
+      "properties": {
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Camera"
+          }
+        }
+      },
+      "required": [
+        "connection_generation",
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "CameraCaptureCreate": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ],
+          "default": "320x240"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CameraCaptureMetadata": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pixel_format": {
+          "const": "rgb8"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "acquisition": {
+          "type": "object",
+          "properties": {
+            "started_bridge_time_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "finished_bridge_time_ms": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "started_bridge_time_ms",
+            "finished_bridge_time_ms"
+          ],
+          "additionalProperties": true
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "clock": {
+                  "const": "naoqi_camera"
+                },
+                "seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "microseconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 999999
+                }
+              },
+              "required": [
+                "clock",
+                "seconds",
+                "microseconds"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "angular_bounds_rad": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                },
+                "top": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                },
+                "right": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                },
+                "bottom": {
+                  "type": "number",
+                  "minimum": -3.141592653589793,
+                  "maximum": 3.141592653589793
+                }
+              },
+              "required": [
+                "left",
+                "top",
+                "right",
+                "bottom"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "resolution",
+        "width",
+        "height",
+        "pixel_format",
+        "bridge_instance_id",
+        "connection_generation",
+        "acquisition",
+        "source_time",
+        "angular_bounds_rad"
+      ],
+      "additionalProperties": true
+    },
+    "CameraCaptureResult": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "capture": {
+          "$ref": "#/$defs/CameraCaptureMetadata"
+        }
+      },
+      "required": [
+        "asset_id",
+        "capture"
+      ],
+      "additionalProperties": true
     }
   }
 }

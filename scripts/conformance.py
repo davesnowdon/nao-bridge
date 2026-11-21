@@ -38,7 +38,8 @@ class Probe:
             conn.request(method, path, body=raw, headers=fields)
             response = conn.getresponse()
             content = response.read()
-            assert response.status == status, (method, path, response.status, content)
+            expected = (status,) if isinstance(status, int) else status
+            assert response.status in expected, (method, path, response.status, content)
             value = json.loads(content) if content else None
             if schema:
                 self.validate(schema, value)
@@ -185,6 +186,48 @@ class Probe:
             time.sleep(0.02)
         raise AssertionError("Operation did not finish within fixture deadline")
 
+    def camera_capture(self):
+        catalog = self.request("GET", "/api/vision/cameras", schema="Cameras")
+        assert [camera["id"] for camera in catalog["items"]] == ["top", "bottom"]
+        operation = self.wait(
+            self.request(
+                "POST",
+                "/api/vision/captures",
+                {"camera": "bottom", "resolution": "640x480"},
+                status=202,
+                schema="Operation",
+                headers={"Idempotency-Key": "camera-capture"},
+            )
+        )
+        assert operation["status"] == "succeeded", operation
+        result = operation["result"]
+        self.validate("CameraCaptureResult", result)
+        capture = result["capture"]
+        assert capture["frame"] == "camera.bottom"
+        assert capture["connection_generation"] == catalog["connection_generation"]
+        window = capture["acquisition"]
+        assert 0 <= window["started_bridge_time_ms"] <= window["finished_bridge_time_ms"]
+        path = "/api/assets/" + result["asset_id"]
+        asset = self.request("GET", path, schema="Asset")
+        assert asset["content_type"] == "image/png" and asset["metadata"] == capture
+        conn = self.connection()
+        try:
+            conn.request("GET", path + "/content")
+            response = conn.getresponse()
+            assert response.status == 200 and response.getheader("Content-Type") == "image/png"
+            data = response.read()
+            assert len(data) == asset["size_bytes"]
+            assert hashlib.sha256(data).hexdigest() == asset["sha256"]
+            assert data[:8] == b"\x89PNG\r\n\x1a\n"
+            assert int.from_bytes(data[16:20], "big") == capture["width"] == 640
+            assert int.from_bytes(data[20:24], "big") == capture["height"] == 480
+        finally:
+            conn.close()
+        deadline = time.monotonic() + 2
+        while error := self.request("DELETE", path, status=(204, 409)):
+            assert error["error"]["code"] == "resource_busy" and time.monotonic() < deadline, error
+            time.sleep(0.02)
+
     def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
         conn = self.connection(timeout=3)
         headers = {
@@ -266,7 +309,8 @@ def run(url):
         assert time.monotonic() < deadline, robot
         time.sleep(0.1)
         robot = probe.request("GET", "/api/robot", schema="Robot")
-    probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
+    capabilities = probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
+    captures = capabilities["features"]["vision.captures"]["status"] == "available"
     sensor_state = probe.request(
         "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
     )
@@ -316,6 +360,8 @@ def run(url):
     try:
         probe.sensor_observers()
         probe.threshold_subscription()
+        if captures:
+            probe.camera_capture()
         operation = probe.request(
             "POST",
             "/api/speech/utterances",
@@ -467,7 +513,8 @@ def run(url):
             "sse",
             "reconnect_without_replay",
             "cleanup",
-        ],
+        ]
+        + (["camera_capture_and_download"] if captures else []),
     }
 
 

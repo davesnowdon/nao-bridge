@@ -34,7 +34,7 @@ class DrainQueue:
     def __init__(self, item):
         self.item = item
 
-    def get(self):
+    def get(self, timeout=None):
         if self.item is None:
             raise StopIteration
         item, self.item = self.item, None
@@ -50,6 +50,7 @@ def bare_agent(module):
     agent.revoked = {}
     agent.lock = threading.RLock()
     agent.records = {}
+    agent.camera_work = queue.Queue(1)
     agent.priority = queue.Queue(8)
     agent.emergency_stop = threading.Event()
     agent.driver = types.SimpleNamespace(

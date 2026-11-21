@@ -15,6 +15,7 @@ from observations import BATTERY_KEY, MotionEvents, PassiveSensors, passive_defi
 from locomotion import Locomotion, Odometry, LocomotionError
 from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
+from camera import VideoDevice, FixtureVideo
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -63,6 +64,7 @@ class NativeDriver(object):
         self.motion_events = None
         self.recognition = None
         self.sonar = None
+        self.camera = None
         self.passive_sensors = None
         self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
@@ -138,6 +140,8 @@ class NativeDriver(object):
         self.description["sensor_catalog"] = self.passive_sensors.catalog
         self.sonar = Sonar(self.session, self.memory, self.call, self.observe, monotonic, self.adapter_lock)
         self.description["sonar"] = self.sonar.catalog
+        self.camera = VideoDevice(self.session, monotonic)
+        self.description["cameras"] = self.camera.items
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -324,6 +328,10 @@ class NativeDriver(object):
     def close(self):
         self._connected.clear()
         self.locomotion = self.odometry = None
+        if self.camera:
+            self.camera.invalidate()
+            self.camera.cleanup()
+            self.camera = None
         if self.sonar:
             self.sonar.close()
             self.sonar = None
@@ -435,6 +443,7 @@ class FixtureDriver(NativeDriver):
         self.autonomy_impl = qi.multiThreaded()(FixtureAutonomy)()
         self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
         self.sonar_impl = qi.multiThreaded()(FixtureSonar)()
+        self.video_impl = qi.multiThreaded()(FixtureVideo)()
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
@@ -444,6 +453,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALAutonomousLife", self.autonomy_impl)
         self.server.registerService("ALSpeechRecognition", self.recognition_impl)
         self.server.registerService("ALSonar", self.sonar_impl)
+        self.server.registerService("ALVideoDevice", self.video_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 

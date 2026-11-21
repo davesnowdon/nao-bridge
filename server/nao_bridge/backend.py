@@ -7,6 +7,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
+from .camera_frames import CAMERA_SIZES
 from .contract import CONTACTS, PASSIVE_SENSORS
 from .errors import BackendUnknown, BridgeError
 from .fake_controls import FakeControls
@@ -33,6 +34,9 @@ class Backend(Protocol):
     ) -> dict[str, Any]: ...
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def capture_image(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], bytes]: ...
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
@@ -237,6 +241,18 @@ class FakeBackend:
                         "available": connected,
                         "reason": None if connected else "disconnected",
                     },
+                    "cameras": [
+                        {
+                            "id": camera,
+                            "frame": "camera." + camera,
+                            "resolutions": sorted(CAMERA_SIZES),
+                            "pixel_format": "rgb8",
+                            "horizontal_fov_rad": 1.05,
+                            "vertical_fov_rad": 0.83,
+                        }
+                        for camera in ("top", "bottom")
+                        if connected
+                    ],
                     "locomotion": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -505,6 +521,28 @@ class FakeBackend:
         finally:
             self.active.pop(operation_id, None)
 
+    async def capture_image(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], bytes]:
+        started = time.monotonic()
+        outcome = await self._execute(operation_id, session_id, payload, "camera_capture")
+        if outcome.get("cancelled"):
+            return outcome, b""
+        width, height = CAMERA_SIZES[payload["resolution"]]
+        camera = payload["camera"]
+        pixels = b"\x00\x80\xff" if camera == "top" else b"\xff\x10\x00"
+        return {
+            "camera": camera,
+            "frame": "camera." + camera,
+            "width": width,
+            "height": height,
+            "pixel_format": "rgb8",
+            "source_time": None,
+            "angular_bounds_rad": None,
+            "acquisition_started": started,
+            "acquisition_finished": time.monotonic(),
+        }, pixels * (width * height)
+
     async def stop(
         self,
         operation_id: str | None = None,
@@ -525,7 +563,7 @@ class FakeBackend:
                 if (
                     call["action"] == "walk"
                     if motion_scope == "locomotion"
-                    else call["action"] != "speech"
+                    else call["action"] not in {"speech", "camera_capture"}
                 )
             }
             if motion_scope

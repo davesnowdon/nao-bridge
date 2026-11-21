@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from contextlib import suppress
 from pathlib import Path
 
@@ -404,6 +405,51 @@ finally:
     print(result.strip(), flush=True)
 
 
+def check_native_camera():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys
+sys.path.insert(0, '/opt/nao-bridge/agent')
+import qi
+from camera import FixtureVideo, VideoDevice
+from wire import monotonic
+
+server = qi.Session()
+server.listenStandalone('tcp://127.0.0.1:0')
+fixture = qi.multiThreaded()(FixtureVideo)()
+foreign = fixture.subscribeCamera('another-consumer', 0, 1, 11, 5)
+server.registerService('ALVideoDevice', fixture)
+client = qi.Session()
+client.connect(server.endpoints()[0])
+try:
+    adapter = VideoDevice(client, monotonic)
+    assert [item['id'] for item in adapter.items] == ['top', 'bottom']
+    assert fixture.getSubscribers() == [foreign]
+    for camera, size, expected in [
+        ('top', '320x240', b'\\x00\\x80\\xff'),
+        ('bottom', '640x480', b'\\xff\\x10\\x00'),
+    ]:
+        metadata, pixels = adapter.capture({'camera': camera, 'resolution': size})
+        assert metadata['camera'] == camera and metadata['pixel_format'] == 'rgb8'
+        assert metadata['source_time']['clock'] == 'naoqi_camera'
+        assert metadata['acquisition_started'] <= metadata['acquisition_finished']
+        assert pixels == expected * (metadata['width'] * metadata['height'])
+        assert fixture.getSubscribers() == [foreign]
+    print('Native cameras: passive discovery, full RGB frames and owned cleanup passed')
+finally:
+    client.close()
+    server.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
 async def check_native_controls():
     from nao_bridge.config import Settings
     from nao_bridge.errors import BridgeError
@@ -523,6 +569,28 @@ async def check_native_controls():
             "Native sonar IPC: start, shared samples and stop with four blocked workers passed",
             flush=True,
         )
+        assert [camera["id"] for camera in info["cameras"]] == ["top", "bottom"]
+        for camera, size, color in (
+            ("top", "320x240", b"\x00\x80\xff"),
+            ("bottom", "640x480", b"\xff\x10\x00"),
+        ):
+            frame, rgb = await backend.capture_image(
+                uuid.uuid4().hex, "fixture-camera", {"camera": camera, "resolution": size}
+            )
+            assert frame["camera"] == camera
+            assert frame["frame"] == "camera." + camera
+            assert frame["acquisition_started"] <= frame["acquisition_finished"]
+            assert rgb == color * (frame["width"] * frame["height"])
+            assert all(not task.done() for task in blocked)
+        cancelled_id = uuid.uuid4().hex
+        await backend.stop(operation_id=cancelled_id)
+        cancelled, rgb = await backend.capture_image(
+            cancelled_id, "fixture-camera", {"camera": "top", "resolution": "320x240"}
+        )
+        assert cancelled == {"cancelled": True, "dispatched": False} and not rgb
+        print(
+            "Native camera IPC: full frames with blocked workers and fenced IDs passed", flush=True
+        )
         payload = {
             "operation_id": "control-one",
             "control_id": "fixture-control",
@@ -619,6 +687,7 @@ try:
     check_native_recognition()
     check_native_sonar()
     check_native_locomotion()
+    check_native_camera()
     asyncio.run(check_native_controls())
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")

@@ -1,4 +1,4 @@
-# Using contract 1.6.0 over HTTP
+# Using contract 1.7.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -663,6 +663,51 @@ missing history does not establish whether earlier robot work stopped.
 JSON API failures use `{ "error": { "code", "message", "details", "retryable" },
 "request_id" }`. Keep unknown codes intact; `retryable` does not authorize arbitrary
 side-effect replay. Reject returned stream URLs that change the bridge origin.
+
+## Still camera capture
+
+`GET /api/vision/cameras` returns the current connection generation and
+discovered camera IDs (`top`, `bottom`), frames, resolutions and fields of view
+in radians when available. Discovery uses cached metadata and requires no session.
+The catalog is empty when no cameras are discovered or the robot is disconnected.
+Check `features.vision.captures` for capture availability, which also requires
+asset storage.
+
+```http
+POST /api/vision/captures
+X-Session-ID: <session-id>
+Idempotency-Key: still-1
+Content-Type: application/json
+
+{"camera":"bottom","resolution":"640x480"}
+```
+
+Both fields are optional. Defaults are `top` and `320x240`; use a mode from the
+catalog. Capture returns a 202 `vision.capture` Operation with its status URL in
+`Location`. The bridge processes one still capture at a time, including
+publication. A competing capture returns `resource_busy`. An unavailable camera
+returns `unsupported`, and unavailable asset storage returns `storage_unavailable`.
+The final Operation reports failures such as `camera_busy`,
+`camera_frame_unavailable`, `invalid_camera_frame` or `storage_full`.
+`capture_unconfirmed` reports an unknown outcome, including unconfirmed native
+subscription cleanup.
+
+On success `result` matches `CameraCaptureResult`. Download the `asset_id` through
+`GET /api/assets/{id}/content` or use the asset's SHA-256 and byte count to verify a
+local copy. The completed asset has kind `camera.image` and type `image/png`.
+Its metadata repeats `result.capture`, including the camera frame, dimensions,
+pixel format, bridge identity, connection generation, and the native read's
+start/end on the bridge timeline. The optional `source_time` uses the NAOqi
+camera's clock. Use the bridge window when relating an image to sensor or odometry
+samples. The camera can supply a buffered frame, so the window alone cannot
+establish exposure time. Angular bounds are present when the frame supplies them.
+
+Cancellation, session close, and robot-wide stop prevent publication if requested
+before the image enters storage finalization. The capture outcome becomes known
+after its native reply and cleanup. Once publication begins, `cancellable` is
+`false` and the operation settles to success or storage failure. Scoped motion stop
+allows a capture to continue. Incomplete PNGs are discarded on restart. Completed
+images share the quota, retention and download routes with other assets.
 
 ## Sample recordings and retained assets
 
