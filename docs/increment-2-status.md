@@ -18,7 +18,7 @@ sampling rates remain unverified until hardware acceptance; discovery retains
 | Shared joint/touch/battery sampling; posture/fall events | Implemented with independent bounded acquisition workers and connection fencing | Rate/skew and source behavior pending |
 | Vocabulary listeners and speech suppression | HTTP/SSE lifecycle, sharing, cleanup, speech suppression and sync/async Python handles implemented | Pending |
 | Bounded sample recordings and finalized assets/checksums/ranges | HTTP lifecycle, bounded shared-feed writer, gap records, retained assets and sync/async SDK with verified/resumable downloads implemented | Real acquisition pending |
-| Public-API Recorder example and raw-HTTP acceptance scenario | Raw HTTP state/trajectory/recording checks implemented; reference application pending | Three-pose replay pending |
+| Public-API Recorder example and raw-HTTP acceptance scenario | Local browser example uses public SDK for capture/editing/playback, scoped sliders, voice/touch and explicit recording conversion; raw HTTP scenarios implemented | Three-pose replay pending |
 
 Further increment-3/4 software work can follow. Network-loss and Apple Silicon
 acceptance are deferred by the user. A software pass does not complete those gates.
@@ -36,8 +36,7 @@ never evicted for quota. Quotas cover content bytes; bounded manifests are addit
 metadata overhead. No sessions or operations are persisted or resumed.
 
 The storage foundation has now been connected to public routes and the shared
-sampler as described below. SDK access is implemented; the reference application
-remains the next delivery step.
+sampler as described below. SDK access and the reference application are implemented.
 Twenty storage tests pass, covering fault-injected short writes, interrupted
 finalization/deletion/admission, retention, competing reservations, checksum
 verification and directory ownership. Lint and type checks also pass. These are
@@ -80,6 +79,36 @@ SDK acquisition into NDJSON, checksums/ranges, retained finalized assets, and an
 API kill during recording recovered as partial. The contract compatibility guard
 passed. No physical robot was contacted; actual source timing and motion remain
 hardware gates.
+
+The [Recorder reference example](../examples/recorder/README.md) runs a local browser
+UI backed only by the public Python SDK. It discovers joints/chains, captures fresh
+measured poses, edits ordered keyframes/durations, saves/loads portable JSON and
+submits one trajectory. Manual autonomy, wake and stiffness changes are explicit.
+Voice/head capture is disarmed during operations and after stream gaps; arming
+requires a connected event stream. Joint sliders use one scoped latest-target
+control, with coalescing in both UI and SDK. An independent application watchdog
+ends the scope after one second without its owning tab's heartbeat or when observed
+joint state is stale; observer tabs never adopt that heartbeat. Hardware availability
+still comes from the bridge's unverified-hold gate. A lost command acceptance blocks
+further commands until deliberate reconciliation/cleanup; no action is replayed.
+
+The example records/downloads samples, displays gaps, and requires selection of one
+continuous segment before conversion. It retains observed acquisition times, rejects
+unavailable measured joints, and never resamples across gaps. UI editing/input policy
+and conversion code stay outside the bridge and SDK. A legacy Recorder port is
+outside this small example's scope.
+
+Recorder validation: full `make check` passed 383 server/integration and 47 client
+tests plus lint/types, including the example's separate environment. The final
+lost-acceptance/unknown-cleanup guards and serialized disconnect passed all 15 focused example tests
+and example type checking. Cases cover the three-pose capture/edit/JSON/playback
+workflow, exactly one trajectory submission, voice/touch suppression, gaps, manual
+configuration, browser expiry, stale state, stop during preparation, recordings and
+conversion. A headless Chromium walkthrough passed capture, trajectory file download
+and playback, slider changes/cleanup, recording inspection and segment conversion.
+A stalled owning tab expired while an observer tab stayed open; the observer never
+renewed the control.
+These are fake-backend application checks; physical acceptance remains pending.
 
 Python recording handles now expose acceptance, status/finalization waits, graceful
 stop, associated operations and scoped cleanup in both clients. Timeouts/cancelled
@@ -247,7 +276,7 @@ trigger supervision if they exit unexpectedly.
 The candidate hold submits fresh measured joint angles at speed fraction 0.1,
 without a stiffness change. Native hardware availability remains false; only the
 local SDK fixture enables it. The public setpoint route, operation lifecycle and
-fake backend and Python control helpers are now implemented; Recorder UI remains pending.
+fake backend, Python control helpers and Recorder UI are now implemented.
 
 Agent-control validation: the full suite passed 188 server/integration and 30 client
 tests plus lint/types. After adding explicit fenced release, the 44 focused

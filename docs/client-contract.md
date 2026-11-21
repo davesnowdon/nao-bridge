@@ -138,6 +138,11 @@ checksum before publishing, and resume only on explicit request. See the
 
 Use discovered names/units and fresh measured state to build Recorder poses. Save schema-versioned trajectory JSON; submit it directly to the server. A Python builder and a future Rust editor must produce interchangeable documents. The same applies to finite sequence JSON and server-side dry validation. Resource checks and scheduling cannot rely on a particular builder having validated them first.
 
+The [Recorder example](../examples/recorder/README.md) exercises these rules using
+the public Python client. Its browser heartbeat, input arming, editing and explicit
+gap-aware sample conversion are application policy; they add no bridge endpoints
+or prerequisites for other clients.
+
 Binary images/audio/video/downloads use the documented content routes and content types. Assets carry metadata, sizes/checksums, and partial/completed status; SSE announces metadata/lifecycle only. Stream downloads incrementally rather than requiring base64 JSON or loading large assets into memory. Browser-side and native clients follow the same protocol even if their networking libraries differ.
 
 Resume finalized asset downloads with a byte `Range` and the saved strong ETag in `If-Range`. Verify 206 and `Content-Range` before appending; a 200 response replaces the local partial download, and 416 requires checking the saved size/metadata. Verify the final checksum. Sequence UIs can list direct children with `GET /operations?parent_id=...`; validation's resource/duration estimates may contain unknown timings and never imply successful execution.

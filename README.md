@@ -5,18 +5,20 @@ modern synchronous/asynchronous Python clients. A thin Python 2 process loads th
 NAOqi SDK; a separate modern Python process handles HTTP, sessions, operations and
 events. Both run in one Ubuntu 24.04 container.
 
-The replacement delivers the increment 1 foundation plus the first increment-2
-features: head/hand/foot state and events, joint/posture discovery, measured and
+The replacement delivers the increment 1 foundation and increment-2 software:
+head/hand/foot state and events, joint/posture discovery, measured and
 commanded joint state, explicit wake/rest and stiffness, posture changes, absolute
 joint moves, timed trajectories and explicit autonomy settings. HTTP vocabulary
 listeners support shared recognition, pause and suppression during speech, with
 sync/async Python handles. Bounded sample recordings produce checksummed NDJSON
-assets with range downloads; Python recording helpers and the Recorder app remain
-in progress. Plain speech,
+assets with range downloads and sync/async recording/download helpers. A small
+[Recorder reference example](examples/recorder/README.md) demonstrates capture,
+editing, playback, sliders and explicit sample conversion using the public SDK.
+Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
 remain available. Contract 1.1.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
-software from the remaining Recorder, recording and control work.
+software from the remaining physical acceptance gates.
 
 Robot-free tests cover real SDK loopback services and injected process failures.
 Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the
@@ -38,7 +40,12 @@ invent user touches. Browse `http://127.0.0.1:3000/` for interactive Swagger UI.
 ```bash
 uv run --project clients/python python clients/python/example_usage.py
 uv run --project clients/python python clients/python/examples/events.py
+uv run --project examples/recorder nao-bridge-recorder
 ```
+
+The Recorder example opens a local UI at `http://127.0.0.1:8123`; its assets are
+included. The fake backend enables slider controls for software demonstrations.
+Hardware sliders remain unavailable until the physical hold gate passes.
 
 ## Build and run the container
 

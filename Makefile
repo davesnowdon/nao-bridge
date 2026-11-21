@@ -3,10 +3,16 @@
 install:
 	$(MAKE) -C server install
 	$(MAKE) -C clients/python install
+	$(MAKE) -C examples/recorder install
 
-fmt lint typecheck test:
+fmt lint typecheck:
 	$(MAKE) -C server $@
 	$(MAKE) -C clients/python $@
+	$(MAKE) -C examples/recorder $@
+
+test:
+	$(MAKE) -C server test
+	$(MAKE) -C clients/python test
 
 check: lint typecheck test
 
