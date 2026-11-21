@@ -1,10 +1,11 @@
 import asyncio
+import copy
 import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
-from .contract import CONTACTS
+from .contract import CONTACTS, PASSIVE_SENSORS
 from .errors import BackendUnknown, BridgeError
 from .fake_controls import FakeControls
 
@@ -91,6 +92,25 @@ class FakeBackend:
             field: dict.fromkeys(self.chains["Body"], value)
             for field, value in [("measured", 0.1), ("commanded", 0.2), ("stiffness", 0.5)]
         }
+        self.sensor_catalog = copy.deepcopy(PASSIVE_SENSORS["fixed"])
+        for name in self.chains["Body"]:
+            item = dict(PASSIVE_SENSORS["joint_temperature"])
+            item.update(id=item["id"].format(joint=name), label=item["label"].format(joint=name))
+            self.sensor_catalog.append(item)
+        self.sensor_readings = {}
+        for item in self.sensor_catalog:
+            item.pop("memory_keys")
+            item["source"] = {"status": "available", "reason": None}
+            self.sensor_readings[item["id"]] = {
+                "value": True
+                if item["value_type"] == "boolean"
+                else 35.0
+                if item["unit"] == "degC"
+                else 0.5
+                if item["unit"] == "kg"
+                else 0.0,
+                "reason": None,
+            }
         self.motion_state = {"awake": True, "posture": "StandInit", "locomotion_active": False}
         self.autonomy_state: dict[str, bool | str | None] = {
             "life_state": "solitary",
@@ -146,6 +166,7 @@ class FakeBackend:
                     },
                     "touch_available": connected,
                     "touch_events": list(self.touch) if connected else [],
+                    "sensor_catalog": copy.deepcopy(self.sensor_catalog),
                     "joints": self.joints,
                     "chains": self.chains,
                     "postures": ["StandInit", "Sit", "Crouch"],
@@ -181,6 +202,7 @@ class FakeBackend:
                                 "touch": dict(self.touch),
                                 "touch_unavailable": {},
                                 "battery": {"charge": 76, "reason": None},
+                                "readings": copy.deepcopy(self.sensor_readings),
                             },
                             "joints": {key: dict(value) for key, value in self.joint_state.items()},
                             "motion": dict(self.motion_state),

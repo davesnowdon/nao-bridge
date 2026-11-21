@@ -1,4 +1,4 @@
-# HTTP/SSE contract 1.1.0
+# HTTP/SSE contract 1.2.0
 
 The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
 and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
@@ -19,6 +19,8 @@ of this bundle.
 - `fixtures/requests.json`: valid/invalid named request schemas, including omitted,
   nullable and incorrectly typed fields.
 - `fixtures/canonicalization.json`: request identity, numeric and Unicode cases.
+- `fixtures/sensor-readings.json`: valid zero/false values, explicit unavailability,
+  signed axes and response extensions without string-to-number coercion.
 - `fixtures/touch.sse`, `unknown-event.sse`, `mismatched-id.sse`: normal, additive
   unknown-event and invalid framing cases. Split these byte streams at arbitrary
   offsets, including inside UTF-8 characters, when testing another client.

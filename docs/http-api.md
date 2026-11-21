@@ -1,4 +1,4 @@
-# Using contract 1.1.0 over HTTP
+# Using contract 1.2.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -54,6 +54,38 @@ The catalog also includes `battery.charge`, in percent. Its value is
 It uses shared state samples rather than a dedicated public battery event;
 fresh acquisition does not establish when the robot last updated its battery value.
 No charging or charger-connected status is inferred from charge.
+
+Passive observations live in `groups.sensors.value.readings`, keyed by their
+catalog IDs. Each is `{ "value": ..., "reason": ... }`; null is unavailable or
+invalid, while zero and false are valid. The catalog's `state_path` contains
+literal object keys relative to the group value. For example,
+`["readings", "inertial.angle.x", "value"]` locates an angle; do not split the
+sensor ID on dots. This also works for touch and battery without special cases.
+
+| IDs | Unit / meaning |
+| --- | --- |
+| `inertial.acceleration.x/y/z` | `m/s^2`, torso axes |
+| `inertial.angular_velocity.x/y` | `rad/s`, torso axes |
+| `inertial.angle.x/y` | `rad`, torso inclination |
+| `foot.left/right.load.front_left/front_right/rear_left/rear_right` | `kg`, approximate load at each foot pad |
+| `foot.left/right.load` | `kg`, approximate total load per foot |
+| `foot.left/right.contact`, `foot.contact` | Boolean native ground-contact indication; the combined value means at least one foot |
+| `joint.<joint-name>.temperature` | `degC`, for discovered joints |
+
+Slash notation in this table abbreviates separate IDs; the catalog supplies the
+exact strings. `source` reports native key discovery independently of `state`,
+which reports whether the latest shared reading is fresh and valid. Unsupported
+keys have null readings with `native_key_unavailable`; failed discovery uses
+`native_discovery_failed`. Neither is zero. Reconnection rediscovers support.
+Invalid numeric/contact values use `missing_or_invalid_reading`. Per-sensor
+metadata includes `value_type`, `frame`, and an optional lower bound.
+
+These observations share acquisition with touch/battery and use `state.sample`
+and sample recordings, with no separate passive-sensor events. Group freshness
+measures the bridge's acquisition, not the robot's producer update time. Foot
+loads are approximate kilograms, not pressure in pascals; no contact threshold
+is inferred from them. Axis conventions and readings on both firmware generations
+still require hardware acceptance. Sonar is not yet implemented.
 
 `motion.posture_changed` carries `posture` or `family` (at least one nonempty
 string). Each native event reports its own field, not an atomic pair.

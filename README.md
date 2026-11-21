@@ -16,9 +16,13 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.1.0 replaces the old API without compatibility
+remain available. Contract 1.2.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
+
+[Increment-3 work](docs/increment-3-status.md) adds passive inertial, foot-load,
+ground-contact and joint-temperature observations to the shared sensor state.
+Missing/invalid readings remain explicit; physical sensor acceptance is pending.
 
 Robot-free tests cover real SDK loopback services and injected process failures.
 Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the

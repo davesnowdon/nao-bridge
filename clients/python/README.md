@@ -1,6 +1,6 @@
 # NAO Bridge Python client
 
-The replacement client provides `Nao` and `AsyncNao` for the version 1.1 HTTP/SSE
+The replacement client provides `Nao` and `AsyncNao` for the version 1.2 HTTP/SSE
 contract. Package version 0.2 removes the old `NAOBridgeClient` API. Python 3.10+
 is supported; a NAOqi installation is unnecessary on the client.
 
@@ -36,6 +36,7 @@ asyncio.run(main())
 | --- | --- |
 | `robot.info()`, `robot.capabilities()` | Discovery without creating a session |
 | `robot.state(include=..., require_fresh=True)` | Shared observations; raises `StaleState` for stale/unavailable requested groups |
+| `sensors.list()`, `.state(...)` | Sensor units/paths/source availability and shared touch, battery, inertial, foot-load/contact and temperature readings |
 | `speech.say(text, wait=True, ...)` | Server-defaulted plain speech; returns an Operation |
 | `speech.listen(vocabulary, ...)`, `.get_listener(id)` | Owned vocabulary listener and current readiness |
 | `listener.configure(...)`, `.pause()`, `.resume()`, `.stop()` | Accepted configuration changes and explicit cleanup |
@@ -57,6 +58,30 @@ subscriptions use `async with await nao.events.subscribe(...)` and `async for`.
 Sync subscriptions use `with nao.events.subscribe(...)` and ordinary iteration.
 Joint-control factories return context managers directly: use `with` or `async with`
 without awaiting the factory.
+
+## Sensor readings
+
+Read-only sensor methods do not create a session or start a native producer.
+`require_fresh=True` checks group acquisition quality; an individual sensor may
+still be missing or invalid. Inspect its value and reason before acting.
+
+```python
+with Nao() as nao:
+    catalog = {sensor.id: sensor for sensor in nao.sensors.list()}
+    state = nao.sensors.state(require_fresh=True, wait_for_fresh_ms=1000)
+    reading = state.groups["sensors"].value["readings"]["foot.left.load"]
+    if reading["value"] is not None:
+        print(reading["value"], catalog["foot.left.load"].unit)  # Approximate kg.
+    else:
+        print(reading["reason"])
+```
+
+Async methods return the same objects. Catalog `state_path` is a list of literal
+keys relative to the group value, including IDs containing dots; `source` describes
+native discovery while `state` describes latest reading availability. Keep the
+state's connection generation and acquisition window when combining observations.
+See the [HTTP guide](../../docs/http-api.md#discovery-and-state) for all IDs, frames
+and units. Sensor samples also travel through SSE and bounded sample recordings.
 
 ## Joint controls
 

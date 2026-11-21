@@ -512,21 +512,55 @@ def test_stop_checks_native_cancellation_even_when_stop_reply_times_out(
         assert caplog.records[-1].exc_info is not None
 
 
+def test_native_sensor_batch_preserves_contacts_when_an_optional_reading_is_invalid(agent_module):
+    import native
+
+    driver = native.NativeDriver("fixture", lambda *_: None)
+    values = {key: 0 for key in native.MEMORY_KEYS}
+    values.update({native.BATTERY_KEY: 0, "footContact": 0, "leftFootTotalWeight": None})
+    calls = []
+
+    def get_values(keys):
+        calls.append(keys)
+        return [values[key] for key in keys]
+
+    memory = types.SimpleNamespace(getDataListName=lambda: list(values), getListData=get_values)
+    driver.call = lambda service, method, *args: getattr(service, method)(*args)
+    passive = native.PassiveSensors(memory, driver.call, [])
+    result = driver.sample_sensors(memory, passive)
+    assert len(calls) == 1
+    assert result["battery"] == {"charge": 0, "reason": None}
+    assert all(value is False for value in result["touch"].values())
+    assert result["readings"]["foot.contact"] == {"value": False, "reason": None}
+    assert result["readings"]["foot.left.load"] == {
+        "value": None,
+        "reason": "missing_or_invalid_reading",
+    }
+    memory.getListData = lambda keys: [0]
+    with pytest.raises(ValueError, match="Incomplete native sensor batch"):
+        driver.sample_sensors(memory, passive)
+
+
 def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_module):
     import native
 
     driver = native.NativeDriver("fixture", lambda *_: None)
     old_memory = object()
+    old_passive = object()
     driver.memory = old_memory
+    driver.passive_sensors = old_passive
     driver.motion = types.SimpleNamespace(
         sample_joints=lambda: {"source": "old"},
         sample_motion=lambda: {"awake": True},
     )
     driver.posture = types.SimpleNamespace(sample=lambda: "StandInit")
     driver.autonomy = types.SimpleNamespace(sample=lambda: {"life_state": "disabled"})
-    driver.sample_sensors = lambda memory: {"old_connection": memory is old_memory}
+    driver.sample_sensors = lambda memory, passive: {
+        "old_connection": memory is old_memory and passive is old_passive
+    }
     readers = driver.sample_readers()
     driver.memory = object()
+    driver.passive_sensors = object()
     driver.motion = driver.posture = driver.autonomy = None
     assert readers["sensors"]() == {"old_connection": True}
     assert readers["joints"]() == {"source": "old"}

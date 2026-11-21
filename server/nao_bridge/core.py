@@ -433,6 +433,8 @@ class Core:
                     "unit": "boolean",
                     "state_group": "sensors",
                     "state_field": "touch",
+                    "state_path": ["touch", sensor],
+                    "value_type": "boolean",
                     "state": {
                         "status": "available" if available else "unavailable",
                         "reason": reason,
@@ -453,6 +455,8 @@ class Core:
                 "unit": "percent",
                 "state_group": "sensors",
                 "state_field": "battery.charge",
+                "state_path": ["battery", "charge"],
+                "value_type": "number",
                 "state": {
                     "status": "available" if charge_available else "unavailable",
                     "reason": None
@@ -463,6 +467,34 @@ class Core:
                 "event_type": None,
             }
         )
+        for metadata in self.info.get("sensor_catalog", []):
+            reading = value.get("readings", {}).get(metadata["id"], {})
+            available = sample["quality"] == "fresh" and reading.get("value") is not None
+            source = (
+                copy.deepcopy(metadata["source"])
+                if self.connection == "connected"
+                else {"status": "unknown", "reason": "not_connected"}
+            )
+            items.append(
+                {
+                    **copy.deepcopy(metadata),
+                    "source": source,
+                    "state_group": "sensors",
+                    "state_field": "readings",
+                    "state_path": ["readings", metadata["id"], "value"],
+                    "state": {
+                        "status": "available" if available else "unavailable",
+                        "reason": None
+                        if available
+                        else sample["reason"]
+                        or reading.get("reason")
+                        or source["reason"]
+                        or "not_sampled",
+                    },
+                    "events": {"status": "unsupported", "reason": "use_state_samples"},
+                    "event_type": None,
+                }
+            )
         return {"items": items, "connection_generation": self.generation}
 
     def joint_catalog(self) -> dict[str, Any]:

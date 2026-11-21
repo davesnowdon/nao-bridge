@@ -65,6 +65,11 @@ class Sensor(WireModel):
     state: Capability
     events: Capability
     event_type: str | None
+    state_path: list[str] | None = None
+    value_type: Literal["number", "boolean"] | None = None
+    frame: str | None = None
+    minimum: float | None = None
+    source: Capability | None = None
 
 
 class SensorsData(WireModel):

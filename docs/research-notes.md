@@ -205,3 +205,27 @@ reconnection does not establish cleanup or authorize automatic listener resumpti
 The remaining public lifecycle must preserve this uncertainty and explicitly map
 revision-tagged native observations to owned listeners.
 
+## Passive sensor observations
+
+The [NAOqi 2.1 sensor names](https://doc.aldebaran.com/2-1/family/nao_dcm/actuator_sensor_names.html)
+and [2.8 sensor names](https://doc.aldebaran.com/2-8/family/nao_technical/lola/actuator_sensor_names.html)
+document acceleration in m/s², angular velocity in rad/s, inclination in radians,
+joint temperature in degrees Celsius and foot loads in kilograms. The references
+list some Z-axis keys while describing gyro/inclination Z as unavailable, so the
+initial adapter exposes only X/Y for those quantities. Foot load estimates are
+approximate; the API does not relabel them as pressure or infer an occupancy rule.
+
+[ALFsr 2.1](https://doc.aldebaran.com/2-1/naoqi/sensors/alfsr.html) and
+[ALFsr 2.8](https://doc.aldebaran.com/2-8/naoqi/sensors/alfsr.html) expose explicit
+left/right/combined contact and total-weight memory values. Combined contact means
+at least one foot on the ground. The adapter accepts binary native indications
+and distinguishes false from missing; it does not derive contact from load.
+
+[ALMemory](https://doc.aldebaran.com/2-1/naoqi/core/almemory-api.html) provides key
+discovery and batched `getListData`. Missing-key return behavior is not established
+by that documentation, so discovery precedes sampling: absent keys are never
+submitted and cannot become a plausible zero placeholder. Discovery failure is
+unknown support, distinct from a successful discovery with an absent key. The
+hardware gate must still establish source presence, frame signs, useful rate,
+and producer initialization/update behavior on each supported firmware.
+

@@ -193,11 +193,23 @@ def run(url):
         time.sleep(0.1)
         robot = probe.request("GET", "/api/robot", schema="Robot")
     probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
-    probe.request("GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State")
+    sensor_state = probe.request(
+        "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
+    )
+    sensor_value = sensor_state["groups"]["sensors"]["value"]
+    probe.validate("SensorStateValue", sensor_value)
     sensors = probe.request("GET", "/api/sensors", schema="Sensors")
     assert {"touch.hand.left.back", "touch.hand.right.back", "bumper.left", "bumper.right"} <= {
         item["id"] for item in sensors["items"]
     }
+    for item in sensors["items"]:
+        value = sensor_value
+        for key in item["state_path"]:
+            value = value[key]
+        assert value is not None, item
+    assert sensor_value["readings"]["inertial.angle.x"] == {"value": 0.0, "reason": None}
+    assert sensor_value["readings"]["foot.contact"] == {"value": True, "reason": None}
+    assert sensor_value["readings"]["joint.HeadYaw.temperature"] == {"value": 35.0, "reason": None}
     joints = probe.request("GET", "/api/motion/joints", schema="Joints")
     assert joints["availability"]["status"] == "available"
     assert joints["chains"]["Head"] == ["HeadYaw", "HeadPitch"]

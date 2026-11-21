@@ -1,0 +1,237 @@
+{
+  "fixed": [
+    {
+      "id": "inertial.acceleration.x",
+      "label": "Torso acceleration x",
+      "unit": "m/s^2",
+      "memory_keys": [
+        "Device/SubDeviceList/InertialSensor/AccelerometerX/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": "torso",
+      "minimum": null
+    },
+    {
+      "id": "inertial.acceleration.y",
+      "label": "Torso acceleration y",
+      "unit": "m/s^2",
+      "memory_keys": [
+        "Device/SubDeviceList/InertialSensor/AccelerometerY/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": "torso",
+      "minimum": null
+    },
+    {
+      "id": "inertial.acceleration.z",
+      "label": "Torso acceleration z",
+      "unit": "m/s^2",
+      "memory_keys": [
+        "Device/SubDeviceList/InertialSensor/AccelerometerZ/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": "torso",
+      "minimum": null
+    },
+    {
+      "id": "inertial.angular_velocity.x",
+      "label": "Torso angular velocity x",
+      "unit": "rad/s",
+      "memory_keys": [
+        "Device/SubDeviceList/InertialSensor/GyroscopeX/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": "torso",
+      "minimum": null
+    },
+    {
+      "id": "inertial.angular_velocity.y",
+      "label": "Torso angular velocity y",
+      "unit": "rad/s",
+      "memory_keys": [
+        "Device/SubDeviceList/InertialSensor/GyroscopeY/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": "torso",
+      "minimum": null
+    },
+    {
+      "id": "inertial.angle.x",
+      "label": "Torso angle x",
+      "unit": "rad",
+      "memory_keys": [
+        "Device/SubDeviceList/InertialSensor/AngleX/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": "torso",
+      "minimum": null
+    },
+    {
+      "id": "inertial.angle.y",
+      "label": "Torso angle y",
+      "unit": "rad",
+      "memory_keys": [
+        "Device/SubDeviceList/InertialSensor/AngleY/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": "torso",
+      "minimum": null
+    },
+    {
+      "id": "foot.left.load.front_left",
+      "label": "left foot front left load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/LFoot/FSR/FrontLeft/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.left.load.front_right",
+      "label": "left foot front right load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/LFoot/FSR/FrontRight/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.left.load.rear_left",
+      "label": "left foot rear left load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/LFoot/FSR/RearLeft/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.left.load.rear_right",
+      "label": "left foot rear right load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/LFoot/FSR/RearRight/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.left.load",
+      "label": "left foot total load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/LFoot/FSR/TotalWeight/Sensor/Value",
+        "leftFootTotalWeight"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.left.contact",
+      "label": "left foot ground contact",
+      "unit": "boolean",
+      "memory_keys": [
+        "leftFootContact"
+      ],
+      "value_type": "boolean",
+      "frame": null,
+      "minimum": null
+    },
+    {
+      "id": "foot.right.load.front_left",
+      "label": "right foot front left load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/RFoot/FSR/FrontLeft/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.right.load.front_right",
+      "label": "right foot front right load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/RFoot/FSR/FrontRight/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.right.load.rear_left",
+      "label": "right foot rear left load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/RFoot/FSR/RearLeft/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.right.load.rear_right",
+      "label": "right foot rear right load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/RFoot/FSR/RearRight/Sensor/Value"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.right.load",
+      "label": "right foot total load",
+      "unit": "kg",
+      "memory_keys": [
+        "Device/SubDeviceList/RFoot/FSR/TotalWeight/Sensor/Value",
+        "rightFootTotalWeight"
+      ],
+      "value_type": "number",
+      "frame": null,
+      "minimum": 0
+    },
+    {
+      "id": "foot.right.contact",
+      "label": "right foot ground contact",
+      "unit": "boolean",
+      "memory_keys": [
+        "rightFootContact"
+      ],
+      "value_type": "boolean",
+      "frame": null,
+      "minimum": null
+    },
+    {
+      "id": "foot.contact",
+      "label": "At least one foot on the ground",
+      "unit": "boolean",
+      "memory_keys": [
+        "footContact"
+      ],
+      "value_type": "boolean",
+      "frame": null,
+      "minimum": null
+    }
+  ],
+  "joint_temperature": {
+    "id": "joint.{joint}.temperature",
+    "label": "{joint} temperature",
+    "unit": "degC",
+    "memory_keys": [
+      "Device/SubDeviceList/{joint}/Temperature/Sensor/Value"
+    ],
+    "value_type": "number",
+    "frame": null,
+    "minimum": null
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "schema": "SensorReading",
+  "cases": [
+    {
+      "name": "zero is a reading",
+      "value": {
+        "value": 0.0,
+        "reason": null
+      },
+      "valid": true
+    },
+    {
+      "name": "false is contact absent",
+      "value": {
+        "value": false,
+        "reason": null
+      },
+      "valid": true
+    },
+    {
+      "name": "negative inclination",
+      "value": {
+        "value": -0.25,
+        "reason": null
+      },
+      "valid": true
+    },
+    {
+      "name": "unavailable source",
+      "value": {
+        "value": null,
+        "reason": "native_key_unavailable"
+      },
+      "valid": true
+    },
+    {
+      "name": "unknown native discovery",
+      "value": {
+        "value": null,
+        "reason": "native_discovery_failed"
+      },
+      "valid": true
+    },
+    {
+      "name": "invalid acquisition",
+      "value": {
+        "value": null,
+        "reason": "missing_or_invalid_reading"
+      },
+      "valid": true
+    },
+    {
+      "name": "unknown response extension",
+      "value": {
+        "value": 35.0,
+        "reason": null,
+        "future": {}
+      },
+      "valid": true
+    },
+    {
+      "name": "null needs reason",
+      "value": {
+        "value": null,
+        "reason": null
+      },
+      "valid": false
+    },
+    {
+      "name": "reading and unavailable reason conflict",
+      "value": {
+        "value": 0,
+        "reason": "missing"
+      },
+      "valid": false
+    },
+    {
+      "name": "no string coercion",
+      "value": {
+        "value": "0",
+        "reason": null
+      },
+      "valid": false
+    }
+  ]
+}

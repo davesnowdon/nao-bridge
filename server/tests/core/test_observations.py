@@ -62,6 +62,124 @@ def native_call(service, method, *args):
     return getattr(service, method)(*args)
 
 
+def passive_adapter(observations, keys, joints=()):
+    memory = SimpleNamespace(getDataListName=lambda: keys)
+    return observations.PassiveSensors(memory, native_call, joints)
+
+
+def test_passive_sensor_discovery_never_reads_absent_keys_and_prefers_primary(observations):
+    definitions = {item["id"]: item for item in observations.passive_definitions(["HeadYaw"])}
+    total = definitions["foot.left.load"]["memory_keys"]
+    temperature = definitions["joint.HeadYaw.temperature"]["memory_keys"][0]
+    adapter = passive_adapter(observations, [*total, temperature], ["HeadYaw"])
+    assert adapter.keys == [total[0], temperature]
+    readings = adapter.normalize([0, 35.5])
+    assert readings["foot.left.load"] == {"value": 0.0, "reason": None}
+    assert readings["joint.HeadYaw.temperature"] == {"value": 35.5, "reason": None}
+    assert readings["foot.contact"] == {"value": None, "reason": "native_key_unavailable"}
+    sources = {item["id"]: item["source"] for item in adapter.catalog}
+    assert sources["foot.contact"]["status"] == "unsupported"
+    assert sources["foot.left.load"]["status"] == "available"
+    fallback = passive_adapter(observations, [total[1]])
+    assert fallback.keys == [total[1]]
+    assert fallback.normalize([2.5])["foot.left.load"]["value"] == 2.5
+    assert not any("angular_velocity.z" in key or "angle.z" in key for key in readings)
+
+
+@pytest.mark.parametrize("names", [None, "not-a-list", [None], [12]])
+def test_failed_sensor_discovery_is_unknown_not_unsupported(observations, names):
+    adapter = passive_adapter(observations, names)
+    assert not adapter.keys
+    assert all(item["source"]["status"] == "unknown" for item in adapter.catalog)
+    assert all(
+        item == {"value": None, "reason": "native_discovery_failed"}
+        for item in adapter.normalize([]).values()
+    )
+    failed = observations.PassiveSensors(object(), native_call, [])
+    assert failed.normalize([]) == adapter.normalize([])
+
+
+@pytest.mark.parametrize(
+    "value", [None, True, False, "1", float("nan"), float("inf"), -float("inf")]
+)
+def test_invalid_numeric_passive_readings_do_not_become_zero(observations, value):
+    adapter = passive_adapter(observations, ["leftFootTotalWeight", "footContact"])
+    readings = adapter.normalize([value, 0])
+    assert readings["foot.left.load"] == {"value": None, "reason": "missing_or_invalid_reading"}
+    assert readings["foot.contact"] == {"value": False, "reason": None}
+    for reading in readings.values():
+        VALIDATORS["SensorReading"].validate(reading)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (0, False),
+        (1.0, True),
+        (False, False),
+        (True, True),
+        (2, None),
+        (-1, None),
+        ("1", None),
+        (None, None),
+    ],
+)
+def test_native_ground_contact_is_boolean_without_invented_load_threshold(
+    observations, value, expected
+):
+    adapter = passive_adapter(observations, ["leftFootTotalWeight", "leftFootContact"])
+    readings = adapter.normalize([-0.1, value])
+    assert readings["foot.left.contact"]["value"] is expected
+    assert readings["foot.left.load"]["value"] is None
+    assert readings["foot.left.contact"]["reason"] == (
+        "missing_or_invalid_reading" if expected is None else None
+    )
+
+
+def test_passive_batch_length_is_checked_and_signed_axes_are_preserved(observations):
+    key = "Device/SubDeviceList/InertialSensor/AngleX/Sensor/Value"
+    adapter = passive_adapter(observations, [key])
+    assert adapter.normalize([-0.25])["inertial.angle.x"] == {"value": -0.25, "reason": None}
+    for values in ([], [1, 2], None, {key: 1}):
+        with pytest.raises(ValueError, match="Incomplete native sensor batch"):
+            adapter.normalize(values)
+
+
+async def test_passive_catalog_exposes_paths_validity_and_staleness_without_new_reads(rig):
+    async with rig() as (client, core, backend):
+        response = await client.get("/api/state?include=sensors&wait_for_fresh_ms=1000")
+        value = response.json()["groups"]["sensors"]["value"]
+        VALIDATORS["SensorStateValue"].validate(value)
+        assert value["readings"]["foot.contact"]["value"] is True
+        sensors = (await client.get("/api/sensors")).json()
+        VALIDATORS["Sensors"].validate(sensors)
+        for item in sensors["items"]:
+            current = value
+            for part in item["state_path"]:
+                current = current[part]
+            assert current is not None
+        items = {item["id"]: item for item in sensors["items"]}
+        assert items["foot.left.load"]["unit"] == "kg"
+        assert items["inertial.angle.x"]["frame"] == "torso"
+        assert items["joint.HeadYaw.temperature"]["unit"] == "degC"
+        backend.samples_task.cancel()
+        await asyncio.gather(backend.samples_task, return_exceptions=True)
+        reading = core.samples["sensors"]["value"]["readings"]["inertial.angle.x"]
+        reading.update(value=None, reason="missing_or_invalid_reading")
+        items = {item["id"]: item for item in core.sensors()["items"]}
+        assert items["inertial.angle.x"]["state"]["reason"] == "missing_or_invalid_reading"
+        assert items["inertial.angle.x"]["source"]["status"] == "available"
+        assert items["foot.contact"]["state"]["status"] == "available"
+        await asyncio.sleep(0.26)
+        items = {item["id"]: item for item in core.sensors()["items"]}
+        assert items["foot.contact"]["state"]["status"] == "unavailable"
+        assert items["foot.contact"]["source"]["status"] == "available"
+        await backend.connection(False)
+        items = {item["id"]: item for item in core.sensors()["items"]}
+        assert items["foot.contact"]["source"] == {"status": "unknown", "reason": "not_connected"}
+        assert items["foot.contact"]["state"]["status"] == "unavailable"
+
+
 @pytest.mark.parametrize("falling", ["robotIsFalling", "ALMotion/RobotIsFalling"])
 def test_native_sources_are_normalized_without_recovery_inference(observations, falling):
     memory = Memory(["PostureChanged", "PostureFamilyChanged", falling, "robotHasFallen"])

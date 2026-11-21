@@ -29,6 +29,9 @@ def test_portable_canonicalization_and_request_fixtures():
         assert (a == b) == case["equal"], case["name"]
     for case in json.loads((FIXTURES / "requests.json").read_text())["cases"]:
         assert VALIDATORS[case["schema"]].is_valid(case["value"]) == case["valid"]
+    readings = json.loads((FIXTURES / "sensor-readings.json").read_text())
+    for case in readings["cases"]:
+        assert VALIDATORS[readings["schema"]].is_valid(case["value"]) == case["valid"], case["name"]
 
 
 async def test_every_public_domain_route_and_response_is_documented(rig):

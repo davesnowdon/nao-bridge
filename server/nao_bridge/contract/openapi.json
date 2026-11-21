@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.1.0",
-    "description": "Implemented HTTP/SSE contract, including increment-2 foundations. No v1 compatibility. Physical motion and hold acceptance is pending."
+    "version": "1.2.0",
+    "description": "Implemented HTTP/SSE contract, including increment-2 foundations and passive sensor observations. No v1 compatibility. Physical motion, hold and new sensor acceptance is pending."
   },
   "servers": [
     {
@@ -2605,6 +2605,12 @@
       },
       "Assets": {
         "$ref": "schemas.json#/$defs/Assets"
+      },
+      "SensorReading": {
+        "$ref": "schemas.json#/$defs/SensorReading"
+      },
+      "SensorStateValue": {
+        "$ref": "schemas.json#/$defs/SensorStateValue"
       }
     }
   }

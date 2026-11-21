@@ -1445,6 +1445,37 @@
             "string",
             "null"
           ]
+        },
+        "state_path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Literal object keys relative to the state_group value. IDs containing dots are single keys; do not split them."
+        },
+        "value_type": {
+          "enum": [
+            "number",
+            "boolean"
+          ]
+        },
+        "frame": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Coordinate frame for an axis reading, or null for a scalar."
+        },
+        "minimum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/Feature",
+          "description": "Native key discovery, distinct from freshness/validity in state. Not a hardware verification claim."
         }
       },
       "required": [
@@ -2720,6 +2751,89 @@
         "next_cursor"
       ],
       "additionalProperties": true
+    },
+    "SensorReading": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "reason"
+      ],
+      "additionalProperties": true,
+      "description": "A normalized reading. Null means unavailable/invalid, never zero or clear space. Units/frame are in the sensor catalog. Group quality and acquisition window still apply.",
+      "if": {
+        "properties": {
+          "value": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "SensorStateValue": {
+      "type": "object",
+      "properties": {
+        "touch": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "touch_unavailable": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "battery": {
+          "$ref": "#/$defs/BatteryStateValue"
+        },
+        "readings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SensorReading"
+          }
+        }
+      },
+      "required": [
+        "touch",
+        "touch_unavailable",
+        "battery",
+        "readings"
+      ],
+      "additionalProperties": true,
+      "description": "Value of the sensors state group. Passive readings use stable catalog IDs; motion, touch and battery share the usual group freshness envelope. Numeric zero and boolean false are valid."
     }
   }
 }
