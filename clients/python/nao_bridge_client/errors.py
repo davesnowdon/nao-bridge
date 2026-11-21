@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .models import OperationData
+from .models import ListenerData, OperationData, RecordingData
 
 
 class BridgeError(Exception):
@@ -39,6 +39,48 @@ class SessionLost(BridgeError):
 class StaleState(BridgeError):
     def __init__(self, groups: list[str]):
         super().__init__("stale_state", "Fresh state is unavailable", details={"groups": groups})
+
+
+class ListenerTimeout(TimeoutError):
+    def __init__(self, listener_id: str):
+        super().__init__("Local wait timed out; listener was not stopped: " + listener_id)
+        self.listener_id = listener_id
+
+
+class ListenerError(BridgeError):
+    def __init__(self, listener: ListenerData):
+        self.listener = listener
+        self.listener_id = listener.id
+        error = listener.error
+        super().__init__(
+            error.code if error else "listener_" + listener.status,
+            error.message if error else "Listener " + listener.status,
+            details=error.details if error else {},
+        )
+
+
+class RecordingTimeout(TimeoutError):
+    def __init__(self, recording_id: str):
+        super().__init__("Local wait timed out; recording was not stopped: " + recording_id)
+        self.recording_id = recording_id
+
+
+class RecordingFailed(BridgeError):
+    def __init__(self, recording: RecordingData):
+        self.recording = recording
+        self.recording_id = recording.id
+        error = recording.error
+        super().__init__(
+            error.code if error else "recording_failed",
+            error.message if error else "Recording failed",
+            details=error.details if error else {},
+        )
+
+
+class DownloadIntegrityError(BridgeError):
+    def __init__(self, asset_id: str, message: str):
+        super().__init__("download_integrity_error", message, details={"asset_id": asset_id})
+        self.asset_id = asset_id
 
 
 class OperationTimeout(TimeoutError):

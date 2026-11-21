@@ -1,6 +1,6 @@
 # NAO Bridge Python client
 
-The replacement client provides `Nao` and `AsyncNao` for the version 1.0 HTTP/SSE
+The replacement client provides `Nao` and `AsyncNao` for the version 1.1 HTTP/SSE
 contract. Package version 0.2 removes the old `NAOBridgeClient` API. Python 3.10+
 is supported; a NAOqi installation is unnecessary on the client.
 
@@ -37,7 +37,16 @@ asyncio.run(main())
 | `robot.info()`, `robot.capabilities()` | Discovery without creating a session |
 | `robot.state(include=..., require_fresh=True)` | Shared observations; raises `StaleState` for stale/unavailable requested groups |
 | `speech.say(text, wait=True, ...)` | Server-defaulted plain speech; returns an Operation |
-| `robot.stop(wait=True)` | Priority stop for currently implemented speech output |
+| `speech.listen(vocabulary, ...)`, `.get_listener(id)` | Owned vocabulary listener and current readiness |
+| `listener.configure(...)`, `.pause()`, `.resume()`, `.stop()` | Accepted configuration changes and explicit cleanup |
+| `listener.wait_configured()`, `.wait_ready()`, `.refresh()` | Distinguish applied configuration from observed listening |
+| `robot.stop(wait=True)` | Priority stop for implemented speech and motion work |
+| `motion.joints()`, `.postures()`, `.state(...)` | Joint limits/chains/coupling and shared measured/commanded state |
+| `motion.wake()`, `.rest()`, `.set_stiffness(...)`, `.posture(...)` | Explicit preparation with session ownership |
+| `motion.move_joints(...)`, `.head(...)`, `.hand(...)`, `.play(...)` | Finite absolute targets and portable trajectories; optional same-session replacement |
+| `motion.set_joint_targets(...)` | One ordered target update; no background refresh |
+| `motion.joint_control(...)` | Scoped latest-target refresh and cancellation on exit |
+| `autonomy.configure(...)`, `.state(...)` | Explicit discovered settings and observed values |
 | `operations.get(id)`, `operations.list(...)` | Retained operation history for this session |
 | `operation.refresh()`, `.wait(timeout=...)`, `.cancel(wait=...)` | Authoritative status, bounded local wait, explicit cancellation |
 | `events.types()`, `events.subscribe(...)` | Native touch, lifecycle events and sampled state |
@@ -46,6 +55,183 @@ asyncio.run(main())
 Async methods have the same names and arguments and are awaited. Async
 subscriptions use `async with await nao.events.subscribe(...)` and `async for`.
 Sync subscriptions use `with nao.events.subscribe(...)` and ordinary iteration.
+Joint-control factories return context managers directly: use `with` or `async with`
+without awaiting the factory.
+
+## Joint controls
+
+Check `robot.capabilities().features["motion.joint_setpoints"]` before use. Physical
+availability remains false until hold acceptance; software fixtures support it.
+Neither helper changes stiffness, wakes the robot or prepares autonomy implicitly.
+
+```python
+with Nao() as nao:
+    with nao.motion.joint_control({"HeadYaw": 0.2, "HeadPitch": 0.1}) as control:
+        control.set_targets({"HeadYaw": 0.0, "HeadPitch": 0.1})
+        print(control.operation.id)
+    print(control.operation.status)  # cancelled after confirmed cleanup
+```
+
+The async equivalent is `async with nao.motion.joint_control(...) as control`, with
+`await control.set_targets(...)`. Both versions keep the full joint set fixed and
+refresh the latest target while the scope is active. `speed` and `ttl` are optional;
+omission uses server defaults. The scope reads the accepted TTL from the response
+and schedules renewal every third of that duration. It uses a conservative local
+deadline measured from dispatch, independent of the server's wall clock.
+
+`set_targets` waits for acceptance, not arrival at the physical target. Concurrent
+calls retain only the newest pending target; an intermediate call may complete
+when its newer replacement is acknowledged. At most one PUT is in flight per scope.
+Omitted update speed retains the scope's previous speed. Input dictionaries are
+copied. Partial joint sets and nonfinite values are rejected locally; discovered
+limits and runtime preconditions remain server decisions.
+
+Scope exit stops renewal and requests cancellation, then waits within the client's
+`cleanup_timeout`. Expected `OperationCancelled` is handled by the scope. Unknown
+hold or failed cleanup remains an error in `control.cleanup_error`. A background
+failure is visible through `control.error`, the next update and scope exit. If
+application code is already failing, its exception is preserved. Client closure
+also closes still-open scopes. Each scope is single-use, even after reopening the client.
+
+A lost/late acknowledgement, elapsed local TTL, lost session, or ended server
+operation stops renewal. The helper attempts cancellation of the known operation;
+it never creates a replacement control/session or automatically retries a PUT.
+An interrupted initial request may have created a control before its operation ID
+arrives. Without that ID the helper cannot confirm targeted cancellation; it reports
+uncertainty and relies on server TTL or explicit session cleanup. Loss of the native
+agent/container/network can still leave physical behavior uncertain.
+
+For a single update, use the raw setter:
+
+```python
+with Nao() as nao:
+    operation = nao.motion.set_joint_targets({"HeadYaw": 0.2}, ttl=0.5)
+    control_id = operation.data.control.id
+    operation = nao.motion.set_joint_targets(
+        {"HeadYaw": 0.0}, control_id=control_id, sequence=1, ttl=0.5
+    )
+```
+
+An omitted ID generates a new ID with sequence zero. To update that control, supply
+its ID and a greater sequence yourself. This path sends once and lets TTL expire;
+it has no `wait` parameter. Use the returned operation's ordinary wait/refresh
+methods if needed. Identical duplicate updates never extend server expiry.
+
+## Vocabulary listeners
+
+Check `robot.capabilities().features["speech.listeners"]` and the `recognition`
+catalog for supported languages. Listen returns an activity handle immediately;
+it does not wait for the recognizer to become ready. Omitted options use server
+defaults, including pausing recognition during bridge speech output.
+
+```python
+from nao_bridge_client import Nao, SpeechRecognizedData
+
+with Nao() as nao:
+    with nao.events.subscribe(events=["speech.recognized"]) as events:
+        with nao.speech.listen(["capture", "play"]) as listener:
+            listener.wait_ready(timeout=10)
+            for event in events:
+                if event.type == "speech.recognized":
+                    result = SpeechRecognizedData.model_validate(event.data)
+                    if result.listener_id == listener.id:
+                        print(result.hypotheses)
+                        break
+                elif event.type in {"stream.reset", "client.stream_gap"}:
+                    listener.refresh()  # Missed voice input cannot be recovered.
+```
+
+The async form is `async with await nao.speech.listen(...) as listener`; await its
+methods. Both variants expose typed `listener.data`, including configuration,
+status, reason and error. `configure`, `pause` and `resume` return acceptance;
+call `wait_configured()` to await `warming`, `listening` or `paused`. Only
+`wait_ready()` requires observed `listening`. A backend without readiness events
+can remain `warming` while delivering hypotheses. Neither wait opens an SSE stream;
+they poll GET and default to a ten-second local timeout (`None` waits indefinitely).
+`ListenerTimeout` leaves the listener active. Cancelling an async wait also leaves
+it active; exiting its scope requests cleanup.
+
+`stop()` waits for confirmed terminal cleanup within the client's `cleanup_timeout`;
+`stop(wait=False)` only requests it. Scope exit calls `close()`, which stops the
+listener. `ListenerError` includes its last record and distinguishes failed/unknown
+outcomes. Unknown cleanup raises and is retained in `listener.cleanup_error`; an
+existing application exception is preserved with a warning. Parent client closure
+closes the owning session, including listeners not used in their own scopes.
+Handles cannot control a reopened session or automatically recreate ended listeners.
+
+Creation/stop have retained idempotency keys. After an ambiguous creation, explicitly
+retry its original request and use `speech.get_listener(result["id"])` to recover a
+handle. PATCH has no automatic retry: refresh after a lost response to inspect the
+accepted configuration. `speech.listener_changed` and `speech.recognized` payloads
+are validated by the SSE reader. Filter recognized events by listener ID in the
+application; listener creation itself does not create an event subscription.
+
+## Sample recordings and assets
+
+```python
+from nao_bridge_client import Nao, RecordingFailed
+
+with Nao("http://localhost:3000") as nao:
+    recording = nao.recordings.samples(["joints", "sensors"], duration=10)
+    try:
+        recording.wait(timeout=15)
+    except RecordingFailed as error:
+        print("Partial recording:", error.code)
+    if recording.asset_id is not None:
+        asset = nao.assets.download(recording.asset_id, "take.ndjson")
+        print(asset.status, asset.sha256)
+```
+
+`recordings.start(source, duration=...)` accepts the language-neutral source object;
+`samples(groups, duration=..., rate_hz=..., max_bytes=..., allow_lower_rate=...)`
+is its convenience form. Omitted rate/size/policy values use server defaults.
+Both return an accepted handle immediately. Use `recordings.get(id)` to recover
+a handle in its owning session, including after an explicitly retried ambiguous
+creation. Creation never automatically retries or resumes a recording.
+
+`recording.data` is typed; `refresh()` reads current status and `operation()` gets
+the associated operation handle. `wait(timeout=None)` polls until file finalization.
+`RecordingTimeout` and cancelling an async wait leave the recording running.
+`RecordingFailed` carries the last recording record, including any partial asset ID.
+Recording completion describes the artifact: cancelling its operation can finalize
+a completed asset while the operation still correctly reports `cancelled`.
+
+`stop()` requests graceful finalization and waits within the client's
+`cleanup_timeout`; use `stop(wait=False)` to return after acceptance. A recording
+is also a context manager: `with nao.recordings.samples(...) as recording` or
+`async with await nao.recordings.samples(...) as recording`. Scope exit stops it;
+failures surface through `cleanup_error` and an exception (a warning preserves an
+existing application exception). Parent client closure finalizes recordings through
+session cleanup. Old handles cannot act in a reopened session.
+
+`assets.get(id)`, `list(limit=50, cursor=None)` and `delete(id)` work without creating
+a session, including while the robot is disconnected. Lists return typed
+`AssetsPage` with `items` and `next_cursor`; page explicitly until the cursor is null.
+Assets may expire or be deleted between listing and downloading.
+
+`assets.download(id, destination, resume=False, overwrite=False)` streams bounded
+chunks, checks length and SHA-256, then atomically publishes the file. It returns
+typed `AssetData`, preserving `partial` status and the recording error. Local disk
+work runs off the async transport loop. Existing destinations are protected unless
+`overwrite=True`. The sync and async methods have the same arguments; await async
+calls.
+
+A failed/cancelled transfer leaves `destination.part` and `destination.part.json`.
+To continue it, call `download` again with `resume=True`; content transfers never
+retry automatically. Resume checks the saved bridge/asset identity, hashes the local
+prefix and uses Range/If-Range. A full response restarts the partial file; a complete
+local prefix is verified without another content request. Invalid ranges, changed
+ETags, sizes or checksums never publish the destination. `DownloadIntegrityError`
+distinguishes integrity failures from transport/server errors. Restart a corrupt
+download by explicitly removing its two auxiliary files first. `overwrite=True`
+does not overwrite auxiliary files. Use one writer per destination, including across
+clients/processes; do not edit these files during a download. The destination's
+directory must already exist.
+
+Inspect asset status, NDJSON gap rows and source quality before choosing samples
+for playback. A valid file checksum does not prove uninterrupted acquisition.
+`recording.changed` and `asset.created` SSE payloads are validated; subscription
+creation and application handling remain explicit.
 
 ## Lifecycle and errors
 
@@ -54,7 +240,7 @@ session; reads alone do not. Renewal runs independently of waits and event
 consumption. Transient renewal failures retry with bounded backoff within the last
 confirmed lease; definitive session loss stops renewal immediately. A synchronous client uses a dedicated transport thread. An async
 application must keep its event loop responsive; blocking work belongs in a worker
-thread. Context exit deletes subscriptions, closes the session and waits for its
+thread. Context exit closes joint controls, deletes subscriptions, closes the session and waits for its
 cleanup operation. Cleanup uncertainty raises an error. If application code is
 already failing, cleanup emits a warning and retains `nao.cleanup_error` without
 replacing the original exception. Explicit `close()` has the same cleanup behavior.

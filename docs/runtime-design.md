@@ -59,6 +59,14 @@ Start with versioned newline-delimited JSON over a permission-restricted local U
 
 Maintain separate bounded control/response, observation, and bulk-media paths so a camera stream or slow client cannot prevent a stop/heartbeat. A shared file or framed binary transfer can carry bounded media using validated opaque handles; do not embed large base64 frames in command JSON. Define ownership, finalization, cancellation, size limits, and cleanup for transferred buffers/files. Public assets remain managed by the modern process.
 
+The current implementation has separate priority, ordinary command, interactive
+control, and observation Unix-socket lanes. Interactive updates use a bounded
+latest-target slot and independent expiry/hold workers, not the ordinary native
+worker queue. The priority lane retains request capacity when control traffic is
+busy. Both the private control path and HTTP operation lifecycle are tested in the
+SDK fixture. Python control helpers have socket-level integration coverage; progress is tracked in
+[increment-2-status.md](increment-2-status.md). Bulk media transfer remains later work.
+
 Protocol fixtures must cover version mismatch, partial/malformed frames, unexpected EOF, request timeout after native dispatch, duplicate request IDs, stale generations, saturated queues, and agent restart. Never retransmit uncertain side-effecting native calls merely because an IPC response was lost. Translate ambiguity into the public Operation's `unknown` state.
 
 The API grants bounded control authority tied to the current session/generation. The agent rejects old generations and expired grants before dispatch. Convert API deadlines into agent-local monotonic deadlines through a measured bounded request exchange; do not extend a TTL by a long queue delay or compare unrelated clock origins blindly. The API must retain enough request evidence to reconcile a lost reply while both process instances remain unchanged. This is not durable exactly-once execution across crashes.
@@ -88,7 +96,49 @@ Start the video-format experiment with MJPEG in one explicitly selected containe
 
 Write sample recordings in the modern process from the same acquisition feed as `/state` and `state.sample`, before per-viewer coalescing or drops. A recording has its own bounded writer queue and explicit loss markers; it must not depend on an SSE subscriber keeping up.
 
-Recordings require bounded files and retained asset metadata; select the metadata storage implementation during recording delivery rather than requiring a database now. Compute checksums incrementally while writing. Finalize/flush the file before publishing immutable metadata and a checksum-derived ETag. Handle interrupted recording files and quota accounting before admitting new recordings. Active recording files are not downloadable assets; finalized partial recordings remain explicitly partial and immutable. This storage is for requested recordings, not operation recovery.
+Recognition configuration has a separate supervised worker and a one-request
+queue on the private command lane, so four occupied ordinary command workers do
+not prevent listener cleanup. One API-owned native producer uses increasing
+configuration revisions; the modern process owns session-specific logical listeners
+and filters their hypotheses. Each native setter checks the current API authority.
+Authority loss immediately fences callbacks and later writes, then a separate
+bounded cleanup worker attempts the owned unsubscribe. It does not block the
+watchdog/actuator stop path. Public priority stop leaves an in-flight configuration
+to finish in order while the API requests producer shutdown; cutting through a
+native language/vocabulary setter could leave its outcome uncertain.
+
+The native shared sampler has four permanent, supervised workers: sensors
+(contacts/battery), joints, motion/posture, and autonomy. Each runs one acquisition
+at a time with a requested 10 Hz cadence; a slow group cannot occupy another
+group's worker. Native call timeouts remain bounded. A failed group reports its
+own unavailable reading without discarding unrelated services. Discovery and
+connection monitoring run separately. Reconnect changes the sampler generation
+and captures new service adapters; old in-flight results are discarded before
+publication. Workers are reused across reconnects, so failures cannot accumulate
+threads or a queued backlog of acquisition requests. The modern cache combines
+per-group updates with their original acquisition windows, not a claimed atomic
+snapshot. Native service serialization and actual source rates still need hardware
+measurement.
+
+The implemented storage foundation uses one bounded JSON manifest per asset,
+without a database. Bounded recording workers and public routes now connect it
+to the acquisition feed. An exclusive directory lock prevents two API processes
+from sharing quota accounting. Admission reserves each recording's maximum content
+size and an asset-count slot. Compute SHA-256 incrementally while writing; fsync
+content, atomically rename it, then atomically publish/fsync finalized metadata.
+Active files are not downloadable. Finalized content, including partial recordings,
+is immutable. Open readers pin assets against deletion and expiry.
+
+At startup, reconcile writing/deleting manifests before admitting new work. Keep
+interrupted recordings as partial assets with an explicit interruption error,
+trimming incomplete NDJSON tails and hashing surviving bytes. Validate completed
+file sizes/checksums; storage initialization fails closed on corrupt metadata or
+unaccounted contents instead of silently losing data. Robot control remains available
+with recording storage marked unavailable. Interrupted deletion is resumed through a durable tombstone.
+Quota covers content bytes, with separate bounded metadata/count overhead; do not
+evict unexpired assets to admit new work. Run storage I/O in bounded workers outside
+the event loop and priority IPC path. This storage retains recording data only:
+it never restores sessions, operations, or robot commands.
 
 ## Retain HTTP commands and SSE events
 

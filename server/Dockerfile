@@ -39,6 +39,8 @@ RUN python3 -m pip install --no-cache-dir --only-binary=:all: --require-hashes \
     -r /opt/nao-bridge/requirements.lock && python3 -m pip check
 COPY server/nao_bridge /opt/nao-bridge/nao_bridge
 COPY server/agent /opt/nao-bridge/agent
+RUN mkdir -p /var/lib/nao-bridge/assets && chown ubuntu:ubuntu /var/lib/nao-bridge/assets
+ENV NAO_BRIDGE_ASSET_DIR=/var/lib/nao-bridge/assets
 USER ubuntu
 WORKDIR /opt/nao-bridge
 EXPOSE 3000

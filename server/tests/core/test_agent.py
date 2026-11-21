@@ -20,6 +20,12 @@ def agent_module(monkeypatch):
     yield module
     sys.modules.pop("native", None)
     sys.modules.pop("wire", None)
+    sys.modules.pop("motion", None)
+    sys.modules.pop("autonomy", None)
+    sys.modules.pop("controls", None)
+    sys.modules.pop("sampling", None)
+    sys.modules.pop("observations", None)
+    sys.modules.pop("recognition", None)
 
 
 class DrainQueue:
@@ -48,7 +54,128 @@ def bare_agent(module):
         speak=lambda payload: pytest.fail("Cancelled queued work reached native dispatch"),
         stop=lambda: pytest.fail("Queued-only scoped stop invoked unrelated native output"),
     )
+    agent.controls = module.JointControls(
+        agent.driver,
+        agent.lock,
+        module.monotonic,
+        lambda *args: None,
+        lambda request: agent.valid(request, initial=False) is None,
+        lambda *args: None,
+    )
     return agent
+
+
+def test_stop_includes_completed_control_without_ordinary_ledger_entry(agent_module):
+    agent = bare_agent(agent_module)
+    snapshot = {"operation_id": "control", "status": "cancelled", "hold": {"confirmed": True}}
+    agent.controls = types.SimpleNamespace(
+        stop=lambda *args, **kwargs: ["control"],
+        start_holds=lambda ids: None,
+        snapshot=lambda oid: snapshot,
+    )
+    result = agent.stop({"payload": {"operation_id": "control"}, "session_id": "session"})
+    assert result == {
+        "confirmed_ids": ["control"],
+        "unresolved_ids": [],
+        "controls": {"control": snapshot},
+    }
+
+
+def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
+    import autonomy
+
+    agent = bare_agent(agent_module)
+    values = {"life_state": "solitary", "basic_awareness": True}
+    writes = []
+
+    class Life:
+        def getState(self):
+            return values["life_state"]
+
+        def getAutonomousAbilityEnabled(self, name):
+            if name != "BasicAwareness":
+                raise ValueError("absent")
+            return values["basic_awareness"]
+
+        def setState(self, value, **kwargs):
+            def complete(timeout):
+                values["life_state"] = value
+                writes.append("life_state")
+                agent.revoked["session"] = agent_module.monotonic()
+
+            return types.SimpleNamespace(value=complete)
+
+        def setAutonomousAbilityEnabled(self, *args, **kwargs):
+            pytest.fail("Fenced transition dispatched a later setter")
+
+    life = Life()
+    services = {"ALAutonomousLife": life}
+    session = types.SimpleNamespace(
+        service=lambda name, **kwargs: types.SimpleNamespace(value=lambda timeout: services[name])
+    )
+    control = autonomy.Autonomy(
+        session, lambda service, method, *args: getattr(service, method)(*args)
+    )
+    agent.driver.autonomy = control
+    request = {
+        "id": "operation",
+        "session_id": "session",
+        "api": "api",
+        "agent": "agent",
+        "epoch": 1,
+        "deadline": agent_module.monotonic() + 1,
+        "action": "autonomy",
+        "payload": {
+            "settings": {"life_state": "disabled", "basic_awareness": False},
+            "allow_partial": False,
+        },
+    }
+    record = {
+        "phase": "queued",
+        "action": "autonomy",
+        "session_id": "session",
+        "status": "accepted",
+    }
+    agent.records["operation"] = record
+    replies = queue.Queue()
+    agent.run_autonomy(request, record, replies)
+    assert writes == ["life_state"] and values["basic_awareness"] is True
+    assert record["result"]["outcome"] == "cancelled"
+    assert [item["status"] for item in record["result"]["settings"]] == ["applied", "skipped"]
+
+
+def test_stop_does_not_confuse_finished_autonomy_setter_with_finished_transition(agent_module):
+    agent = bare_agent(agent_module)
+    agent.records["operation"] = {
+        "session_id": "session",
+        "action": "autonomy",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "future": types.SimpleNamespace(value=lambda timeout: None),
+    }
+    request = {"session_id": "session", "payload": {"operation_id": "operation"}}
+    assert agent.stop(request)["unresolved_ids"] == ["operation"]
+    outcome = {"outcome": "cancelled", "settings": [{"setting": "life_state", "status": "applied"}]}
+    agent.records["operation"].update(status="completed", result=outcome)
+    assert agent.stop(request)["results"]["operation"] == outcome
+
+
+def test_finite_control_thread_can_finish_normally_without_killing_agent(agent_module, monkeypatch):
+    agent = bare_agent(agent_module)
+    monkeypatch.setattr(
+        agent_module.os, "_exit", lambda code: pytest.fail("Normal control completion killed agent")
+    )
+    agent.run_control(lambda: None)
+    assert agent.heartbeat and not agent.emergency_stop.is_set()
+
+
+def test_priority_stop_records_a_tombstone_before_command_arrival(agent_module):
+    agent = bare_agent(agent_module)
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "not-arrived"}})
+    assert result["confirmed_ids"] == ["not-arrived"]
+    record = agent.records["not-arrived"]
+    assert record["status"] == "completed"
+    assert record["result"] == {"cancelled": True, "dispatched": False}
 
 
 def test_stop_before_dispatch_confirms_cancellation_and_prevents_later_dispatch(agent_module):
@@ -160,6 +287,177 @@ class InterruptedFuture:
         return self.cancelled
 
 
+def test_contact_values_distinguish_hands_feet_and_missing_switches(agent_module):
+    import native
+
+    values = [0] * len(native.MEMORY_KEYS)
+
+    def sample(path, value):
+        values[native.MEMORY_KEYS.index("Device/SubDeviceList/" + path + "/Sensor/Value")] = value
+        return native.contact_values(values)
+
+    for side in ("L", "R"):
+        public = "left" if side == "L" else "right"
+        for pad in ("Back", "Left", "Right"):
+            path = side + "Hand/Touch/" + pad
+            result = sample(path, 1)
+            assert [k for k, v in result["touch"].items() if v] == [
+                "touch.hand." + public + "." + pad.lower()
+            ]
+            assert not any(sample(path, 0)["touch"].values())
+        for switch in ("Left", "Right"):
+            path = side + "Foot/Bumper/" + switch
+            assert sample(path, 1)["touch"]["bumper." + public] is True
+            assert sample(path, 0)["touch"]["bumper." + public] is False
+
+    result = sample("RFoot/Bumper/Right", None)
+    assert result["touch"]["bumper.right"] is None
+    assert result["touch_unavailable"] == {"bumper.right": "missing_or_invalid_reading"}
+    assert result["touch"]["bumper.left"] is False
+    assert sample("RFoot/Bumper/Left", 1)["touch"]["bumper.right"] is True
+    assert native.contact_values([])["touch"]["touch.head.front"] is None
+
+
+def test_dedicated_contact_callbacks_reject_invalid_values(agent_module):
+    import native
+
+    events = []
+    driver = native.NativeDriver("unused", lambda kind, data: events.append((kind, data)))
+    expected = {
+        "HandLeftBackTouched": "touch.hand.left.back",
+        "HandRightBackTouched": "touch.hand.right.back",
+        "LeftBumperPressed": "bumper.left",
+        "RightBumperPressed": "bumper.right",
+    }
+    for event, sensor in expected.items():
+        assert native.TOUCH[event] == sensor
+        callback = driver.touch_callback(sensor)
+        for invalid in (None, "1", [], 2, -1, float("nan")):
+            callback(invalid)
+        callback(1.0)
+        callback(0.0)
+        assert events[-2:] == [
+            ("touch.changed", {"sensor": sensor, "pressed": True}),
+            ("touch.changed", {"sensor": sensor, "pressed": False}),
+        ]
+    assert len(events) == 8
+
+
+def test_native_joint_discovery_and_observation_preserve_units_and_sources(agent_module):
+    import motion
+
+    fixture = motion.FixtureMotion()
+    session = types.SimpleNamespace(
+        service=lambda name, **kwargs: types.SimpleNamespace(value=lambda timeout: fixture)
+    )
+    calls = []
+
+    def call(service, method, *args):
+        calls.append((method, args))
+        return getattr(service, method)(*args)
+
+    observer = motion.MotionObservation(session, call)
+    joints = {item["name"]: item for item in observer.joints}
+    assert joints["LHand"]["unit"] == "ratio"
+    assert joints["HeadYaw"]["unit"] == "rad"
+    assert joints["LHipYawPitch"]["coupled_with"] == ["RHipYawPitch"]
+    assert observer.chains["LArm"] == ["LShoulderPitch", "LHand"]
+    state = observer.sample_joints()
+    assert state["measured"]["HeadYaw"] == 0.1
+    assert state["commanded"]["HeadYaw"] == 0.2
+    assert state["stiffness"]["HeadYaw"] == 0.5
+    assert [args[1] for method, args in calls if method == "getAngles"] == [True, False]
+    fixture.getAngles = lambda names, useSensors: [float("nan")] * len(names)
+    with pytest.raises(ValueError, match="invalid native measured"):
+        observer.sample_joints()
+    fixture.getLimits = lambda group: []
+    with pytest.raises(ValueError, match="Incomplete native joint limits"):
+        motion.MotionObservation(session, call)
+
+
+def test_stop_during_motion_preparation_never_dispatches(agent_module):
+    agent = bare_agent(agent_module)
+    request = {
+        "id": "operation",
+        "session_id": "session",
+        "action": "trajectory",
+        "payload": {"names": ["HeadYaw"], "angles": [[0.1]], "times": [[1.0]]},
+        "agent": "agent",
+        "api": "api",
+        "epoch": 1,
+        "deadline": agent_module.monotonic() + 1,
+    }
+    agent.records["operation"] = {"session_id": "session", "status": "accepted", "phase": "queued"}
+    agent.driver.prepare_trajectory = lambda payload: agent.stop(
+        {"payload": {"operation_id": "operation"}, "session_id": "session"}
+    )
+    agent.driver.trajectory = lambda payload: pytest.fail("Stopped preparation dispatched motion")
+    replies = queue.Queue(8)
+    agent.work = DrainQueue((request, replies))
+    with pytest.raises(StopIteration):
+        agent.worker()
+    assert replies.get_nowait()["status"] == "accepted"
+    assert replies.get_nowait()["result"] == {"cancelled": True, "dispatched": False}
+
+
+def test_motion_private_payload_validation_rejects_unsafe_shapes(agent_module):
+    from motion import valid_trajectory
+
+    valid = {"names": ["HeadYaw"], "angles": [[0.1]], "times": [[1.0]]}
+    assert valid_trajectory(valid)
+    for patch in [
+        {"angles": [[True]]},
+        {"times": [[float("nan")]]},
+        {"times": [[0]]},
+        {"names": []},
+        {"times": [[1, 0.5]], "angles": [[0, 0.1]]},
+    ]:
+        assert not valid_trajectory(dict(valid, **patch))
+
+
+def test_private_motion_actions_are_bounded_and_cannot_call_arbitrary_methods(agent_module):
+    from motion import valid_motion_action
+
+    assert valid_motion_action(
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [0], "duration": 1}
+    )
+    assert valid_motion_action(
+        {"kind": "posture", "names": ["HeadYaw"], "name": "StandInit", "speed": 0.4}
+    )
+    for value in [
+        {"kind": "killAll", "names": ["HeadYaw"]},
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [True], "duration": 1},
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [1], "duration": 0},
+        {"kind": "stiffness", "names": ["HeadYaw"], "values": [], "duration": 1},
+        {"kind": "wake", "names": ["HeadYaw"], "extra": True},
+        {"kind": "posture", "names": ["HeadYaw"], "name": "StandInit", "speed": 1.1},
+    ]:
+        assert not valid_motion_action(value)
+
+
+def test_native_motion_stop_expands_body_and_coupled_resources(agent_module):
+    import native
+
+    calls = []
+    driver = native.NativeDriver("unused", lambda *args: None)
+    driver.motion = types.SimpleNamespace(
+        names=["HeadYaw", "LHipYawPitch", "RHipYawPitch"],
+        joints=[
+            {"name": "LHipYawPitch", "coupled_with": ["RHipYawPitch"]},
+            {"name": "RHipYawPitch", "coupled_with": ["LHipYawPitch"]},
+        ],
+    )
+
+    def stop(names, **kwargs):
+        calls.append(names)
+        return types.SimpleNamespace(value=lambda timeout: None)
+
+    driver.safety_motion = types.SimpleNamespace(killTasksUsingResources=stop)
+    driver.stop_motion(["RHipYawPitch"])
+    driver.stop_motion(["Body"])
+    assert calls == [["LHipYawPitch", "RHipYawPitch"], ["HeadYaw", "LHipYawPitch", "RHipYawPitch"]]
+
+
 @pytest.mark.parametrize("cancelled", [True, False])
 def test_native_interruption_requires_cancelled_future_for_known_outcome(agent_module, cancelled):
     agent = bare_agent(agent_module)
@@ -212,3 +510,75 @@ def test_stop_checks_native_cancellation_even_when_stop_reply_times_out(
     assert ("stopAll did not confirm" in caplog.text) == stop_times_out
     if stop_times_out:
         assert caplog.records[-1].exc_info is not None
+
+
+def test_sample_readers_keep_connection_adapters_when_driver_reconnects(agent_module):
+    import native
+
+    driver = native.NativeDriver("fixture", lambda *_: None)
+    old_memory = object()
+    driver.memory = old_memory
+    driver.motion = types.SimpleNamespace(
+        sample_joints=lambda: {"source": "old"},
+        sample_motion=lambda: {"awake": True},
+    )
+    driver.posture = types.SimpleNamespace(sample=lambda: "StandInit")
+    driver.autonomy = types.SimpleNamespace(sample=lambda: {"life_state": "disabled"})
+    driver.sample_sensors = lambda memory: {"old_connection": memory is old_memory}
+    readers = driver.sample_readers()
+    driver.memory = object()
+    driver.motion = driver.posture = driver.autonomy = None
+    assert readers["sensors"]() == {"old_connection": True}
+    assert readers["joints"]() == {"source": "old"}
+    assert readers["motion"]() == {"awake": True, "posture": "StandInit"}
+    assert readers["autonomy"]() == {"life_state": "disabled"}
+    unavailable = driver.sample_readers()
+    for group in ("joints", "motion", "autonomy"):
+        with pytest.raises(ValueError, match="native_service_unavailable"):
+            unavailable[group]()
+
+
+def test_priority_stop_leaves_internal_recognition_transition_to_ordered_cleanup(agent_module):
+    agent = bare_agent(agent_module)
+    agent.driver.stop = lambda: None
+    agent.driver.stop_motion = lambda *args, **kwargs: None
+    record = {
+        "session_id": None,
+        "action": "recognition",
+        "phase": "dispatch_started",
+        "status": "accepted",
+    }
+    agent.records["internal"] = record
+    result = agent.stop(None)
+    assert not record.get("stop_requested")
+    assert result == {"confirmed_ids": [], "unresolved_ids": []}
+
+
+@pytest.mark.parametrize("poisoned,status", [(False, "rejected"), (True, "unknown")])
+def test_recognition_rpc_does_not_turn_uncertain_mutation_into_known_rejection(
+    agent_module, poisoned, status
+):
+    agent = bare_agent(agent_module)
+
+    def configure(*args):
+        raise ValueError("setter failed")
+
+    agent.driver.recognition = types.SimpleNamespace(poisoned=poisoned, configure=configure)
+    replies = queue.Queue()
+    record = {}
+    agent.run_recognition({"id": "configure", "payload": {}}, record, replies)
+    assert replies.get_nowait()["status"] == status
+    assert record["status"] == status
+
+
+def test_authority_loss_fences_recognition_without_waiting_for_native_cleanup(agent_module):
+    agent = bare_agent(agent_module)
+    calls = []
+    adapter = types.SimpleNamespace(
+        invalidate=lambda: calls.append("fenced"),
+        close=lambda: pytest.fail("native close on authority lock"),
+    )
+    agent.driver.recognition = adapter
+    agent.lose_authority("watchdog")
+    assert calls == ["fenced"]
+    assert agent.recognition_cleanup is adapter

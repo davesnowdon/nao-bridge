@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class WireModel(BaseModel):
@@ -36,6 +36,12 @@ class Capability(WireModel):
     reason: str | None
 
 
+class AutonomySetting(Capability):
+    type: Literal["string", "boolean"]
+    values: list[str | bool]
+    mechanism: str | None
+
+
 class Capabilities(WireModel):
     contract_version: str
     connection_generation: int
@@ -45,6 +51,52 @@ class Capabilities(WireModel):
     state_groups: list[str]
     replay_supported: Literal[False]
     speech: dict[str, Any]
+    autonomy: dict[str, AutonomySetting] = Field(default_factory=dict)
+    motion_events: dict[str, list[str]] = Field(default_factory=dict)
+    recognition: dict[str, Any] = Field(default_factory=dict)
+
+
+class Sensor(WireModel):
+    id: str
+    label: str
+    unit: str
+    state_group: str
+    state_field: str
+    state: Capability
+    events: Capability
+    event_type: str | None
+
+
+class SensorsData(WireModel):
+    items: list[Sensor]
+    connection_generation: int
+
+
+class Joint(WireModel):
+    name: str
+    unit: Literal["rad", "ratio"]
+    minimum: float | None
+    maximum: float | None
+    max_velocity: float | None
+    chains: list[str]
+    coupled_with: list[str]
+    readable: bool
+    writable: bool
+    stiffness_supported: bool
+    reason: str | None
+
+
+class JointCatalog(WireModel):
+    items: list[Joint]
+    chains: dict[str, list[str]]
+    availability: Capability
+    connection_generation: int
+
+
+class PosturesData(WireModel):
+    items: list[str]
+    availability: Capability
+    connection_generation: int
 
 
 class SessionData(WireModel):
@@ -58,6 +110,13 @@ class SessionData(WireModel):
     lease_seconds: float
     renew_after_seconds: float
     cleanup_operation_id: str | None
+
+
+class JointControlData(WireModel):
+    id: str
+    sequence: int = Field(ge=0, le=9007199254740991)
+    ttl: float = Field(gt=0, le=1)
+    expires_at: str
 
 
 class OperationData(WireModel):
@@ -77,6 +136,88 @@ class OperationData(WireModel):
     result: dict[str, Any] | None
     error: ErrorDetail | None
     child_operation_ids: list[str]
+    replaces_operation_id: str | None = None
+    control: JointControlData | None = None
+
+
+class ListenerConfiguration(WireModel):
+    vocabulary: list[str]
+    language: str
+    confidence_threshold: float = Field(ge=0, le=1)
+    pause_during_output: bool
+    paused: bool
+
+
+class ListenerData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    configuration: ListenerConfiguration
+    status: Literal[
+        "starting",
+        "configuring",
+        "warming",
+        "listening",
+        "paused",
+        "stopping",
+        "stopped",
+        "failed",
+        "unknown",
+    ]
+    reason: str | None
+    error: ErrorDetail | None
+
+
+class SpeechHypothesis(WireModel):
+    text: str
+    confidence: float = Field(ge=0, le=1)
+
+
+class SpeechRecognizedData(WireModel):
+    listener_id: str
+    hypotheses: list[SpeechHypothesis]
+
+
+class RecordingSource(WireModel):
+    kind: Literal["samples"]
+    groups: list[str]
+    rate_hz: float = Field(gt=0)
+
+
+class RecordingData(WireModel):
+    id: str
+    session_id: str
+    operation_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    source: RecordingSource
+    duration: float = Field(gt=0)
+    max_bytes: int = Field(ge=65536)
+    status: Literal["starting", "recording", "stopping", "completed", "failed"]
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    asset_id: str | None
+    error: ErrorDetail | None
+
+
+class AssetData(WireModel):
+    id: str
+    kind: str
+    content_type: str
+    size_bytes: int = Field(ge=0, le=9007199254740991)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: str
+    expires_at: str
+    status: Literal["completed", "partial"]
+    error: ErrorDetail | None
+    metadata: dict[str, Any]
+
+
+class AssetsPage(WireModel):
+    items: list[AssetData]
+    next_cursor: str | None
 
 
 class StateGroup(WireModel):
@@ -147,6 +288,22 @@ class StreamResetData(WireModel):
 class TouchChangedData(WireModel):
     sensor: str
     pressed: bool
+
+
+class MotionPostureChangedData(WireModel):
+    posture: str | None = Field(default=None, min_length=1, max_length=128)
+    family: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def require_observed_field(self) -> MotionPostureChangedData:
+        present = self.model_fields_set & {"posture", "family"}
+        if not present or any(getattr(self, name) is None for name in present):
+            raise ValueError("Posture event needs an observed posture or family")
+        return self
+
+
+class MotionFallChangedData(WireModel):
+    phase: Literal["falling", "fallen"]
 
 
 class StateSampleData(WireModel):

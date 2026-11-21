@@ -1,6 +1,6 @@
 # Client contract and implementation guide
 
-Status: lifecycle guide for the replacement API, 6 November 2026. Increment 1 now has [canonical schemas/fixtures](../contracts/README.md) and an [HTTP walkthrough](http-api.md). Motion, media and sequence sections below describe later delivery increments. The [API plan](api-plan.md) defines domain behavior; [implementation status](implementation-status.md) records verified software and remaining hardware gates.
+Status: lifecycle guide for the replacement API. The [canonical schemas/fixtures](../contracts/README.md) and [HTTP walkthrough](http-api.md) describe the delivered wire surface. Motion foundations are implemented; velocity, media and sequences below include later delivery work. The [API plan](api-plan.md) defines domain behavior; [increment-2 status](increment-2-status.md) records current progress and remaining hardware gates.
 
 ## Contract ownership
 
@@ -67,6 +67,18 @@ Use `PUT /api/motion/joint_setpoints` for slider/jog targets and `PUT /api/motio
 
 A scoped helper may refresh the target while the application deliberately controls it; a raw setter sends only one update. Do not renew old interactive work after expiry or reconnect. Cancel explicitly on scope exit. Joint expiry requests a verified hold without removing stiffness; base expiry requests controlled stop. Both report uncertainty if confirmation fails. Agent-side enforcement is independent of a surviving SSE connection or API process; no client may infer physical stop solely from its own network failure.
 
+Python's implemented joint scope schedules refresh from the TTL returned by the
+server, using a conservative monotonic deadline measured from request dispatch.
+It keeps one outstanding PUT and one latest pending target. Concurrent application
+updates may be coalesced; acknowledgement does not promise that each intermediate
+target was sent. Late or lost acknowledgements stop refresh and trigger a bounded
+cancellation attempt for the known operation. An unknown creation cannot be
+cancelled by operation ID until that ID is known; report the uncertainty and use
+TTL/session cleanup, without silently creating a new control. Surface background
+errors to the application and on scope exit. Parent-client shutdown stops
+refreshers before closing its session or transport. Python examples and error
+behavior are in the [client README](../clients/python/README.md#joint-controls).
+
 ## SSE recipe
 
 1. Create a subscription for exact event types and sample groups/rates. Inspect returned accepted rates and producer readiness; a stream does not automatically activate vision detection or a speech listener.
@@ -79,9 +91,57 @@ A scoped helper may refresh the target while the application deliberately contro
 
 The consumer boundary must be documented by each SDK: transport delivery does not guarantee that arbitrary application side effects completed. There is no exactly-once application-action guarantee. Include fixtures for normal delivery, duplicate IDs, unknown event types, malformed frames, coalesced samples, queue overflow, reconnect reset, and expired/restarted streams. Historical replay is outside the four-increment plan; durable sample/media recordings remain available independently.
 
+## Vocabulary listener lifecycle
+
+Listener creation returns a resource, initially `starting`, rather than an Operation.
+Read its status URL or observe the owning session's `speech.listener_changed` events
+to distinguish configuration completion, warming, observed listening, manual/output
+pause and failure. Recognized events carry listener IDs and hypotheses. Subscribe
+before awaiting input; after a stream reset, GET the listener and treat missed
+hypotheses as lost. Do not replay recognition events or recreate an invalidated
+listener automatically.
+
+Clients may use `PATCH` for configuration and manual pause, and `POST .../stop` for
+cleanup. An uncertain PATCH response requires a GET, not an automatic retry.
+Creation/stop use the normal retained idempotency keys. Keep listener handles pinned
+to their creating client/session/generation, and expose unknown cleanup rather than
+claiming that closing a context stopped the native recognizer. Shared producer
+selection and output suppression are server responsibilities. Public HTTP/SSE and
+Python sync/async scoped handles are implemented. A local readiness wait must not
+infer `listening` from `warming` or from successful configuration alone. A wait
+timeout or cancellation leaves the activity owned and running; explicit stop or
+session cleanup ends it. SDKs must document these independently from scope exit,
+which requests cleanup and surfaces uncertainty. See the
+[Python listener guide](../clients/python/README.md#vocabulary-listeners).
+
 ## Portable motion, media, and sequences
 
+Sample-recording clients create an owned Recording and track its associated
+Operation through finalization. A stop request is accepted asynchronously; do not
+report a finished asset until GET exposes its ID and the operation ends. A failed
+recording can still produce a partial asset. Local wait cancellation does not imply
+server stop; explicit recording stop, operation cancellation and session cleanup
+finalize it. Unknown cleanup means the writer has not been confirmed finished, not
+that a new native robot command should be submitted. Recordings never automatically
+resume after connection/session loss.
+
+Inspect NDJSON gap records and per-group quality before converting samples into
+poses or trajectories. An incomplete recording may have no end row; its asset
+status/error is authoritative. File checksums verify downloaded bytes, not missing
+acquisitions. A client must explicitly select/resample valid intervals instead of
+interpolating across gaps without user intent. The recording HTTP and asset routes
+and Python sync/async recording/download helpers are implemented. Python waits
+track recording finalization separately from the associated operation outcome;
+a cancelled operation may retain a completed asset. Downloads verify size and
+checksum before publishing, and resume only on explicit request. See the
+[Python recording guide](../clients/python/README.md#sample-recordings-and-assets).
+
 Use discovered names/units and fresh measured state to build Recorder poses. Save schema-versioned trajectory JSON; submit it directly to the server. A Python builder and a future Rust editor must produce interchangeable documents. The same applies to finite sequence JSON and server-side dry validation. Resource checks and scheduling cannot rely on a particular builder having validated them first.
+
+The [Recorder example](../examples/recorder/README.md) exercises these rules using
+the public Python client. Its browser heartbeat, input arming, editing and explicit
+gap-aware sample conversion are application policy; they add no bridge endpoints
+or prerequisites for other clients.
 
 Binary images/audio/video/downloads use the documented content routes and content types. Assets carry metadata, sizes/checksums, and partial/completed status; SSE announces metadata/lifecycle only. Stream downloads incrementally rather than requiring base64 JSON or loading large assets into memory. Browser-side and native clients follow the same protocol even if their networking libraries differ.
 

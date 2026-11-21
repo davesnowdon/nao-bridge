@@ -154,6 +154,21 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             status_code=200 if connected else 503,
         )
 
+    @app.get("/api/sensors")
+    async def sensors(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.sensors()
+
+    @app.get("/api/motion/joints")
+    async def joints(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.joint_catalog()
+
+    @app.get("/api/motion/postures")
+    async def postures(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.posture_catalog()
+
     @app.get("/api/openapi.json")
     async def openapi() -> dict[str, Any]:
         return OPENAPI
@@ -276,6 +291,206 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/assets")
+    async def list_assets(request: Request) -> dict[str, Any]:
+        query(request, {"cursor", "limit"})
+        core.recordings.http.check()
+        limit = bounded_int(request, "limit", 50, 100, 1)
+        values = sorted(
+            (
+                value
+                for aid, value in core.recordings.assets.items()
+                if aid not in core.recordings.http.deleting
+            ),
+            key=lambda value: (value["created_at"], value["id"]),
+        )
+        cursor = request.query_params.get("cursor")
+        if cursor:
+            positions = [index for index, value in enumerate(values) if value["id"] == cursor]
+            if not positions:
+                raise BridgeError("invalid_request", "Cursor is invalid or expired")
+            values = values[positions[0] + 1 :]
+        page = values[:limit]
+        return {
+            "items": copy.deepcopy(page),
+            "next_cursor": page[-1]["id"] if len(values) > limit else None,
+        }
+
+    @app.get("/api/assets/{asset_id}")
+    async def get_asset(request: Request, asset_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(core.recordings.http.get(asset_id))
+
+    @app.get("/api/assets/{asset_id}/content")
+    async def asset_content(request: Request, asset_id: str) -> Response:
+        query(request, set())
+        return await core.recordings.http.content(
+            asset_id, request.headers.get("range"), request.headers.get("if-range")
+        )
+
+    @app.delete("/api/assets/{asset_id}")
+    async def delete_asset(request: Request, asset_id: str) -> Response:
+        query(request, set())
+        await core.recordings.http.delete(asset_id)
+        return Response(status_code=204)
+
+    @app.post("/api/recordings")
+    async def create_recording(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "RecordingCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /recordings",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.recordings.create(owner, value),
+        )
+        return created(result, "recordings", 201)
+
+    @app.get("/api/recordings/{recording_id}")
+    async def get_recording(request: Request, recording_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.recordings.get(recording_id, session(request, False).public["id"]).public
+        )
+
+    @app.post("/api/recordings/{recording_id}/stop")
+    async def stop_recording(request: Request, recording_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.recordings.get(recording_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /recordings/" + recording_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.recordings.stop(item),
+        )
+        return created(result, "recordings", 202)
+
+    @app.post("/api/speech/listeners")
+    async def create_listener(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "ListenerCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /speech/listeners",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.listeners.create(owner, value),
+        )
+        return created(result, "speech/listeners", 201)
+
+    @app.get("/api/speech/listeners/{listener_id}")
+    async def get_listener(request: Request, listener_id: str) -> dict[str, Any]:
+        query(request, set())
+        return copy.deepcopy(
+            core.listeners.get(listener_id, session(request, False).public["id"]).public
+        )
+
+    @app.patch("/api/speech/listeners/{listener_id}")
+    async def configure_listener(request: Request, listener_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "ListenerConfigure")
+        item = core.listeners.get(listener_id, session(request).public["id"])
+        return created(core.listeners.configure(item, value), "speech/listeners", 202)
+
+    @app.post("/api/speech/listeners/{listener_id}/stop")
+    async def stop_listener(request: Request, listener_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.listeners.get(listener_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /speech/listeners/" + listener_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.listeners.stop(item),
+        )
+        return created(result, "speech/listeners", 202)
+
+    @app.post("/api/motion/joint_moves")
+    async def move_joints(request: Request) -> Response:
+        value = await body(request, "JointMoveCreate")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /motion/joint_moves",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.move_joints(item, value),
+        )
+        return created(result, "operations", 202)
+
+    async def submit_motion_action(
+        request: Request, kind: str, schema: str, route: str
+    ) -> Response:
+        value = await body(request, schema)
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /motion/" + route,
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.motion_action(item, kind, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.put("/api/motion/joint_setpoints")
+    async def joint_setpoint(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "JointSetpoint")
+        result = core.joint_controls.submit(session(request), value)
+        return created(result, "operations", 202)
+
+    @app.post("/api/motion/wake")
+    async def wake(request: Request) -> Response:
+        return await submit_motion_action(request, "wake", "MotionTransitionCreate", "wake")
+
+    @app.post("/api/motion/rest")
+    async def rest(request: Request) -> Response:
+        return await submit_motion_action(request, "rest", "MotionTransitionCreate", "rest")
+
+    @app.post("/api/motion/stiffness_changes")
+    async def stiffness(request: Request) -> Response:
+        return await submit_motion_action(
+            request, "stiffness", "StiffnessCreate", "stiffness_changes"
+        )
+
+    @app.post("/api/motion/posture_changes")
+    async def posture(request: Request) -> Response:
+        return await submit_motion_action(request, "posture", "PostureCreate", "posture_changes")
+
+    @app.post("/api/motion/trajectory_runs")
+    async def trajectory(request: Request) -> Response:
+        value = await body(request, "TrajectoryRunCreate")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /motion/trajectory_runs",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.trajectory(item, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.post("/api/autonomy/transitions")
+    async def configure_autonomy(request: Request) -> Response:
+        value = await body(request, "AutonomyTransitionCreate")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /autonomy/transitions",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.configure_autonomy(item, value),
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/operations/{operation_id}")
     async def get_operation(request: Request, operation_id: str) -> dict[str, Any]:
         return copy.deepcopy(
@@ -350,6 +565,14 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     "schema": "/api/schemas.json#/$defs/" + schema,
                     "support": core.capabilities()["features"]["touch.changed"]
                     if name == "touch.changed"
+                    else core.capabilities()["features"][name]
+                    if name in {"motion.posture_changed", "motion.fall_changed"}
+                    else core.capabilities()["features"]["speech.listeners"]
+                    if name in {"speech.recognized", "speech.listener_changed"}
+                    else core.capabilities()["features"]["recordings"]
+                    if name == "recording.changed"
+                    else core.capabilities()["features"]["assets"]
+                    if name == "asset.created"
                     else {"status": "available", "reason": None},
                 }
                 for name, schema in EVENT_TYPES.items()
@@ -401,6 +624,15 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         allow_methods=["*"],
         allow_headers=["*"],
         allow_private_network=True,
-        expose_headers=["Location", "X-Request-ID", "Retry-After"],
+        expose_headers=[
+            "Location",
+            "X-Request-ID",
+            "Retry-After",
+            "ETag",
+            "Accept-Ranges",
+            "Content-Range",
+            "Content-Length",
+            "Content-Disposition",
+        ],
     )
     return app

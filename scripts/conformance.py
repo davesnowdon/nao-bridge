@@ -1,6 +1,7 @@
 """SDK-independent core contract checks, restricted to robot-free backends."""
 
 import argparse
+import hashlib
 import http.client
 import json
 import time
@@ -51,6 +52,56 @@ class Probe:
             format_checker=FormatChecker(),
         ).validate(value)
 
+    def sample_recording(self):
+        assert self.request("GET", "/api/robot")["backend"] in {"fake", "native-fixture"}
+        recording = self.request(
+            "POST",
+            "/api/recordings",
+            {
+                "source": {"kind": "samples", "groups": ["joints", "sensors"], "rate_hz": 5},
+                "duration": 0.8,
+                "max_bytes": 262144,
+            },
+            status=201,
+            schema="Recording",
+        )
+        outcome = self.wait({"id": recording["operation_id"]})
+        assert outcome["status"] in {"succeeded", "failed"}, outcome
+        current = self.request("GET", "/api/recordings/" + recording["id"], schema="Recording")
+        asset = self.request("GET", "/api/assets/" + current["asset_id"], schema="Asset")
+        if outcome["status"] == "failed":
+            assert outcome["error"]["code"] == "recording_gaps" and asset["status"] == "partial", (
+                outcome
+            )
+        path = "/api/assets/" + asset["id"] + "/content"
+        conn = self.connection()
+        try:
+            conn.request("GET", path)
+            response = conn.getresponse()
+            raw = response.read()
+            assert response.status == 200 and len(raw) == asset["size_bytes"]
+            assert hashlib.sha256(raw).hexdigest() == asset["sha256"]
+            etag = response.getheader("ETag")
+            assert etag == '"' + asset["sha256"] + '"'
+            rows = [json.loads(row) for row in raw.splitlines()]
+            for row in rows:
+                self.validate("RecordingLine", row)
+            assert rows[0]["type"] == "metadata" and rows[-1]["type"] == "end"
+            samples = [row["state"] for row in rows if row["type"] == "sample"]
+            assert len(samples) >= 2
+            assert any(sample["groups"]["joints"]["quality"] == "fresh" for sample in samples)
+            assert all(
+                sample["connection_generation"] == recording["connection_generation"]
+                for sample in samples
+            )
+            conn.request("GET", path, headers={"Range": "bytes=0-31", "If-Range": etag})
+            response = conn.getresponse()
+            assert response.status == 206 and response.read() == raw[:32]
+            assert response.getheader("Content-Range") == "bytes 0-31/" + str(len(raw))
+        finally:
+            conn.close()
+        return asset["id"]
+
     def wait(self, operation):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
@@ -60,7 +111,7 @@ class Probe:
             time.sleep(0.02)
         raise AssertionError("Operation did not finish within fixture deadline")
 
-    def stream(self, subscription, *, reconnect=False, touch=False):
+    def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
         conn = self.connection(timeout=3)
         headers = {
             "X-Session-ID": self.session,
@@ -77,9 +128,17 @@ class Probe:
         if touch:
             wanted.add("touch.changed")
         seen, fields, ids = set(), {}, set()
-        deadline = time.monotonic() + 5
+        expected_contacts = {(sensor, level) for sensor in contacts for level in (False, True)}
+        edges, levels = set(), set()
+        pending_observations = list(observations)
+        deadline = time.monotonic() + (16 if contacts else 5)
         try:
-            while wanted - seen and time.monotonic() < deadline:
+            while (
+                wanted - seen
+                or expected_contacts - edges
+                or expected_contacts - levels
+                or pending_observations
+            ) and time.monotonic() < deadline:
                 raw = response.readline(262145)
                 assert raw and len(raw) <= 262144, "Unexpected EOF or oversized frame"
                 line = raw.decode("utf-8").rstrip("\r\n")
@@ -94,11 +153,29 @@ class Probe:
                     assert event["id"] not in ids
                     ids.add(event["id"])
                     seen.add(event["type"])
+                    for expected in pending_observations[:]:
+                        kind, schema, data = expected
+                        if event["type"] == kind and event["data"] == data:
+                            self.validate(schema, event["data"])
+                            pending_observations.remove(expected)
+                    if event["type"] == "touch.changed":
+                        edges.add((event["data"]["sensor"], event["data"]["pressed"]))
+                    elif event["type"] == "state.sample":
+                        group = event["data"]["state"]["groups"].get("sensors", {})
+                        value = group.get("value") or {}
+                        if group.get("quality") == "fresh":
+                            levels.update(value.get("touch", {}).items())
                     fields = {}
                 else:
                     key, _, value = line.partition(":")
                     fields[key] = value.removeprefix(" ")
             assert wanted <= seen, (wanted, seen)
+            assert not pending_observations, ("missing observations", pending_observations)
+            assert expected_contacts <= edges, ("missing contact edges", expected_contacts - edges)
+            assert expected_contacts <= levels, (
+                "missing contact levels",
+                expected_contacts - levels,
+            )
         finally:
             response.close()
             conn.close()
@@ -117,6 +194,22 @@ def run(url):
         robot = probe.request("GET", "/api/robot", schema="Robot")
     probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
     probe.request("GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State")
+    sensors = probe.request("GET", "/api/sensors", schema="Sensors")
+    assert {"touch.hand.left.back", "touch.hand.right.back", "bumper.left", "bumper.right"} <= {
+        item["id"] for item in sensors["items"]
+    }
+    joints = probe.request("GET", "/api/motion/joints", schema="Joints")
+    assert joints["availability"]["status"] == "available"
+    assert joints["chains"]["Head"] == ["HeadYaw", "HeadPitch"]
+    assert next(item for item in joints["items"] if item["name"] == "LHand")["unit"] == "ratio"
+    probe.request("GET", "/api/motion/postures", schema="Postures")
+    state = probe.request(
+        "GET", "/api/state?include=joints,motion&wait_for_fresh_ms=1000", schema="State"
+    )
+    probe.validate("JointStateValue", state["groups"]["joints"]["value"])
+    probe.validate("MotionStateValue", state["groups"]["motion"]["value"])
+    assert state["groups"]["joints"]["value"]["measured"]["HeadYaw"] == 0.1
+    assert state["groups"]["joints"]["value"]["commanded"]["HeadYaw"] == 0.2
     session = probe.request(
         "POST",
         "/api/sessions",
@@ -160,6 +253,73 @@ def run(url):
             headers={"Idempotency-Key": "speech"},
         )
         assert probe.wait(operation)["status"] == "succeeded"
+        autonomy = probe.request(
+            "POST",
+            "/api/autonomy/transitions",
+            {"settings": {"life_state": "disabled", "basic_awareness": False, "breathing": False}},
+            status=202,
+            schema="Operation",
+        )
+        autonomy_result = probe.wait(autonomy)
+        assert autonomy_result["status"] == "succeeded", autonomy_result
+        assert all(
+            item["status"] in {"applied", "unchanged"}
+            for item in autonomy_result["result"]["settings"]
+        )
+        state = probe.request(
+            "GET", "/api/state?include=autonomy&wait_for_fresh_ms=1000", schema="State"
+        )
+        probe.validate("AutonomyStateValue", state["groups"]["autonomy"]["value"])
+        assert state["groups"]["autonomy"]["value"]["settings"]["life_state"] == "disabled"
+        previous = probe.request(
+            "POST",
+            "/api/motion/joint_moves",
+            {"positions": {"HeadYaw": 0.1}, "duration": 2},
+            status=202,
+            schema="Operation",
+        )
+        replacement = probe.request(
+            "POST",
+            "/api/motion/joint_moves",
+            {"positions": {"HeadYaw": 0}, "duration": 0.1, "replace_operation_id": previous["id"]},
+            status=202,
+            schema="Operation",
+        )
+        assert replacement["replaces_operation_id"] == previous["id"]
+        assert probe.wait(replacement)["status"] == "succeeded"
+        assert probe.wait(previous)["status"] in {"cancelled", "succeeded"}
+        trajectory_run = probe.request(
+            "POST",
+            "/api/motion/trajectory_runs",
+            {
+                "trajectory": {
+                    "schema_version": "1.0",
+                    "interpolation": "native",
+                    "keyframes": [
+                        {"time": 0.1, "positions": {"HeadYaw": 0.2}},
+                        {"time": 0.2, "positions": {"HeadYaw": -0.2}},
+                        {"time": 0.3, "positions": {"HeadYaw": 0}},
+                    ],
+                }
+            },
+            status=202,
+            schema="Operation",
+        )
+        assert probe.wait(trajectory_run)["status"] == "succeeded"
+        for route, body in [
+            ("stiffness_changes", {"targets": {"Head": 0.7}, "duration": 0.1}),
+            ("rest", {}),
+            ("wake", {}),
+            ("posture_changes", {"name": "StandInit"}),
+            ("stiffness_changes", {"targets": {"Body": 0.5}, "duration": 0.1}),
+        ]:
+            configured = probe.request(
+                "POST", "/api/motion/" + route, body, status=202, schema="Operation"
+            )
+            result = probe.wait(configured)
+            assert result["status"] == "succeeded" and result["result"]["state_refreshed"]
+        owners = probe.request("GET", "/api/robot/diagnostics")["configuration_owners"]
+        assert owners["joint.HeadYaw"] == session["id"]
         probe.request(
             "POST",
             "/api/speech/utterances",
@@ -167,6 +327,11 @@ def run(url):
             status=400,
             schema="Error",
         )
+        if (
+            probe.request("GET", "/api/robot/capabilities")["features"]["recordings"]["status"]
+            == "available"
+        ):
+            probe.sample_recording()
         subscription = probe.request(
             "POST",
             "/api/events/subscriptions",
@@ -193,6 +358,10 @@ def run(url):
             schema="Operation",
         )
         assert probe.wait(cleanup)["status"] == "succeeded"
+        assert (
+            session["id"]
+            not in probe.request("GET", "/api/robot/diagnostics")["configuration_owners"].values()
+        )
     return {
         "backend": robot["backend"],
         "contract_version": robot["contract_version"],
@@ -202,6 +371,8 @@ def run(url):
             "session",
             "idempotency",
             "speech",
+            "joint_discovery_and_trajectory",
+            "motion_configuration_and_ownership",
             "validation",
             "sse",
             "reconnect_without_replay",
