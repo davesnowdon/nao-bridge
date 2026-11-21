@@ -74,6 +74,72 @@
         ]
       },
       "valid": true
+    },
+    {
+      "schema": "RecordingCreate",
+      "value": {
+        "source": {
+          "kind": "samples",
+          "groups": [
+            "joints"
+          ]
+        },
+        "duration": 1
+      },
+      "valid": true
+    },
+    {
+      "schema": "RecordingCreate",
+      "value": {
+        "source": {
+          "kind": "samples",
+          "groups": [
+            "joints"
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "schema": "RecordingCreate",
+      "value": {
+        "source": {
+          "kind": "samples",
+          "groups": [
+            "joints"
+          ]
+        },
+        "duration": 0
+      },
+      "valid": false
+    },
+    {
+      "schema": "RecordingCreate",
+      "value": {
+        "source": {
+          "kind": "samples",
+          "groups": [
+            "joints",
+            "joints"
+          ]
+        },
+        "duration": 1
+      },
+      "valid": false
+    },
+    {
+      "schema": "RecordingCreate",
+      "value": {
+        "source": {
+          "kind": "samples",
+          "groups": [
+            "joints"
+          ]
+        },
+        "duration": 1,
+        "max_bytes": 1
+      },
+      "valid": false
     }
   ]
 }

@@ -1,30 +1,74 @@
 """NAO Bridge HTTP/SSE client. The replacement contract intentionally removes the v1 API."""
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
-from .client import Nao, Operation, Subscription
+from .client import JointControl, Listener, Nao, Operation, Recording, Subscription
+from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
     CleanupError,
+    DownloadIntegrityError,
+    ListenerError,
+    ListenerTimeout,
     OperationCancelled,
     OperationFailed,
     OperationTimeout,
     OperationUnknown,
     PendingRequest,
     ProtocolError,
+    RecordingFailed,
+    RecordingTimeout,
     SessionLost,
     StaleState,
 )
-from .models import Capabilities, Event, OperationData, RobotInfo, SessionData, State, StreamNotice
+from .listeners import AsyncListener
+from .models import (
+    AssetData,
+    AssetsPage,
+    Capabilities,
+    Event,
+    ListenerConfiguration,
+    ListenerData,
+    OperationData,
+    RecordingData,
+    RecordingSource,
+    RobotInfo,
+    SessionData,
+    SpeechHypothesis,
+    SpeechRecognizedData,
+    State,
+    StreamNotice,
+)
+from .recordings import AsyncRecording
+from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "AssetData",
+    "AssetsPage",
+    "AsyncRecording",
+    "Recording",
+    "RecordingData",
+    "RecordingSource",
+    "RecordingFailed",
+    "RecordingTimeout",
+    "DownloadIntegrityError",
     "AsyncNao",
     "AsyncOperation",
     "AsyncSubscription",
+    "AsyncJointControl",
+    "AsyncListener",
+    "Listener",
+    "ListenerConfiguration",
+    "ListenerData",
+    "SpeechHypothesis",
+    "SpeechRecognizedData",
+    "ListenerError",
+    "ListenerTimeout",
     "Nao",
     "Operation",
     "Subscription",
+    "JointControl",
     "AmbiguousRequest",
     "BridgeError",
     "CleanupError",
@@ -43,4 +87,6 @@ __all__ = [
     "SessionData",
     "State",
     "StreamNotice",
+    "Keyframe",
+    "Trajectory",
 ]

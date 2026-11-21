@@ -442,6 +442,38 @@
         "speech": {
           "type": "object",
           "additionalProperties": true
+        },
+        "autonomy": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/AutonomySetting"
+          }
+        },
+        "motion_events": {
+          "type": "object",
+          "properties": {
+            "posture_fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "fall_phases": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "posture_fields",
+            "fall_phases"
+          ],
+          "additionalProperties": true
+        },
+        "recognition": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
@@ -637,6 +669,13 @@
             "maxLength": 128,
             "pattern": "^[A-Za-z0-9_-]+$"
           }
+        },
+        "replaces_operation_id": {
+          "type": "string",
+          "description": "Previous finite motion named by this replacement, when applicable."
+        },
+        "control": {
+          "$ref": "#/$defs/JointControlStatus"
         }
       },
       "required": [
@@ -1376,6 +1415,1311 @@
       },
       "required": [],
       "additionalProperties": false
+    },
+    "Sensor": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "state_group": {
+          "type": "string"
+        },
+        "state_field": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/Feature"
+        },
+        "events": {
+          "$ref": "#/$defs/Feature"
+        },
+        "event_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "unit",
+        "state_group",
+        "state_field",
+        "state",
+        "events",
+        "event_type"
+      ],
+      "additionalProperties": true
+    },
+    "Sensors": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Sensor"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation"
+      ],
+      "additionalProperties": true
+    },
+    "Joint": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "rad",
+            "ratio"
+          ]
+        },
+        "minimum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "maximum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_velocity": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "chains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "coupled_with": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "readable": {
+          "type": "boolean"
+        },
+        "writable": {
+          "type": "boolean"
+        },
+        "stiffness_supported": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "unit",
+        "minimum",
+        "maximum",
+        "max_velocity",
+        "chains",
+        "coupled_with",
+        "readable",
+        "writable",
+        "stiffness_supported",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "Joints": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Joint"
+          }
+        },
+        "chains": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availability": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "items",
+        "chains",
+        "connection_generation",
+        "availability"
+      ],
+      "additionalProperties": true
+    },
+    "Postures": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availability": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation",
+        "availability"
+      ],
+      "additionalProperties": true
+    },
+    "JointStateValue": {
+      "type": "object",
+      "properties": {
+        "measured": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "commanded": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "stiffness": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "measured",
+        "commanded",
+        "stiffness"
+      ],
+      "additionalProperties": true
+    },
+    "MotionStateValue": {
+      "type": "object",
+      "properties": {
+        "awake": {
+          "type": "boolean"
+        },
+        "locomotion_active": {
+          "type": "boolean"
+        },
+        "posture": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "awake",
+        "locomotion_active",
+        "posture"
+      ],
+      "additionalProperties": true
+    },
+    "JointPositions": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "Keyframe": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600
+        },
+        "positions": {
+          "$ref": "#/$defs/JointPositions"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "time",
+        "positions"
+      ],
+      "additionalProperties": false
+    },
+    "Trajectory": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "interpolation": {
+          "const": "native"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "keyframes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/Keyframe"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "interpolation",
+        "keyframes"
+      ],
+      "additionalProperties": false,
+      "description": "Portable absolute joint trajectory. Times must increase strictly. Runtime joint limits and coupled timelines are checked before dispatch. Sparse per-joint timelines omit intermediate frames and hold after their last point."
+    },
+    "JointMoveCreate": {
+      "type": "object",
+      "properties": {
+        "positions": {
+          "$ref": "#/$defs/JointPositions"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600,
+          "default": 1.0
+        },
+        "replace_operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Same-session finite motion to cancel before dispatch. Validation and resource admission precede cancellation."
+        }
+      },
+      "required": [
+        "positions"
+      ],
+      "additionalProperties": false
+    },
+    "TrajectoryRunCreate": {
+      "type": "object",
+      "properties": {
+        "trajectory": {
+          "$ref": "#/$defs/Trajectory"
+        },
+        "replace_operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Same-session finite motion to cancel before dispatch. Validation and resource admission precede cancellation."
+        }
+      },
+      "required": [
+        "trajectory"
+      ],
+      "additionalProperties": false
+    },
+    "MotionTransitionCreate": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "StiffnessCreate": {
+      "type": "object",
+      "properties": {
+        "targets": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 600,
+          "default": 1.0
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "PostureCreate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.4
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "AutonomySettings": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "life_state": {
+          "type": "string",
+          "enum": [
+            "disabled",
+            "solitary"
+          ]
+        },
+        "basic_awareness": {
+          "type": "boolean"
+        },
+        "background_movement": {
+          "type": "boolean"
+        },
+        "listening_movement": {
+          "type": "boolean"
+        },
+        "speaking_movement": {
+          "type": "boolean"
+        },
+        "autonomous_blinking": {
+          "type": "boolean"
+        },
+        "breathing": {
+          "type": "boolean"
+        },
+        "idle_posture": {
+          "type": "boolean"
+        },
+        "awareness_running": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AutonomyTransitionCreate": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/AutonomySettings"
+        },
+        "allow_partial": {
+          "type": "boolean",
+          "default": false
+        },
+        "restore_on_close": {
+          "type": "boolean",
+          "default": false,
+          "description": "True is currently unsupported; settings remain applied on session close."
+        }
+      },
+      "required": [
+        "settings"
+      ],
+      "additionalProperties": false
+    },
+    "AutonomySetting": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "boolean"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "boolean"
+            ]
+          }
+        },
+        "status": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mechanism": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "values",
+        "status",
+        "reason",
+        "mechanism"
+      ],
+      "additionalProperties": true
+    },
+    "AutonomyStateValue": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "string",
+              "null"
+            ]
+          }
+        },
+        "unavailable": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "settings",
+        "unavailable"
+      ],
+      "additionalProperties": true
+    },
+    "JointSetpoint": {
+      "type": "object",
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "positions": {
+          "$ref": "#/$defs/JointPositions"
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.1
+        },
+        "ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        }
+      },
+      "required": [
+        "control_id",
+        "sequence",
+        "positions"
+      ],
+      "additionalProperties": false
+    },
+    "JointControlStatus": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ttl": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "ttl",
+        "expires_at"
+      ],
+      "additionalProperties": true
+    },
+    "MotionPostureChanged": {
+      "type": "object",
+      "properties": {
+        "posture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "posture"
+          ]
+        },
+        {
+          "required": [
+            "family"
+          ]
+        }
+      ],
+      "additionalProperties": true,
+      "description": "Partial native observation: only supplied fields changed; this is not an atomic posture/family snapshot."
+    },
+    "MotionFallChanged": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "falling",
+            "fallen"
+          ]
+        }
+      },
+      "required": [
+        "phase"
+      ],
+      "additionalProperties": true,
+      "description": "Observed fall-manager start/completion, not persistent physical state or proof of recovery. No synthetic standing event."
+    },
+    "BatteryStateValue": {
+      "type": "object",
+      "properties": {
+        "charge": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "charge",
+        "reason"
+      ],
+      "additionalProperties": true,
+      "description": "ALBattery charge percentage observed through shared ALMemory sampling; null is unavailable, not empty."
+    },
+    "ListenerCreate": {
+      "type": "object",
+      "properties": {
+        "vocabulary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pause_during_output": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "vocabulary"
+      ],
+      "additionalProperties": false
+    },
+    "ListenerConfigure": {
+      "type": "object",
+      "properties": {
+        "vocabulary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pause_during_output": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false
+    },
+    "ListenerConfiguration": {
+      "type": "object",
+      "properties": {
+        "vocabulary": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pause_during_output": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "vocabulary",
+        "language",
+        "confidence_threshold",
+        "pause_during_output",
+        "paused"
+      ],
+      "additionalProperties": true
+    },
+    "Listener": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configuration": {
+          "$ref": "#/$defs/ListenerConfiguration"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "configuring",
+            "warming",
+            "listening",
+            "paused",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "configuration",
+        "status",
+        "reason",
+        "error"
+      ],
+      "additionalProperties": true
+    },
+    "SpeechRecognized": {
+      "type": "object",
+      "properties": {
+        "listener_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "hypotheses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "text",
+              "confidence"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "listener_id",
+        "hypotheses"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "samples"
+        },
+        "groups": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "joints",
+              "sensors",
+              "motion",
+              "autonomy"
+            ]
+          }
+        },
+        "rate_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 50
+        }
+      },
+      "required": [
+        "kind",
+        "groups"
+      ],
+      "additionalProperties": false
+    },
+    "RecordingCreate": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/RecordingSource"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 300
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 65536,
+          "maximum": 33554432,
+          "default": 8388608
+        },
+        "allow_lower_rate": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "source",
+        "duration"
+      ],
+      "additionalProperties": false
+    },
+    "Recording": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "source": {
+          "$ref": "#/$defs/RecordingSource"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 65536
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "recording",
+            "stopping",
+            "completed",
+            "failed"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asset_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "error",
+        "operation_id",
+        "source",
+        "duration",
+        "max_bytes",
+        "status",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "asset_id"
+      ],
+      "additionalProperties": true
+    },
+    "Asset": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "partial"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "content_type",
+        "created_at",
+        "expires_at",
+        "size_bytes",
+        "sha256",
+        "status",
+        "error",
+        "metadata"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingMetadata": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "metadata"
+        },
+        "schema_version": {
+          "const": "1.0"
+        },
+        "recording_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "robot": {
+          "$ref": "#/$defs/Robot"
+        },
+        "source": {
+          "$ref": "#/$defs/RecordingSource"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "units": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "schema_version",
+        "recording_id",
+        "robot",
+        "source",
+        "created_at",
+        "units"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingSample": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "sample"
+        },
+        "state": {
+          "$ref": "#/$defs/State"
+        }
+      },
+      "required": [
+        "type",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingGap": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "gap"
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "from_bridge_time_ms": {
+          "type": "number"
+        },
+        "to_bridge_time_ms": {
+          "type": "number"
+        },
+        "dropped_samples": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "reasons",
+        "from_bridge_time_ms",
+        "to_bridge_time_ms",
+        "dropped_samples"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingEnd": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "end"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ended_bridge_time_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "reason",
+        "sample_count",
+        "dropped_samples",
+        "ended_bridge_time_ms"
+      ],
+      "additionalProperties": true
+    },
+    "RecordingLine": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RecordingMetadata"
+        },
+        {
+          "$ref": "#/$defs/RecordingSample"
+        },
+        {
+          "$ref": "#/$defs/RecordingGap"
+        },
+        {
+          "$ref": "#/$defs/RecordingEnd"
+        }
+      ]
+    },
+    "Assets": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Asset"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": true
     }
   }
 }

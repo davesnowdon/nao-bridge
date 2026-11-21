@@ -16,6 +16,11 @@ except ImportError:
     import queue
 
 from native import FixtureDriver, NativeDriver
+from motion import valid_trajectory, valid_motion_action
+from autonomy import valid_autonomy, TransitionStopped
+from controls import JointControls, ControlError
+from sampling import GROUPS, GroupSampler
+from recognition import valid_configuration
 from wire import VERSION, encode, frames, monotonic
 
 
@@ -36,14 +41,20 @@ class Agent(object):
         self.revoked = {}
         self.lock = threading.RLock()
         self.work = queue.Queue(16)
+        self.recognition_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
         self.records = collections.OrderedDict()
         self.dropped = 0
+        self.recognition_cleanup = None
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
-        self.driver = FixtureDriver(self.observe) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe)
+        self.driver = FixtureDriver(self.observe, self.lock) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe, self.lock)
+        self.sampler = GroupSampler(self.observe, monotonic)
+        self.controls = JointControls(self.driver, self.lock, monotonic,
+                                      lambda function, *args: background(self.run_control, function, *args),
+                                      lambda request: self.valid(request, initial=False) is None, self.observe)
 
     def observe(self, kind, data):
         try:
@@ -62,7 +73,20 @@ class Agent(object):
         with self.lock:
             self.heartbeat = 0
             self.epoch += 1
+            recognition = getattr(self.driver, "recognition", None)
+            if recognition:
+                recognition.invalidate()
+                self.recognition_cleanup = recognition
         self.emergency_stop.set()
+
+    def recognition_recovery(self):
+        while True:
+            target = self.recognition_cleanup
+            if target and target.close():
+                with self.lock:
+                    if self.recognition_cleanup is target:
+                        self.recognition_cleanup = None
+            time.sleep(0.1)
 
     def watchdog(self):
         while True:
@@ -71,8 +95,9 @@ class Agent(object):
                 expired = self.heartbeat and monotonic() - self.heartbeat > 1.0
             if expired:
                 self.lose_authority("heartbeat_lost")
+            self.controls.tick()
 
-    def valid(self, request):
+    def valid(self, request, initial=True):
         if request.get("agent") != self.instance or request.get("api") != self.api or request.get("epoch") != self.epoch:
             return "stale_generation"
         if not self.heartbeat:
@@ -80,9 +105,9 @@ class Agent(object):
         deadline = request.get("deadline")
         if isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or math.isnan(deadline) or math.isinf(deadline):
             return "invalid_deadline"
-        if not monotonic() < deadline <= monotonic() + 1.5:
+        if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") == "speak" and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint") and request.get("session_id") in self.revoked:
             return "fenced_session"
         return None
 
@@ -101,9 +126,10 @@ class Agent(object):
                 return False
         return bool(request.get("session_id"))
 
-    def worker(self):
+    def worker(self, work=None):
+        requests = self.work if work is None else work
         while True:
-            request, replies = self.work.get()
+            request, replies = requests.get()
             rid = request["id"]
             with self.lock:
                 record = self.records[rid]
@@ -117,17 +143,40 @@ class Agent(object):
                     self.records[rid].update(status="rejected", finished=monotonic())
                     self.reply(replies, request, "rejected", code="session_invalid", message=problem)
                     continue
-                record = self.records[rid]
-                record["phase"] = "dispatch_started"
             self.reply(replies, request, "accepted")
             future = None
             try:
-                future = self.driver.speak(request["payload"])
+                if request["action"] == "recognition":
+                    self.run_recognition(request, record, replies)
+                    continue
+                if request["action"] == "autonomy":
+                    self.run_autonomy(request, record, replies)
+                    continue
+                if request["action"] == "trajectory":
+                    self.driver.prepare_trajectory(request["payload"])
+                elif request["action"] == "motion_action":
+                    self.driver.prepare_motion_action(request["payload"])
                 with self.lock:
+                    if record.get("stop_requested"):
+                        result = {"cancelled": True, "dispatched": False}
+                        record.update(status="completed", result=result, finished=monotonic())
+                        self.reply(replies, request, result=result)
+                        continue
+                    problem = self.valid(request)
+                    if problem:
+                        record.update(status="rejected", finished=monotonic())
+                        self.reply(replies, request, "rejected", code="session_invalid", message=problem)
+                        continue
+                    record["phase"] = "dispatch_started"
+                    future = getattr(self.driver, request["action"])(request["payload"])
                     record["future"] = future
-                future.value()
+                native_result = future.value()
                 with self.lock:
                     result = {"cancelled": record.get("stop_requested", False), "backend": "naoqi"}
+                    if request["action"] == "motion_action" and request["payload"]["kind"] == "posture":
+                        if not isinstance(native_result, bool):
+                            raise RuntimeError("Invalid native posture result")
+                        result["reached"] = native_result
                     record.update(status="completed", result=result, finished=monotonic())
                 self.reply(replies, request, result=result)
             except Exception as error:
@@ -139,40 +188,99 @@ class Agent(object):
                     self.reply(replies, request, result=result)
                 elif future is None and isinstance(error, ValueError):
                     record.update(status="rejected", finished=monotonic())
-                    self.reply(replies, request, "rejected", code="unsupported", message=str(error))
+                    self.reply(replies, request, "rejected", code=getattr(error, "code", "unsupported"), message=str(error))
                 else:
                     record.update(status="unknown", finished=monotonic())
-                    self.reply(replies, request, "unknown", message="Native speech completion unconfirmed")
+                    self.reply(replies, request, "unknown", message="Native completion unconfirmed")
+
+    def run_recognition(self, request, record, replies):
+        adapter = self.driver.recognition
+        if adapter is None:
+            raise ValueError("Recognition unavailable")
+        record["phase"] = "dispatch_started"
+        try:
+            result = adapter.configure(request["payload"],
+                                       lambda: not record.get("stop_requested") and self.valid(request, initial=False) is None)
+        except Exception as error:
+            if adapter.poisoned or not isinstance(error, ValueError):
+                record.update(status="unknown", finished=monotonic())
+                self.reply(replies, request, "unknown", message="Recognition transition unconfirmed")
+            else:
+                record.update(status="rejected", finished=monotonic())
+                self.reply(replies, request, "rejected", code=getattr(error, "code", "unsupported"), message=str(error))
+            return
+        record.update(status="completed", result=result, finished=monotonic())
+        self.reply(replies, request, result=result)
+
+    def run_autonomy(self, request, record, replies):
+        before = self.driver.autonomy.prepare(request["payload"])
+
+        def dispatch(service, method, args):
+            with self.lock:
+                if record.get("stop_requested") or self.valid(request, initial=record["phase"] == "queued"):
+                    raise TransitionStopped()
+                record["phase"] = "dispatch_started"
+                future = getattr(service, method)(*args, **{"_async": True})
+                record["future"] = future
+            future.value(1000)
+
+        result = self.driver.autonomy.transition(request["payload"], before, dispatch)
+        with self.lock:
+            if record.get("stop_requested") and result["outcome"] != "unknown":
+                result["outcome"] = "cancelled"
+            result["dispatched"] = record["phase"] != "queued"
+            record.update(status="unknown" if result["outcome"] == "unknown" else "completed",
+                          result=result, finished=monotonic())
+        self.reply(replies, request, result=result)
 
     def stop(self, request):
         with self.lock:
             payload = request.get("payload", {}) if request else {}
             oid = payload.get("operation_id")
             sid = request.get("session_id") if request else None
+            controls = getattr(self, "controls", None)
+            control_ids = controls.stop(oid, sid, defer_hold=True) if controls else []
+            if oid and oid not in self.records and not control_ids and len(self.records) < 4096:
+                # The priority lane can overtake a command that has not arrived yet.
+                self.records[oid] = {"session_id": sid, "status": "completed", "phase": "queued",
+                                     "action": "cancelled", "finished": monotonic(),
+                                     "result": {"cancelled": True, "dispatched": False}}
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
+                        and (record.get("action") != "recognition" or key == oid)
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
                 record["stop_requested"] = True
         # Do not stop a different session's native output when the selected set is empty.
-        if any(record["phase"] != "queued" for _, record in selected) or (not oid and not sid):
+        active = [record for _, record in selected if record["phase"] != "queued"]
+        if any(record.get("action", "speak") == "speak" for record in active) or (not oid and not sid):
             try:
                 self.driver.stop()
             except Exception:
                 # The say future can confirm cancellation before stopAll replies.
                 logging.warning("stopAll did not confirm", exc_info=True)
+        motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") for name in record["names"]))
+        if motion_names or (not oid and not sid):
+            try:
+                self.driver.stop_motion(motion_names or ["Body"], stop_posture=(not oid and not sid) or any(record.get("motion_kind") in ("wake", "rest", "posture") for record in active))
+            except Exception:
+                logging.warning("Native motion stop did not confirm", exc_info=True)
         confirmed, unresolved = [], []
+        if controls:
+            controls.start_holds(control_ids)
+        deadline = monotonic() + 0.2
         for key, record in selected:
+            if record.get("action") in ("autonomy", "recognition") and record["phase"] != "queued":
+                # A completed individual setter does not finish a multi-setting transition.
+                (confirmed if record["status"] == "completed" else unresolved).append(key)
+                continue
             if record["phase"] == "queued":
                 confirmed.append(key)
                 continue
             future = record.get("future")
             if future is not None:
                 try:
-                    # One worker currently bounds this to one waiting future: 1 s in
-                    # native.stop + 200 ms here, within the API's 2 s backend timeout.
-                    # Concurrent native work needs a shared stop deadline, not N waits.
-                    future.value(200)
+                    future.value(max(1, int((deadline - monotonic()) * 1000)))
                     confirmed.append(key)
                     continue
                 except Exception:
@@ -185,7 +293,17 @@ class Agent(object):
                 unresolved.append(key)
         if oid and oid in self.records and self.records[oid]["status"] == "completed" and oid not in confirmed:
             confirmed.append(oid)
-        return {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
+        for key in control_ids:
+            value = controls.snapshot(key)
+            (confirmed if value["status"] in ("succeeded", "cancelled") else unresolved).append(key)
+        result = {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
+        outcomes = dict((key, self.records[key]["result"]) for key in confirmed
+                        if key in self.records and self.records[key].get("action") == "autonomy" and "result" in self.records[key])
+        if outcomes:
+            result["results"] = outcomes
+        if control_ids:
+            result["controls"] = dict((key, controls.snapshot(key)) for key in control_ids)
+        return result
 
     def safety_worker(self):
         while True:
@@ -211,16 +329,16 @@ class Agent(object):
         while True:
             try:
                 if not self.driver.connected():
+                    self.sampler.configure({})
                     if self.description.get("connection") == "connected":
                         self.lose_authority("robot_connection_lost")
                         self.observe("connection", {"connection": "disconnected", "reason": "native_connection_lost"})
                     self.description = self.driver.connect()
                     self.observe("connection", self.description)
-                start = monotonic()
-                groups = self.driver.sample()
-                self.observe("sample", {"groups": groups, "started": start, "finished": monotonic()})
+                    self.sampler.configure(self.driver.sample_readers())
                 time.sleep(0.1)
             except Exception:
+                self.sampler.configure({})
                 logging.exception("Native discovery/sampling unavailable")
                 if self.description.get("connection") == "connected":
                     self.lose_authority("robot_sample_failed")
@@ -301,7 +419,7 @@ class Agent(object):
                             self.heartbeat = monotonic()
                             self.reply(replies, request, result={"epoch": self.epoch, "dropped": self.dropped,
                                                                "work_queue": self.work.qsize(), "records": len(self.records),
-                                                               "native_subscriptions": len(self.driver.subscribers)})
+                                                               "native_subscriptions": len(self.driver.subscribers) + sum(len(adapter.links) for adapter in (self.driver.motion_events, self.driver.recognition) if adapter)})
                         elif lane == "priority" and action == "fence":
                             sid = request.get("session_id")
                             if not isinstance(sid, type(u"")) or not sid or (sid not in self.revoked and len(self.revoked) >= 4096):
@@ -309,23 +427,47 @@ class Agent(object):
                             else:
                                 self.revoked[sid] = monotonic()
                                 self.reply(replies, request, result={"fenced": True, "epoch": self.epoch})
+                        elif lane == "priority" and action == "release_controls":
+                            try:
+                                sid = request.get("session_id")
+                                if sid not in self.revoked:
+                                    raise ControlError("fencing_unconfirmed", "Session must be fenced before release")
+                                self.reply(replies, request, result={"released_ids": self.controls.release(sid)})
+                            except ControlError as error:
+                                self.reply(replies, request, "rejected", code=error.code, message=str(error))
                         elif lane == "priority" and action == "stop":
                             try:
                                 self.priority.put_nowait((request, replies))
                             except queue.Full:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
-                        elif lane == "command" and action == "speak":
+                        elif lane == "controls" and action in ("joint_setpoint", "control_status"):
+                            try:
+                                oid = request.get("payload", {}).get("operation_id")
+                                if not isinstance(oid, type(u"")) or not 0 < len(oid) <= 128:
+                                    raise ControlError("invalid_request", "Invalid control operation ID")
+                                if action == "joint_setpoint":
+                                    if oid in self.records:
+                                        raise ControlError("control_ended", "Operation ID is already used or stopped")
+                                    value = self.controls.submit(request)
+                                else:
+                                    value = self.controls.snapshot(oid)
+                                    if self.controls.records[oid]["identity"][0] != request.get("session_id"):
+                                        raise ControlError("forbidden", "Control belongs to another session")
+                                self.reply(replies, request, result=value)
+                            except ValueError as error:
+                                self.reply(replies, request, "rejected", code=getattr(error, "code", "invalid_request"), message=str(error))
+                        elif lane == "command" and action in ("speak", "trajectory", "motion_action", "autonomy", "recognition"):
                             rid = request.get("id")
                             if rid in self.records:
                                 record = self.records[rid]
                                 self.reply(replies, request, record["status"], result=record.get("result", {}))
-                            elif not self.validate_speech(request):
-                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid speech payload")
+                            elif not (self.validate_speech(request) if action == "speak" else {"trajectory": valid_trajectory, "motion_action": valid_motion_action, "autonomy": valid_autonomy, "recognition": valid_configuration}[action](request.get("payload")) and (action == "recognition" or bool(request.get("session_id")))):
+                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
-                                self.work.put_nowait((request, replies))
-                                self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued"}
+                                (self.recognition_work if action == "recognition" else self.work).put_nowait((request, replies))
+                                self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": request["payload"].get("names", []), "motion_kind": request["payload"].get("kind")}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")
             except (socket.error, ValueError, StopIteration, queue.Full):
@@ -340,9 +482,16 @@ class Agent(object):
                     self.lose_authority("priority_eof")
 
     def run_critical(self, function, *args):
+        self.run_guarded(function, args, permanent=True)
+
+    def run_control(self, function, *args):
+        self.run_guarded(function, args, permanent=False)
+
+    def run_guarded(self, function, args, permanent):
         try:
             function(*args)
-            raise RuntimeError("Critical thread returned unexpectedly")
+            if permanent:
+                raise RuntimeError("Critical thread returned unexpectedly")
         except BaseException:
             logging.exception("Critical agent thread failed: %s", function.__name__)
             try:
@@ -351,19 +500,24 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
-        for worker in (self.worker, self.safety_worker, self.watchdog, self.sampling):
+        background(self.run_critical, self.worker, self.recognition_work)
+        for group in GROUPS:
+            background(self.run_critical, self.sampler.run, group)
+        for worker in (self.worker, self.worker, self.worker, self.worker, self.safety_worker, self.watchdog, self.sampling, self.recognition_recovery):
             background(self.run_critical, worker)
-        for lane in ("priority", "command", "events"):
+        for lane in ("priority", "command", "controls", "events"):
             background(self.run_critical, self.serve, lane)
         while True:
             time.sleep(1)
             with self.lock:
                 now = monotonic()
+                self.controls.prune(self.revoked)
                 for rid, record in list(self.records.items()):
                     if record["status"] in ("completed", "rejected") and now - record.get("finished", now) > 900:
                         del self.records[rid]
                 for sid, revoked_at in list(self.revoked.items()):
-                    if now - revoked_at > 900 and not any(r["session_id"] == sid for r in self.records.values()):
+                    if (now - revoked_at > 900 and not any(r["session_id"] == sid for r in self.records.values())
+                            and not any(r["identity"][0] == sid for r in self.controls.records.values())):
                         del self.revoked[sid]
 
 

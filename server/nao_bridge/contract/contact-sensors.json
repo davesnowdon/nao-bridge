@@ -1,0 +1,92 @@
+[
+  {
+    "id": "touch.head.front",
+    "label": "Front head",
+    "event": "FrontTactilTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/Head/Touch/Front/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.head.middle",
+    "label": "Middle head",
+    "event": "MiddleTactilTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/Head/Touch/Middle/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.head.rear",
+    "label": "Rear head",
+    "event": "RearTactilTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/Head/Touch/Rear/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.hand.left.back",
+    "label": "Left hand back",
+    "event": "HandLeftBackTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/LHand/Touch/Back/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.hand.left.left",
+    "label": "Left hand left",
+    "event": "HandLeftLeftTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/LHand/Touch/Left/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.hand.left.right",
+    "label": "Left hand right",
+    "event": "HandLeftRightTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/LHand/Touch/Right/Sensor/Value"
+    ]
+  },
+  {
+    "id": "bumper.left",
+    "label": "Left foot bumper",
+    "event": "LeftBumperPressed",
+    "memory_keys": [
+      "Device/SubDeviceList/LFoot/Bumper/Left/Sensor/Value",
+      "Device/SubDeviceList/LFoot/Bumper/Right/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.hand.right.back",
+    "label": "Right hand back",
+    "event": "HandRightBackTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/RHand/Touch/Back/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.hand.right.left",
+    "label": "Right hand left",
+    "event": "HandRightLeftTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/RHand/Touch/Left/Sensor/Value"
+    ]
+  },
+  {
+    "id": "touch.hand.right.right",
+    "label": "Right hand right",
+    "event": "HandRightRightTouched",
+    "memory_keys": [
+      "Device/SubDeviceList/RHand/Touch/Right/Sensor/Value"
+    ]
+  },
+  {
+    "id": "bumper.right",
+    "label": "Right foot bumper",
+    "event": "RightBumperPressed",
+    "memory_keys": [
+      "Device/SubDeviceList/RFoot/Bumper/Left/Sensor/Value",
+      "Device/SubDeviceList/RFoot/Bumper/Right/Sensor/Value"
+    ]
+  }
+]

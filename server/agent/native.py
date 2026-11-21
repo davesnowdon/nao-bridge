@@ -2,25 +2,46 @@
 from __future__ import print_function
 
 import numbers
+import json
+import os
 import threading
 import time
 
 import qi
+from motion import MotionObservation, PostureObservation, FixtureMotion, FixturePosture, valid_trajectory, valid_motion_action
+from wire import monotonic
+from autonomy import Autonomy, FixtureAutonomy
+from observations import BATTERY_KEY, MotionEvents, battery_value
+from recognition import Recognition, FixtureRecognition
 
-TOUCH = {
-    "FrontTactilTouched": "touch.head.front",
-    "MiddleTactilTouched": "touch.head.middle",
-    "RearTactilTouched": "touch.head.rear",
-}
-MEMORY_KEYS = [
-    "Device/SubDeviceList/Head/Touch/Front/Sensor/Value",
-    "Device/SubDeviceList/Head/Touch/Middle/Sensor/Value",
-    "Device/SubDeviceList/Head/Touch/Rear/Sensor/Value",
-]
+with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
+    CONTACTS = json.load(source)
+TOUCH = dict((item["event"], item["id"]) for item in CONTACTS)
+MEMORY_KEYS = [key for item in CONTACTS for key in item["memory_keys"]]
+
+
+def contact_values(values):
+    # A foot is pressed when either internal switch is pressed. Unknown switches
+    # cannot establish a released foot; never turn missing data into False.
+    raw = dict(zip(MEMORY_KEYS, values))
+    touch, unavailable = {}, {}
+    for item in CONTACTS:
+        parts = [raw.get(key) for key in item["memory_keys"]]
+        valid = [isinstance(v, numbers.Real) and v in (0, 1) for v in parts]
+        if any(ok and value == 1 for ok, value in zip(valid, parts)):
+            touch[item["id"]] = True
+        elif all(valid):
+            touch[item["id"]] = False
+        else:
+            touch[item["id"]] = None
+            unavailable[item["id"]] = "missing_or_invalid_reading"
+    return {"touch": touch, "touch_unavailable": unavailable}
 
 
 class NativeDriver(object):
-    def __init__(self, endpoint, observe):
+    joint_hold_verified = False
+
+    def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
         self.observe = observe
         self.session = None
@@ -30,6 +51,14 @@ class NativeDriver(object):
         self.memory = None
         self.subscribers = []
         self.description = {}
+        self.motion = None
+        self.safety_motion = None
+        self.posture = None
+        self.safety_posture = None
+        self.autonomy = None
+        self.motion_events = None
+        self.recognition = None
+        self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
 
     def call(self, service, method, *args):
@@ -49,18 +78,20 @@ class NativeDriver(object):
         voices = self.call(self.tts, "getAvailableVoices")
         language = self.call(self.tts, "getLanguage")
         voice = self.call(self.tts, "getVoice")
-        touch_available = True
+        touch_events = []
         for event, sensor in TOUCH.items():
             try:
                 subscriber = self.call(self.memory, "subscriber", event)
                 callback = self.touch_callback(sensor)
                 link = subscriber.signal.connect(callback)
                 self.subscribers.append((subscriber, link, callback))
+                touch_events.append(sensor)
             except Exception:
-                touch_available = False
+                pass
         self.description = {
             "connection": "connected", "reason": None, "name": None, "model": None,
-            "naoqi_version": None, "touch_available": touch_available,
+            "naoqi_version": None, "touch_available": bool(touch_events),
+            "touch_events": touch_events,
             "speech": {"available": language != "Japanese", "cancellable": True,
                        "languages": [item for item in languages if item != "Japanese"],
                        "voices": [voice] if voice in voices else [], "default_language": language, "default_voice": voice},
@@ -71,6 +102,32 @@ class NativeDriver(object):
                 self.description[target] = self.call(proxy, method)
             except Exception:
                 pass
+        try:
+            self.motion = MotionObservation(self.session, self.call)
+            self.safety_motion = self.safety_session.service("ALMotion", _async=True).value(1000)
+            self.description["joints"] = self.motion.joints
+            self.description["chains"] = self.motion.chains
+        except Exception:
+            self.motion = None
+            self.safety_motion = None
+        try:
+            self.posture = PostureObservation(self.session, self.call)
+            self.safety_posture = self.safety_session.service("ALRobotPosture", _async=True).value(1000)
+            self.description["postures"] = self.posture.names
+        except Exception:
+            self.posture = None
+            self.safety_posture = None
+        self.autonomy = Autonomy(self.session, self.call)
+        self.description["autonomy"] = self.autonomy.catalog
+        self.motion_events = MotionEvents(self.memory, self.call, self.observe)
+        self.description["motion_events"] = self.motion_events.support
+        self.recognition = Recognition(self.session, self.memory, self.call, self.observe, self.adapter_lock)
+        self.description["recognition"] = self.recognition.catalog
+        self.description["joint_controls"] = {
+            "available": self.joint_control_available(),
+            "reason": None if self.joint_control_available() else "hardware_hold_unverified",
+            "max_active": 4, "max_ttl": 1.0, "default_ttl": 0.5, "default_speed": 0.1,
+        }
         self._connected.set()
         return self.description
 
@@ -83,15 +140,28 @@ class NativeDriver(object):
     def connected(self):
         return self._connected.is_set()
 
-    def sample(self):
-        values = self.call(self.memory, "getListData", MEMORY_KEYS)
-        touch = {}
-        for sensor, value in zip(["touch.head.front", "touch.head.middle", "touch.head.rear"], values):
-            if value in (0, 1):
-                touch[sensor] = bool(value)
-        if len(touch) != len(MEMORY_KEYS):
-            raise RuntimeError("Touch sample incomplete")
-        return {"sensors": {"touch": touch}}
+    def sample_sensors(self, memory):
+        values = self.call(memory, "getListData", MEMORY_KEYS + [BATTERY_KEY])
+        value = contact_values(values)
+        value["battery"] = battery_value(values[len(MEMORY_KEYS)] if len(values) > len(MEMORY_KEYS) else None)
+        return value
+
+    def sample_readers(self):
+        # Capture this connection's adapters, never mutable driver fields inside a read.
+        memory, motion, posture, autonomy = self.memory, self.motion, self.posture, self.autonomy
+
+        def unavailable():
+            raise ValueError("native_service_unavailable")
+
+        def motion_state():
+            value = motion.sample_motion()
+            value["posture"] = posture.sample() if posture else None
+            return value
+
+        return {"sensors": lambda: self.sample_sensors(memory),
+                "joints": motion.sample_joints if motion else unavailable,
+                "motion": motion_state if motion else unavailable,
+                "autonomy": autonomy.sample if autonomy else unavailable}
 
     def speak(self, payload):
         # Voice changes are a later capability; do not mutate global voice preferences silently.
@@ -107,8 +177,122 @@ class NativeDriver(object):
     def stop(self):
         self.safety.stopAll(_async=True).value(1000)
 
+    def prepare_trajectory(self, payload):
+        if not valid_trajectory(payload) or not self.motion:
+            raise ValueError("Invalid or unavailable trajectory")
+        catalog = dict((joint["name"], joint) for joint in self.motion.joints)
+        for name, values in zip(payload["names"], payload["angles"]):
+            joint = catalog.get(name)
+            if not joint or not joint["writable"]:
+                raise ValueError("Unknown or unavailable joint")
+            if set(joint["coupled_with"]) & set(payload["names"]):
+                raise ValueError("Duplicate coupled motor target")
+            for peer in [name] + joint["coupled_with"]:
+                bounds = catalog[peer]
+                if not bounds["writable"] or not all(bounds["minimum"] <= value <= bounds["maximum"] for value in values):
+                    raise ValueError("Joint target outside limits")
+        self.require_stiff(payload["names"])
+
+    def require_stiff(self, names):
+        awake = self.call(self.motion.motion, "robotIsWakeUp")
+        stiffness = self.call(self.motion.motion, "getStiffnesses", names)
+        if awake is not True or len(stiffness) != len(names) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool) and 0 < v <= 1 for v in stiffness):
+            error = ValueError("Motion requires an awake robot and stiff target joints")
+            error.code = "precondition_failed"
+            raise error
+
+    def trajectory(self, payload):
+        return self.motion.motion.angleInterpolation(payload["names"], payload["angles"], payload["times"], True, _async=True)
+
+    def joint_control_available(self):
+        return bool(self.joint_hold_verified and self.motion and self.safety_motion)
+
+    def validate_joint_target(self, payload):
+        if not self.motion:
+            raise ValueError("Motion service unavailable")
+        catalog = dict((joint["name"], joint) for joint in self.motion.joints)
+        resources = set()
+        for name, value in zip(payload["names"], payload["angles"]):
+            joint = catalog.get(name)
+            if not joint or not joint["writable"] or set(joint["coupled_with"]) & set(payload["names"]):
+                raise ValueError("Unknown, unavailable or duplicate coupled target")
+            for peer in [name] + joint["coupled_with"]:
+                bounds = catalog[peer]
+                if not bounds["writable"] or not bounds["minimum"] <= value <= bounds["maximum"]:
+                    raise ValueError("Joint target outside limits")
+                resources.add(peer)
+        return sorted(resources)
+
+    def prepare_joint_target(self, payload):
+        self.validate_joint_target(payload)
+        self.require_stiff(payload["names"])
+
+    def set_joint_target(self, payload):
+        return self.motion.motion.setAngles(payload["names"], payload["angles"], payload["speed"], _async=True)
+
+    def hold_joints(self, names):
+        start = monotonic()
+        angles = self.safety_motion.getAngles(names, True, _async=True).value(150)
+        if (len(angles) != len(names) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool)
+                and v == v and abs(v) != float("inf") for v in angles) or monotonic() - start > 0.15):
+            raise ValueError("Fresh measured joint targets unavailable for hold")
+        payload = {"names": names, "angles": angles, "speed": 0.1}
+        self.validate_joint_target(payload)
+        self.safety_motion.setAngles(names, angles, 0.1, _async=True).value(150)
+        return {"required": True, "confirmed": bool(self.joint_hold_verified),
+                "mechanism": "fresh_measured_target", "speed": 0.1,
+                "acquisition_to_confirmation_ms": (monotonic() - start) * 1000}
+
+    def prepare_motion_action(self, payload):
+        if not valid_motion_action(payload) or not self.motion:
+            raise ValueError("Invalid or unavailable motion action")
+        names = set(payload["names"])
+        if names - set(self.motion.names):
+            raise ValueError("Unknown joint")
+        kind = payload["kind"]
+        if kind != "stiffness" and names != set(self.motion.names):
+            raise ValueError("Whole-body action must declare all joints")
+        if kind == "stiffness":
+            for joint in self.motion.joints:
+                if joint["name"] in names and set(joint["coupled_with"]) & names:
+                    raise ValueError("Duplicate coupled motor target")
+        if kind == "posture":
+            if not self.posture or payload["name"] not in self.posture.names:
+                raise ValueError("Unknown or unavailable posture")
+            self.require_stiff(payload["names"])
+
+    def motion_action(self, payload):
+        kind = payload["kind"]
+        if kind == "stiffness":
+            return self.motion.motion.stiffnessInterpolation(payload["names"], payload["values"], [payload["duration"]] * len(payload["names"]), _async=True)
+        if kind == "posture":
+            return self.posture.posture.goToPosture(payload["name"], payload["speed"], _async=True)
+        if kind == "wake":
+            return self.motion.motion.wakeUp(_async=True)
+        return self.motion.motion.rest(_async=True)
+
+    def stop_motion(self, names, stop_posture=False):
+        futures = []
+        deadline = monotonic() + 0.5
+        if self.safety_motion:
+            expanded = set(self.motion.names if "Body" in names else names)
+            for joint in self.motion.joints:
+                if joint["name"] in expanded:
+                    expanded.update(joint["coupled_with"])
+            futures.append(self.safety_motion.killTasksUsingResources(sorted(expanded), _async=True))
+        if stop_posture and self.safety_posture:
+            futures.append(self.safety_posture.stopMove(_async=True))
+        for future in futures:
+            future.value(max(1, int((deadline - monotonic()) * 1000)))
+
     def close(self):
         self._connected.clear()
+        if self.recognition:
+            self.recognition.close()
+            self.recognition = None
+        if self.motion_events:
+            self.motion_events.close()
+            self.motion_events = None
         for subscriber, link, _ in self.subscribers:
             try:
                 subscriber.signal.disconnect(link)
@@ -162,31 +346,56 @@ class FixtureTouch(object):
 
 
 class FixtureMemory(object):
-    def __init__(self, source):
-        self.source = source
-        self.level = False
+    def __init__(self):
+        self.sources = dict((event, FixtureTouch()) for event in TOUCH)
+        self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
+        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening"])
+        self.values = dict((key, 0) for key in MEMORY_KEYS)
+        self.values[BATTERY_KEY] = 76
+
+    def getEventList(self):
+        return list(self.sources)
 
     def subscriber(self, event):
-        return self.source
+        return self.sources[event]
 
     def getListData(self, keys):
-        return [int(self.level)] * len(keys)
+        return [self.values.get(key) for key in keys]
+
+    def getData(self, key):
+        return self.values.get(key)
+
+    def toggle(self, index):
+        item = CONTACTS[index % len(CONTACTS)]
+        key = item["memory_keys"][0]
+        self.values[key] = 1 - self.values[key]
+        self.sources[item["event"]].signal(self.values[key])
 
 
 class FixtureDriver(NativeDriver):
+    joint_hold_verified = True
+
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
-    def __init__(self, observe):
+    def __init__(self, observe, lock=None):
         self.server = qi.Session()
         self.server.listenStandalone("tcp://127.0.0.1:0")
         self.work_impl = FixtureSpeech()
         self.safety_impl = FixtureSafety(self.work_impl)
-        self.source = FixtureTouch()
-        self.memory_impl = FixtureMemory(self.source)
+        self.memory_impl = FixtureMemory()
+        self.motion_impl = qi.multiThreaded()(FixtureMotion)()
+        self.posture_impl = qi.multiThreaded()(FixturePosture)(self.motion_impl)
+        self.autonomy_impl = qi.multiThreaded()(FixtureAutonomy)()
+        self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
+        self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
         self.server.registerService("ALMemory", self.memory_impl)
-        super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe)
+        self.server.registerService("ALMotion", self.motion_impl)
+        self.server.registerService("ALRobotPosture", self.posture_impl)
+        self.server.registerService("ALAutonomousLife", self.autonomy_impl)
+        self.server.registerService("ALSpeechRecognition", self.recognition_impl)
+        super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 
     def connect(self):
@@ -195,9 +404,15 @@ class FixtureDriver(NativeDriver):
         result.update(name="Native SDK fixture", model="simulated", naoqi_version="fixture")
         return result
 
-    def sample(self):
+    def sample_sensors(self, memory):
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
-            self.memory_impl.level = not self.memory_impl.level
-            self.source.signal(int(self.memory_impl.level))
-        return super(FixtureDriver, self).sample()
+            self.memory_impl.toggle(self.contact_index // 2)
+            observations = [("PostureChanged", "StandInit"), ("PostureFamilyChanged", "Standing"),
+                            ("ALMotion/RobotIsFalling", True), ("robotHasFallen", True)]
+            event, value = observations[self.contact_index % len(observations)]
+            self.memory_impl.sources[event].signal(value)
+            if self.recognition_impl.vocabulary:
+                self.recognition_impl.emit([self.recognition_impl.vocabulary[0], 0.9])
+            self.contact_index += 1
+        return super(FixtureDriver, self).sample_sensors(memory)

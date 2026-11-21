@@ -1,4 +1,4 @@
-"""Conservative CI guard: existing wire shapes require a major bump to change."""
+"""Conservative CI guard for the language-neutral wire contract."""
 
 import argparse
 import json
@@ -18,14 +18,67 @@ def shape(value):
     return value
 
 
+def request_definitions(openapi, schemas):
+    names, visited = set(), set()
+
+    def visit(value):
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+        elif isinstance(value, dict):
+            ref = value.get("$ref")
+            if ref and ref not in visited:
+                visited.add(ref)
+                if ref.startswith(("schemas.json#/$defs/", "#/$defs/", "#/components/schemas/")):
+                    name = ref.rsplit("/", 1)[-1]
+                    names.add(name)
+                    visit(schemas["$defs"][name])
+                elif ref.startswith("#/"):
+                    target = openapi
+                    for part in ref[2:].split("/"):
+                        target = target[part.replace("~1", "/").replace("~0", "~")]
+                    visit(target)
+                else:
+                    # An unresolved external request schema cannot prove response-only use.
+                    names.update(schemas["$defs"])
+            for item in value.values():
+                visit(item)
+
+    for methods in openapi["paths"].values():
+        visit(methods.get("parameters", []))
+        for operation in methods.values():
+            if isinstance(operation, dict):
+                visit(operation.get("requestBody", {}))
+                visit(operation.get("parameters", []))
+    return names
+
+
+def optional_response_addition(before, after):
+    if not isinstance(after, dict) or before.get("additionalProperties") is not True:
+        return False
+    old_properties, new_properties = before.get("properties", {}), after.get("properties", {})
+    if not old_properties.keys() < new_properties.keys():
+        return False
+    if any(name in after.get("required", []) for name in new_properties.keys() - old_properties):
+        return False
+    reduced = {**after, "properties": {name: new_properties[name] for name in old_properties}}
+    return shape(before) == shape(reduced)
+
+
 def compare(previous, current, old_schemas, new_schemas):
     before = tuple(int(part) for part in previous["info"]["version"].split("."))
     after = tuple(int(part) for part in current["info"]["version"].split("."))
     if after < before:
         raise ValueError("Contract version must not decrease")
     changes = []
+    requests = request_definitions(previous, old_schemas) | request_definitions(
+        current, new_schemas
+    )
     for name, definition in old_schemas["$defs"].items():
-        if shape(definition) != shape(new_schemas["$defs"].get(name)):
+        new_definition = new_schemas["$defs"].get(name)
+        if shape(definition) != shape(new_definition) and not (
+            name not in requests and optional_response_addition(definition, new_definition)
+        ):
             changes.append("schema " + name)
     for path, methods in previous["paths"].items():
         for method, operation in methods.items():

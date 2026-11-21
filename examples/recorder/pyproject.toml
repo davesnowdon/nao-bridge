@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nao-bridge-recorder-example"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["nao-bridge-client", "fastapi>=0.115,<1", "uvicorn>=0.34,<1"]
+
+[project.scripts]
+nao-bridge-recorder = "recorder.web:main"
+
+[tool.uv.sources]
+nao-bridge-client = { path = "../../clients/python", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["recorder"]
+
+[dependency-groups]
+dev = ["ruff>=0.12", "pyright>=1.1"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+

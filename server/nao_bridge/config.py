@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,19 @@ class Settings:
     max_recovery_operations: int = 128
     max_idempotency_keys: int = 4096
     max_subscriptions: int = 16
+    max_listeners: int = 32
+    max_listener_history: int = 256
+    asset_directory: Path | None = None
+    asset_quota_bytes: int = 268435456
+    max_assets: int = 256
+    max_asset_downloads: int = 2
+    asset_retention_seconds: float = 604800
+    max_recordings: int = 4
+    max_recording_history: int = 256
+    max_recording_seconds: float = 300
+    max_recording_bytes: int = 33554432
+    recording_queue_count: int = 64
+    recording_queue_bytes: int = 1048576
     max_streams: int = 8
     max_streams_per_session: int = 4
     event_queue_count: int = 256
@@ -42,8 +56,17 @@ class Settings:
             raise ValueError("Unknown backend")
         if self.lease_seconds <= 0 or self.history_seconds <= 0:
             raise ValueError("Lease and history retention must be positive")
-        if self.sample_rate_hz <= 0 or self.sample_rate_hz > 20:
-            raise ValueError("Sample rate must be in (0, 20]")
+        if not 0 < self.sample_rate_hz <= 10:
+            raise ValueError("Sample rate must be in (0, 10]; faster acquisition is unverified")
+        if (
+            not math.isfinite(self.asset_retention_seconds)
+            or self.asset_retention_seconds <= 0
+            or not math.isfinite(self.max_recording_seconds)
+            or not 0 < self.max_recording_seconds <= 300
+        ):
+            raise ValueError("Asset retention and recording duration must be positive")
+        if not 65536 <= self.max_recording_bytes <= 33554432:
+            raise ValueError("Recording byte limit must be between 64 KiB and 32 MiB")
         for name in (
             "max_sessions",
             "max_session_history",
@@ -51,6 +74,15 @@ class Settings:
             "max_recovery_operations",
             "max_idempotency_keys",
             "max_subscriptions",
+            "max_listeners",
+            "max_listener_history",
+            "asset_quota_bytes",
+            "max_assets",
+            "max_asset_downloads",
+            "max_recordings",
+            "max_recording_history",
+            "recording_queue_count",
+            "recording_queue_bytes",
             "max_streams",
             "max_streams_per_session",
             "event_queue_count",

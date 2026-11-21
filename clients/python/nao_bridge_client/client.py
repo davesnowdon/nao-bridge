@@ -1,20 +1,32 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
+from .controls import AsyncJointControl
+from .listeners import AsyncListener
 from .models import (
+    AssetData,
+    AssetsPage,
     Capabilities,
     Event,
+    JointCatalog,
+    ListenerData,
     OperationData,
+    PosturesData,
+    RecordingData,
     RobotInfo,
+    Sensor,
     State,
     StreamNotice,
     SubscriptionData,
 )
+from .recordings import AsyncRecording
+from .trajectory import Trajectory
 
 T = TypeVar("T")
 
@@ -27,9 +39,14 @@ class Nao:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self.robot = Robot(self)
+        self.sensors = Sensors(self)
+        self.motion = Motion(self)
+        self.autonomy = Autonomy(self)
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
+        self.recordings = Recordings(self)
+        self.assets = Assets(self)
 
     def __enter__(self) -> Nao:
         if self._loop is not None:
@@ -133,9 +150,302 @@ class Robot:
         return self._nao._run(self._nao._async.robot.diagnostics())
 
 
+class Motion:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def joints(self) -> JointCatalog:
+        return self._nao._run(self._nao._async.motion.joints())
+
+    def postures(self) -> PosturesData:
+        return self._nao._run(self._nao._async.motion.postures())
+
+    def set_joint_targets(
+        self,
+        positions: dict[str, float],
+        *,
+        control_id: str | None = None,
+        sequence: int = 0,
+        speed: float | None = None,
+        ttl: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.set_joint_targets(
+                    positions, control_id=control_id, sequence=sequence, speed=speed, ttl=ttl
+                )
+            ),
+        )
+
+    def joint_control(
+        self, positions: dict[str, float], *, speed: float | None = None, ttl: float | None = None
+    ) -> JointControl:
+        return JointControl(
+            self._nao, self._nao._async.motion.joint_control(positions, speed=speed, ttl=ttl)
+        )
+
+    def wake(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.wake(
+                    wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                )
+            ),
+        )
+
+    def rest(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.rest(
+                    wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                )
+            ),
+        )
+
+    def set_stiffness(
+        self,
+        targets: dict[str, float],
+        *,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.set_stiffness(
+                    targets,
+                    duration=duration,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def posture(
+        self,
+        name: str,
+        *,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.posture(
+                    name, speed=speed, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+                )
+            ),
+        )
+
+    def move_joints(
+        self,
+        positions: dict[str, float],
+        *,
+        duration: float | None = None,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.move_joints(
+                    positions,
+                    duration=duration,
+                    replace_operation_id=replace_operation_id,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def play(
+        self,
+        trajectory: Trajectory | dict[str, Any],
+        *,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.play(
+                    trajectory,
+                    replace_operation_id=replace_operation_id,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def head(
+        self,
+        *,
+        yaw: float | None = None,
+        pitch: float | None = None,
+        duration: float | None = None,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.head(
+                    yaw=yaw,
+                    pitch=pitch,
+                    duration=duration,
+                    replace_operation_id=replace_operation_id,
+                    wait=wait,
+                    timeout=timeout,
+                )
+            ),
+        )
+
+    def hand(
+        self,
+        side: str,
+        *,
+        openness: float,
+        duration: float | None = None,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.hand(
+                    side,
+                    openness=openness,
+                    duration=duration,
+                    replace_operation_id=replace_operation_id,
+                    wait=wait,
+                    timeout=timeout,
+                )
+            ),
+        )
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return self._nao._run(
+            self._nao._async.motion.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
+
+
+class Sensors:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def list(self) -> list[Sensor]:
+        return self._nao._run(self._nao._async.sensors.list())
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return self._nao._run(
+            self._nao._async.sensors.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
+
+
+class Autonomy:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return self._nao._run(
+            self._nao._async.autonomy.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
+
+    def configure(
+        self,
+        settings: dict[str, bool | str],
+        *,
+        allow_partial: bool = False,
+        restore_on_close: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.autonomy.configure(
+                    settings,
+                    allow_partial=allow_partial,
+                    restore_on_close=restore_on_close,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+
 class Speech:
     def __init__(self, nao: Nao):
         self._nao = nao
+
+    def listen(
+        self,
+        vocabulary: list[str],
+        *,
+        language: str | None = None,
+        confidence_threshold: float | None = None,
+        pause_during_output: bool | None = None,
+        paused: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> Listener:
+        return Listener(
+            self._nao,
+            self._nao._run(
+                self._nao._async.speech.listen(
+                    vocabulary,
+                    language=language,
+                    confidence_threshold=confidence_threshold,
+                    pause_during_output=pause_during_output,
+                    paused=paused,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def get_listener(self, listener_id: str) -> Listener:
+        return Listener(
+            self._nao, self._nao._run(self._nao._async.speech.get_listener(listener_id))
+        )
 
     def say(
         self,
@@ -168,6 +478,220 @@ class Speech:
         )
 
 
+class Listener:
+    def __init__(self, nao: Nao, listener: AsyncListener):
+        self._nao = nao
+        self._async = listener
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def data(self) -> ListenerData:
+        return self._async.data
+
+    @property
+    def status(self) -> str:
+        return self._async.status
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    def __enter__(self) -> Listener:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+    def refresh(self) -> Listener:
+        self._nao._run(self._async.refresh())
+        return self
+
+    def configure(
+        self,
+        *,
+        vocabulary: list[str] | None = None,
+        language: str | None = None,
+        confidence_threshold: float | None = None,
+        pause_during_output: bool | None = None,
+        paused: bool | None = None,
+    ) -> Listener:
+        self._nao._run(
+            self._async.configure(
+                vocabulary=vocabulary,
+                language=language,
+                confidence_threshold=confidence_threshold,
+                pause_during_output=pause_during_output,
+                paused=paused,
+            )
+        )
+        return self
+
+    def pause(self) -> Listener:
+        return self.configure(paused=True)
+
+    def resume(self) -> Listener:
+        return self.configure(paused=False)
+
+    def wait_ready(self, *, timeout: float | None = 10) -> Listener:
+        self._nao._run(self._async.wait_ready(timeout=timeout))
+        return self
+
+    def wait_configured(self, *, timeout: float | None = 10) -> Listener:
+        self._nao._run(self._async.wait_configured(timeout=timeout))
+        return self
+
+    def stop(self, *, wait: bool = True, timeout: float | None = None) -> Listener:
+        self._nao._run(self._async.stop(wait=wait, timeout=timeout))
+        return self
+
+    def close(self) -> None:
+        self._nao._run(self._async.close())
+
+
+class Recordings:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def start(
+        self,
+        source: dict[str, Any],
+        *,
+        duration: float,
+        max_bytes: int | None = None,
+        allow_lower_rate: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.start(
+                    source,
+                    duration=duration,
+                    max_bytes=max_bytes,
+                    allow_lower_rate=allow_lower_rate,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def samples(
+        self,
+        groups: list[str],
+        *,
+        duration: float,
+        rate_hz: float | None = None,
+        max_bytes: int | None = None,
+        allow_lower_rate: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.samples(
+                    groups,
+                    duration=duration,
+                    rate_hz=rate_hz,
+                    max_bytes=max_bytes,
+                    allow_lower_rate=allow_lower_rate,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def get(self, recording_id: str) -> Recording:
+        return Recording(self._nao, self._nao._run(self._nao._async.recordings.get(recording_id)))
+
+
+class Recording:
+    def __init__(self, nao: Nao, recording: AsyncRecording):
+        self._nao = nao
+        self._async = recording
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def data(self) -> RecordingData:
+        return self._async.data
+
+    @property
+    def status(self) -> str:
+        return self._async.status
+
+    @property
+    def operation_id(self) -> str:
+        return self._async.operation_id
+
+    @property
+    def asset_id(self) -> str | None:
+        return self._async.asset_id
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    def operation(self) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.operation()))
+
+    def refresh(self) -> Recording:
+        self._nao._run(self._async.refresh())
+        return self
+
+    def wait(self, *, timeout: float | None = None) -> Recording:
+        self._nao._run(self._async.wait(timeout=timeout))
+        return self
+
+    def stop(self, *, wait: bool = True, timeout: float | None = None) -> Recording:
+        self._nao._run(self._async.stop(wait=wait, timeout=timeout))
+        return self
+
+    def close(self) -> None:
+        self._nao._run(self._async.close())
+
+    def __enter__(self) -> Recording:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+
+class Assets:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def get(self, asset_id: str) -> AssetData:
+        return self._nao._run(self._nao._async.assets.get(asset_id))
+
+    def list(self, *, limit: int = 50, cursor: str | None = None) -> AssetsPage:
+        return self._nao._run(self._nao._async.assets.list(limit=limit, cursor=cursor))
+
+    def delete(self, asset_id: str) -> None:
+        self._nao._run(self._nao._async.assets.delete(asset_id))
+
+    def download(
+        self,
+        asset_id: str,
+        destination: str | os.PathLike[str],
+        *,
+        resume: bool = False,
+        overwrite: bool = False,
+    ) -> AssetData:
+        return self._nao._run(
+            self._nao._async.assets.download(
+                asset_id,
+                destination,
+                resume=resume,
+                overwrite=overwrite,
+            )
+        )
+
+
 class Operations:
     def __init__(self, nao: Nao):
         self._nao = nao
@@ -189,6 +713,46 @@ class Operations:
             )
         )
         return {**result, "items": [Operation(self._nao, item) for item in result["items"]]}
+
+
+class JointControl:
+    def __init__(self, nao: Nao, control: AsyncJointControl):
+        self._nao, self._async = nao, control
+
+    @property
+    def id(self) -> str:
+        return self._async.id
+
+    @property
+    def operation(self) -> Operation:
+        return Operation(self._nao, self._async.operation)
+
+    @property
+    def error(self) -> Exception | None:
+        return self._async.error
+
+    @property
+    def cleanup_error(self) -> Exception | None:
+        return self._async.cleanup_error
+
+    @property
+    def closed(self) -> bool:
+        return self._async.closed
+
+    def __enter__(self) -> JointControl:
+        self._nao._run(self._async.__aenter__())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._nao._run(self._async.__aexit__(exc_type, exc, traceback))
+
+    def set_targets(self, positions: dict[str, float], *, speed: float | None = None) -> Operation:
+        return Operation(self._nao, self._nao._run(self._async.set_targets(positions, speed=speed)))
+
+    def close(self) -> None:
+        if self._nao._loop is None and self.closed:
+            return
+        self._nao._run(self._async.close())
 
 
 class Operation:

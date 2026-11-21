@@ -53,6 +53,26 @@ not by themselves establish independently accessible physical buttons. One raw
 right-foot channel remains unverified. These probes do not implement public
 hand/bumper support.
 
+## Autonomy implementation evidence (19 November)
+
+The [2.8 life API](https://doc.aldebaran.com/2-8/naoqi/interaction/autonomouslife-api.html)
+has named ability enable/read-back methods; the
+[2.1 API](https://doc.aldebaran.com/2-1/naoqi/core/autonomouslife-api.html)
+does not list them. Both document stopping focused activities on a transition to
+disabled. Probe methods and values instead of inferring support from robot model.
+Keep life and ability controls separate, and reserve affected actuators during
+transitions. Native state transitions are not evidence that physical pose/stiffness
+remained unchanged.
+
+The older [awareness API](https://doc.aldebaran.com/2-1/naoqi/peopleperception/albasicawareness-api.html)
+reports running state, not the newer ability's enabled preference. The bridge
+therefore exposes the legacy fallback as `awareness_running`. Body breathing and
+idle posture have explicit enable/read-back methods in the
+[2.1 idle-motion API](https://doc.aldebaran.com/2-1/naoqi/motion/idle-api.html).
+The bridge does not expose safety-reflex toggles. Discovery, read-back, partial
+failure and session-fencing behavior are covered by software/native fixtures;
+physical transition effects on both supported firmware generations remain open.
+
 ## FluentNao upstream
 
 Inspected [Don Najd's repository](https://github.com/dnajd/FluentNao) at commit [`55899a65ec8003c367d32387f2b7b12fdab83f3e`](https://github.com/dnajd/FluentNao/tree/55899a65ec8003c367d32387f2b7b12fdab83f3e), dated 8 April 2026. The temporary research clone is not an implementation dependency.
@@ -109,3 +129,79 @@ The bundled SDK identifies a 2.1-era runtime; later documentation shows useful c
 These are design inputs, not a promise to wrap every method on those pages. Hardware tests remain necessary for callback networking, cancellation, autonomy effects, sample rates, and media compatibility.
 
 The [runtime experiment](runtime-experiment.md) records measured Linux-container evidence. The [review follow-up](review-follow-up.md) distinguishes adopted design guidance, deferred extensions, and additional experiments from those completed tests.
+## Contact adapter mapping
+
+The contact catalog uses dedicated NAOqi events for head pads, six hand pads,
+and foot-level bumpers. Raw foot state combines the two internal switches per foot;
+public discovery does not imply separately accessible outer/inner buttons.
+Unknown readings stay unknown unless another switch proves a pressed foot.
+Sources: [NAOqi 2.1 ALTouch](https://doc.aldebaran.com/2-1/naoqi/sensors/altouch-api.html)
+and [NAO6 contacts](https://doc.aldebaran.com/2-8/family/nao_technical/contact-sensors_naov6.html).
+Prior probes establish hand-back and foot event delivery on NAO6; integration of
+the expanded public API, hand side pads, and NAOv5 contacts still needs hardware
+acceptance. The software fixture drives one contact at a time.
+
+## Increment-2 adapter details
+
+Joint discovery uses `getBodyNames` and `getLimits`; measured and commanded state
+use separate `getAngles(..., true/false)` calls. Hands retain native normalized
+ratios. `LHipYawPitch` and `RHipYawPitch` share one motor; validation reserves both,
+rejects different timelines, and submits a single alias. Stop expands coupled
+names and `Body` into actual joint resources before `killTasksUsingResources`.
+Future completion is checked separately from the stop call. This software protocol
+evidence does not verify physical stopping or controlled hold.
+
+Sources: [joint control](https://doc.aldebaran.com/2-1/naoqi/motion/control-joint-api.html),
+[general motion tools](https://doc.aldebaran.com/2-1/naoqi/motion/tools-general-api.html),
+[joint constraints](https://doc.aldebaran.com/2-1/family/robots/joints_robot.html),
+and [motion task interruption](https://doc.aldebaran.com/2-1/naoqi/motion/tools-motion-task-api.html).
+Individual min/max bounds are not full configuration-dependent collision envelopes;
+native safeguards remain active, and this limitation is documented in the HTTP guide.
+
+Battery sampling reads the ALMemory `BatteryChargeChanged` value in the contact
+batch. Its documented unit is integer percentage in both
+[NAOqi 2.1](https://doc.aldebaran.com/2-1/naoqi/sensors/albattery-api.html) and
+[NAOqi 2.8](https://doc.aldebaran.com/2-8/naoqi/sensors/albattery-api.html).
+The adapter rejects missing, fractional, out-of-range and nonnumeric readings;
+it does not guess raw DCM scaling or infer charger state. Source initialization
+and update behavior still need testing on both robots.
+
+Posture observations use the separate `PostureChanged` and `PostureFamilyChanged`
+sources documented by [ALRobotPosture](https://doc.aldebaran.com/2-1/naoqi/motion/alrobotposture-api.html).
+The adapter discovers existing event names before subscribing and reports which
+fields are available. It accepts the
+[2.1 fall-start name](https://doc.aldebaran.com/2-1/naoqi/motion/reflexes-fall-manager-api.html)
+`robotIsFalling` or the
+[2.8 name](https://doc.aldebaran.com/2-8/naoqi/motion/reflexes-fall-manager-api.html)
+`ALMotion/RobotIsFalling`, preferring the latter when both exist. `robotHasFallen`
+reports fall-manager completion. These sources emit true indications; absence or
+false input does not establish that a robot has recovered. The bridge neither
+changes fall safeguards nor manufactures a persistent upright/fallen state.
+
+## Vocabulary recognition adapter
+
+[NAOqi 2.1 recognition](https://doc.aldebaran.com/2-1/naoqi/audio/alspeechrecognition.html)
+provides alternating phrase/confidence pairs. Exact-phrase mode avoids the native
+word-spotting markers; the adapter accepts only configured phrases and finite
+confidence values in 0–1. Confidence remains native evidence, not a calibrated
+application probability. Acoustic recognition quality requires a physical robot;
+the SDK fixture establishes service/callback behavior only.
+
+The [2.1 API](https://doc.aldebaran.com/2-1/naoqi/audio/alspeechrecognition-api.html)
+and [2.8 API](https://doc.aldebaran.com/2-8/naoqi/audio/alspeechrecognition-api.html)
+provide pause, language/vocabulary configuration, named subscriptions and readiness
+events. The adapter serializes its own native changes, pauses before setters, and
+does not infer listening readiness from a successful subscribe call. Before first
+activation it checks `ALSpeechRecognition/IsRunning`; true or missing/invalid state
+refuses takeover. This cannot exclude a concurrent external NAOqi/ALDialog client
+changing the global recognizer after the check. The bridge must document that
+native-app interference boundary, rather than silently stopping other applications
+or disabling autonomous life. Audio/visual recognition expression settings are
+not changed implicitly.
+
+The adapter uses a unique native subscription name and attempts only its own
+unsubscribe. Abrupt process/network loss can leave native producer state uncertain;
+reconnection does not establish cleanup or authorize automatic listener resumption.
+The remaining public lifecycle must preserve this uncertainty and explicitly map
+revision-tagged native observations to owned listeners.
+

@@ -30,7 +30,7 @@ class AgentBackend:
         self.root: tempfile.TemporaryDirectory | None = None
         self.writers: dict[str, asyncio.StreamWriter] = {}
         self.pending: dict[str, asyncio.Future] = {}
-        self.locks = {lane: asyncio.Lock() for lane in ("priority", "command")}
+        self.locks = {lane: asyncio.Lock() for lane in ("priority", "command", "controls")}
         self.supervisor: asyncio.Task | None = None
         self.connected = asyncio.Event()
         self.closing = False
@@ -96,7 +96,7 @@ class AgentBackend:
     async def _connect(self) -> list[asyncio.Task]:
         assert self.root is not None
         readers = {}
-        for lane in ("priority", "command", "events"):
+        for lane in ("priority", "command", "controls", "events"):
             reader, writer = await asyncio.open_unix_connection(
                 str(Path(self.root.name) / (lane + ".sock")), limit=MAX_FRAME
             )
@@ -117,7 +117,8 @@ class AgentBackend:
             readers[lane] = reader
         self.connected.set()
         return [
-            asyncio.create_task(self._responses(readers[lane])) for lane in ("priority", "command")
+            asyncio.create_task(self._responses(readers[lane]))
+            for lane in ("priority", "command", "controls")
         ] + [
             asyncio.create_task(self._observations(readers["events"])),
             asyncio.create_task(self._heartbeats()),
@@ -235,7 +236,7 @@ class AgentBackend:
     ) -> dict[str, Any]:
         if not self.connected.is_set():
             raise BackendUnknown("Agent is not ready")
-        if action != "heartbeat" and len(self.pending) >= (32 if lane == "command" else 40):
+        if action != "heartbeat" and len(self.pending) >= (40 if lane == "priority" else 32):
             raise BridgeError("limit_exceeded", "Agent request capacity exhausted", 429)
         rid = request_id or uuid.uuid4().hex
         future = asyncio.get_running_loop().create_future()
@@ -269,6 +270,41 @@ class AgentBackend:
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         return await self._rpc("command", "speak", payload, session_id, operation_id, timeout=None)
+
+    async def trajectory(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "trajectory", payload, session_id, operation_id, timeout=None
+        )
+
+    async def motion_action(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "motion_action", payload, session_id, operation_id, timeout=None
+        )
+
+    async def configure_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "autonomy", payload, session_id, operation_id, timeout=None
+        )
+
+    async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("controls", "joint_setpoint", payload, session_id)
+
+    async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("command", "recognition", payload, timeout=8)
+
+    async def release_joint_controls(self, session_id: str) -> dict[str, Any]:
+        return await self._rpc("priority", "release_controls", {}, session_id)
+
+    async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]:
+        return await self._rpc(
+            "controls", "control_status", {"operation_id": operation_id}, session_id
+        )
 
     async def stop(
         self, operation_id: str | None = None, session_id: str | None = None

@@ -1,5 +1,10 @@
 # Increment 1 software delivery evidence
 
+Subsequent increment-2 software work is tracked separately in
+[increment-2-status.md](increment-2-status.md). The expanded contact surface adds
+sensor discovery and hand/foot state/events under additive contract 1.1.0; its
+integrated physical acceptance is pending.
+
 The replacement API implements the software slice through 1C. The first
 [NAO6 hardware session](hardware-results-2026-11-17.md) found a cancellation
 blocker, resolved and retested in the [18 November session](hardware-results-2026-11-18.md).

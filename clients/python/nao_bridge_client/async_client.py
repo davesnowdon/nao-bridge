@@ -14,6 +14,8 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from pydantic import ValidationError
 
+from .assets import AsyncAssets
+from .controls import AsyncJointControl
 from .errors import (
     AmbiguousRequest,
     BridgeError,
@@ -28,19 +30,27 @@ from .errors import (
     StaleState,
 )
 from .json_wire import loads
+from .listeners import AsyncListener
 from .models import (
     Capabilities,
     ErrorDetail,
     Event,
+    JointCatalog,
+    ListenerData,
     OperationData,
+    PosturesData,
     RobotInfo,
+    Sensor,
+    SensorsData,
     SessionData,
     State,
     StreamNotice,
     SubscriptionData,
     WireModel,
 )
+from .recordings import AsyncRecordings
 from .sse import SSEParser
+from .trajectory import Trajectory
 
 T = TypeVar("T", bound=WireModel)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -96,12 +106,18 @@ class AsyncNao:
         self._lost: SessionLost | None = None
         self._session_lock = asyncio.Lock()
         self._subscriptions: set[AsyncSubscription] = set()
+        self._controls: set[AsyncJointControl] = set()
         self.last_pending_request: PendingRequest | None = None
         self.cleanup_error: Exception | None = None
         self.robot = AsyncRobot(self)
+        self.sensors = AsyncSensors(self)
+        self.motion = AsyncMotion(self)
+        self.autonomy = AsyncAutonomy(self)
         self.speech = AsyncSpeech(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
+        self.recordings = AsyncRecordings(self)
+        self.assets = AsyncAssets(self)
 
     async def __aenter__(self) -> AsyncNao:
         if self._http is not None:
@@ -383,6 +399,11 @@ class AsyncNao:
             AmbiguousRequest(self._pending_session) if self._pending_session else None
         )
         try:
+            for control in list(self._controls):
+                try:
+                    await control.close()
+                except Exception as exc:
+                    failure = failure or exc
             for sub in list(self._subscriptions):
                 try:
                     await sub.close()
@@ -479,9 +500,337 @@ class AsyncRobot:
         return await self._nao._request("GET", "/api/robot/diagnostics")
 
 
+class AsyncMotion:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def joints(self) -> JointCatalog:
+        return decode(JointCatalog, await self._nao._request("GET", "/api/motion/joints"))
+
+    async def postures(self) -> PosturesData:
+        return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
+
+    async def set_joint_targets(
+        self,
+        positions: dict[str, float],
+        *,
+        control_id: str | None = None,
+        sequence: int = 0,
+        speed: float | None = None,
+        ttl: float | None = None,
+    ) -> AsyncOperation:
+        """Send one target only. Reuse its control ID with a newer sequence to update it."""
+        if control_id is None and sequence != 0:
+            raise ValueError("A nonzero sequence requires an existing control ID")
+        session = await self._nao._ensure_session()
+        cid = control_id if control_id is not None else uuid.uuid4().hex
+        body: dict[str, Any] = {
+            "control_id": cid,
+            "sequence": sequence,
+            "positions": dict(positions),
+        }
+        if speed is not None:
+            body["speed"] = speed
+        if ttl is not None:
+            body["ttl"] = ttl
+        data = decode(
+            OperationData,
+            await self._nao._request(
+                "PUT", "/api/motion/joint_setpoints", body=body, session_id=session.id
+            ),
+        )
+        if (
+            data.session_id != session.id
+            or data.bridge_instance_id != session.bridge_instance_id
+            or data.connection_generation != session.connection_generation
+        ):
+            raise self._nao._lose(
+                "Joint-control response belongs to a different session or connection"
+            )
+        if (
+            data.kind != "motion.joint_control"
+            or data.control is None
+            or data.control.id != cid
+            or data.control.sequence != sequence
+        ):
+            raise ProtocolError(
+                "Joint-control response does not match the submitted identity/sequence"
+            )
+        return AsyncOperation(self._nao, data)
+
+    def joint_control(
+        self, positions: dict[str, float], *, speed: float | None = None, ttl: float | None = None
+    ) -> AsyncJointControl:
+        return AsyncJointControl(self._nao, positions, speed=speed, ttl=ttl)
+
+    async def wake(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> AsyncOperation:
+        return await self._submit(
+            "wake", {}, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def rest(
+        self, *, wait: bool = True, timeout: float | None = None, idempotency_key: str | None = None
+    ) -> AsyncOperation:
+        return await self._submit(
+            "rest", {}, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def set_stiffness(
+        self,
+        targets: dict[str, float],
+        *,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"targets": targets}
+        if duration is not None:
+            body["duration"] = duration
+        return await self._submit(
+            "stiffness_changes", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def posture(
+        self,
+        name: str,
+        *,
+        speed: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"name": name}
+        if speed is not None:
+            body["speed"] = speed
+        return await self._submit(
+            "posture_changes", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def _submit(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        wait: bool,
+        timeout: float | None,
+        idempotency_key: str | None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST", "/api/motion/" + path, body=body, key=idempotency_key or uuid.uuid4().hex
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, data))
+        return await op.wait(timeout=timeout) if wait else op
+
+    async def move_joints(
+        self,
+        positions: dict[str, float],
+        *,
+        duration: float | None = None,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"positions": positions}
+        if duration is not None:
+            body["duration"] = duration
+        if replace_operation_id is not None:
+            body["replace_operation_id"] = replace_operation_id
+        return await self._submit(
+            "joint_moves", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def play(
+        self,
+        trajectory: Trajectory | dict[str, Any],
+        *,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        value = (
+            trajectory.model_dump(exclude_none=True)
+            if isinstance(trajectory, Trajectory)
+            else trajectory
+        )
+        body: dict[str, Any] = {"trajectory": value}
+        if replace_operation_id is not None:
+            body["replace_operation_id"] = replace_operation_id
+        return await self._submit(
+            "trajectory_runs",
+            body,
+            wait=wait,
+            timeout=timeout,
+            idempotency_key=idempotency_key,
+        )
+
+    async def head(
+        self,
+        *,
+        yaw: float | None = None,
+        pitch: float | None = None,
+        duration: float | None = None,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> AsyncOperation:
+        positions = {
+            name: value
+            for name, value in [("HeadYaw", yaw), ("HeadPitch", pitch)]
+            if value is not None
+        }
+        return await self.move_joints(
+            positions,
+            duration=duration,
+            replace_operation_id=replace_operation_id,
+            wait=wait,
+            timeout=timeout,
+        )
+
+    async def hand(
+        self,
+        side: str,
+        *,
+        openness: float,
+        duration: float | None = None,
+        replace_operation_id: str | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+    ) -> AsyncOperation:
+        if side not in {"left", "right"}:
+            raise ValueError("Hand side must be left or right")
+        return await self.move_joints(
+            {"LHand" if side == "left" else "RHand": openness},
+            duration=duration,
+            replace_operation_id=replace_operation_id,
+            wait=wait,
+            timeout=timeout,
+        )
+
+    async def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return await self._nao.robot.state(
+            ["joints", "motion"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+
+
+class AsyncSensors:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def list(self) -> list[Sensor]:
+        return decode(SensorsData, await self._nao._request("GET", "/api/sensors")).items
+
+    async def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return await self._nao.robot.state(
+            ["sensors"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+
+
+class AsyncAutonomy:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> State:
+        return await self._nao.robot.state(
+            include=["autonomy"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+
+    async def configure(
+        self,
+        settings: dict[str, bool | str],
+        *,
+        allow_partial: bool = False,
+        restore_on_close: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST",
+            "/api/autonomy/transitions",
+            body={
+                "settings": settings,
+                "allow_partial": allow_partial,
+                "restore_on_close": restore_on_close,
+            },
+            key=idempotency_key or uuid.uuid4().hex,
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, data))
+        return await op.wait(timeout=timeout) if wait else op
+
+
 class AsyncSpeech:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def listen(
+        self,
+        vocabulary: list[str],
+        *,
+        language: str | None = None,
+        confidence_threshold: float | None = None,
+        pause_during_output: bool | None = None,
+        paused: bool | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncListener:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"vocabulary": vocabulary}
+        body.update(
+            {
+                key: value
+                for key, value in {
+                    "language": language,
+                    "confidence_threshold": confidence_threshold,
+                    "pause_during_output": pause_during_output,
+                    "paused": paused,
+                }.items()
+                if value is not None
+            }
+        )
+        return AsyncListener(
+            self._nao,
+            decode(
+                ListenerData,
+                await self._nao._request(
+                    "POST",
+                    "/api/speech/listeners",
+                    body=body,
+                    key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+                ),
+            ),
+        )
+
+    async def get_listener(self, listener_id: str) -> AsyncListener:
+        if self._nao.session_id is None:
+            raise SessionLost("A listener must belong to the current client session")
+        return AsyncListener(
+            self._nao,
+            decode(
+                ListenerData,
+                await self._nao._request("GET", "/api/speech/listeners/" + listener_id),
+            ),
+        )
 
     async def say(
         self,

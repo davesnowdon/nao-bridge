@@ -1,4 +1,4 @@
-# HTTP/SSE contract 1.0.0
+# HTTP/SSE contract 1.1.0
 
 The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
 and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
@@ -33,6 +33,16 @@ The fake-server integration tests add expiry, resource conflicts, ambiguity,
 backpressure, retained history and explicit recovery. The production-container
 runner adds real SDK loopback callbacks, agent kill/freeze and restart fencing.
 Neither is evidence of physical stop or callback behavior on a robot.
+
+With recording storage enabled, the direct runner also captures bounded shared
+joint/sensor samples and verifies NDJSON schemas, checksum and byte-range download.
+`RecordingCreate` requires an explicit samples source and positive duration; the
+request/scenario fixtures include missing bounds and invalid selections. The
+production container suite additionally kills the API during recording, then checks
+that finalized assets survive and interrupted files become partial without restoring
+sessions or operations. `RecordingLine` describes metadata/sample/gap/end rows;
+`Asset` describes finalized completed/partial content. Assets have paginated metadata
+and `asset.created` notifications, with GET reconciliation after an SSE gap.
 
 ## Request fingerprints
 
@@ -82,10 +92,22 @@ window for session history under pressure, cleanup history, or stop requests.
 
 ## Version and change guard
 
+The additive 1.1 surface includes contact discovery, joints/postures, shared joint
+and motion state, wake/rest, stiffness and posture commands, absolute joint moves,
+and timed trajectory runs. The
+[`trajectory.json`](fixtures/trajectory.json) fixture is a portable three-pose
+document. `Trajectory` and `Keyframe` in the canonical schemas define its file
+shape; strict time order, discovered limits and coupled-motor consistency require
+semantic validation before dispatch. Motion/hold hardware acceptance remains open.
+
 `python scripts/check_contract.py origin/main` conservatively rejects changes to an
 existing route/schema shape without a contract major bump, and additions without
-a version bump. Documentation-only annotations are ignored. This intentionally
-errs on the side of review: even an otherwise compatible edit to an existing shape
-needs the guard to be refined with a focused compatibility test before it can ship
-as a minor change. It cannot prove semantic compatibility; lifecycle tests and
-review remain required. Package/image versions are independent of contract version.
+a version bump. An exception permits new optional properties in response-only
+objects that already allow additional properties, preserving their existing
+properties and constraints. Request-reachable definitions are excluded, including
+through nested references: adding validation for a previously unconstrained input
+could reject an existing client. Focused tests cover this rule and its required
+version bump. Other shape changes still require review and guard refinement before
+shipping as a minor change. Documentation-only annotations are ignored. The guard
+cannot prove semantic compatibility; lifecycle tests and review remain required.
+Package/image versions are independent of contract version.

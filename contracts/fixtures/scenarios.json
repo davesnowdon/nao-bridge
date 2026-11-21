@@ -1,11 +1,13 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
     "session_id",
     "operation_id",
-    "subscription_id"
+    "subscription_id",
+    "recording_id",
+    "asset_id"
   ],
   "scenarios": [
     {
@@ -104,6 +106,29 @@
         "new bridge_instance_id; empty sessions, operations, subscriptions and retry keys",
         "404 for old IDs; earlier robot outcome remains unknown to new API",
         "new session accepted; no old commands replayed"
+      ]
+    },
+    {
+      "name": "sample recording and immutable download",
+      "steps": [
+        "POST /api/recordings with samples source, groups, explicit duration and byte bound",
+        "GET /api/recordings/{recording_id} and associated operation until finalized",
+        "GET /api/assets/{asset_id}",
+        "GET /api/assets/{asset_id}/content",
+        "GET content with Range and matching If-Range",
+        "restart API with the same asset directory"
+      ],
+      "expected": [
+        "201 starting recording and associated operation ID",
+        "completed or failed with explicit partial-data error",
+        "metadata includes completed/partial status, byte count and SHA-256",
+        "NDJSON metadata, samples, explicit gaps and end row; hash matches metadata",
+        "206, exact selected bytes and Content-Range",
+        "assets remain; sessions/operations/recordings do not resume; interrupted files become partial"
+      ],
+      "nondeterminism": [
+        "acquisition timestamps and actual sample cadence",
+        "gaps and unavailable groups are explicit, never interpolated"
       ]
     }
   ]

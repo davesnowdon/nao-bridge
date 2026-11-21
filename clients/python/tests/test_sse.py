@@ -83,3 +83,57 @@ def test_malformed_required_frames_are_protocol_errors(raw):
 def test_incomplete_frame_not_delivered():
     raw = frame(envelope())[:-1]
     assert list(SSEParser().feed(raw)) == []
+
+
+@pytest.mark.parametrize("confidence", [True, -0.1, 1.1, "0.9", None])
+def test_malformed_recognition_is_not_delivered_as_an_action(confidence):
+    value = envelope(
+        type="speech.recognized",
+        data={
+            "listener_id": "listener",
+            "hypotheses": [{"text": "capture", "confidence": confidence}],
+        },
+    )
+    with pytest.raises(ProtocolError):
+        list(SSEParser().feed(frame(value)))
+
+
+def test_recognition_accepts_future_fields_and_exposes_listener_identity():
+    data = {
+        "listener_id": "listener",
+        "hypotheses": [{"text": "capture", "confidence": 0.9, "future": True}],
+        "future": "ignored",
+    }
+    event = list(SSEParser().feed(frame(envelope(type="speech.recognized", data=data))))[0]
+    assert event.data == data
+
+
+@pytest.mark.parametrize(
+    "kind,data",
+    [
+        ("motion.posture_changed", {"posture": "StandInit"}),
+        ("motion.posture_changed", {"family": "Standing"}),
+        ("motion.fall_changed", {"phase": "falling"}),
+        ("motion.fall_changed", {"phase": "fallen"}),
+    ],
+)
+def test_motion_observations(kind, data):
+    event = list(SSEParser().feed(frame(envelope(type=kind, data=data))))[0]
+    assert event.type == kind and event.data == data
+
+
+@pytest.mark.parametrize(
+    "kind,data",
+    [
+        ("motion.posture_changed", {}),
+        ("motion.posture_changed", {"posture": None}),
+        ("motion.posture_changed", {"posture": ""}),
+        ("motion.posture_changed", {"family": 1}),
+        ("motion.posture_changed", {"family": "Standing", "posture": None}),
+        ("motion.fall_changed", {"phase": "recovered"}),
+        ("motion.fall_changed", {"phase": True}),
+    ],
+)
+def test_malformed_motion_observations_are_protocol_errors(kind, data):
+    with pytest.raises(ProtocolError):
+        list(SSEParser().feed(frame(envelope(type=kind, data=data))))

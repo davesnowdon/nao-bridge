@@ -21,6 +21,19 @@ def main() -> None:
     parser.add_argument("--robot-address", default=os.environ.get("NAO_IP", "127.0.0.1"))
     parser.add_argument("--robot-port", type=int, default=int(os.environ.get("NAO_PORT", "9559")))
     parser.add_argument("--robot-id", default=os.environ.get("NAO_ROBOT_ID", "nao"))
+    parser.add_argument(
+        "--asset-directory", type=Path, default=os.environ.get("NAO_BRIDGE_ASSET_DIR")
+    )
+    parser.add_argument(
+        "--asset-quota-bytes",
+        type=int,
+        default=int(os.environ.get("NAO_BRIDGE_ASSET_QUOTA_BYTES", "268435456")),
+    )
+    parser.add_argument(
+        "--asset-retention-seconds",
+        type=float,
+        default=float(os.environ.get("NAO_BRIDGE_ASSET_RETENTION_SECONDS", "604800")),
+    )
     args = parser.parse_args()
     settings = Settings(
         host=args.host,
@@ -29,6 +42,9 @@ def main() -> None:
         robot_address=args.robot_address,
         robot_port=args.robot_port,
         robot_id=args.robot_id,
+        asset_directory=args.asset_directory,
+        asset_quota_bytes=args.asset_quota_bytes,
+        asset_retention_seconds=args.asset_retention_seconds,
         agent_python=os.environ.get("NAO_AGENT_PYTHON", "/opt/legacy/bin/python2.7"),
         agent_script=Path(os.environ.get("NAO_AGENT_SCRIPT", "/opt/nao-bridge/agent/agent.py")),
     )
