@@ -10,7 +10,7 @@ are unchanged. This document tracks further robot-free work against the full
 | --- | --- | --- |
 | Hand/foot bumper state and events | Delivered in increment 2 | Integrated API verification pending |
 | Passive inertial, foot load/contact and joint temperature observations | Adapter, shared state/catalog, schemas, SDK metadata and raw HTTP/native-container verification implemented | Both firmware generations pending |
-| Demand-managed sonar, warm-up and stale/invalid handling | Pending | Pending |
+| Demand-managed sonar, warm-up and stale/invalid handling | Private adapter implemented/tested; agent/API ownership, shared sampling and public observer integration pending | Pending |
 | Finite displacement/turn, speed mapping, priority stop | Pending | Pending |
 | Odometry, origin changes and observation frames | Pending | Pending |
 | Threshold/hysteresis observations | Pending | Pending |
@@ -36,3 +36,11 @@ The contract guard passed against the increment-2 branch. Tests cover absent and
 invalid discovery, alias preference, signed values, valid zero/false, invalid
 batches, per-reading failure without losing contacts, stale/disconnected catalogs,
 connection-adapter capture and both Python clients' metadata/state access.
+
+The separate sonar adapter passes 23 focused tests and a real pinned-SDK
+container scenario for named subscription, warm-up, distance quality, preservation
+of another native subscriber, and a subscribe that finishes after timeout.
+Cleanup waits for the unfinished write and retains a pending unsubscribe rather
+than claiming success or queuing duplicates. The full native-container suite also
+passes. This adapter is not yet wired into the running agent or public HTTP API;
+it establishes the producer mechanism before adding multi-client ownership.

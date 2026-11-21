@@ -229,3 +229,33 @@ unknown support, distinct from a successful discovery with an absent key. The
 hardware gate must still establish source presence, frame signs, useful rate,
 and producer initialization/update behavior on each supported firmware.
 
+## Sonar producer and range interpretation
+
+[ALSonar 2.1](https://doc.aldebaran.com/2-1/naoqi/sensors/alsonar.html) activates
+ultrasonic acquisition through a named subscription. Removing only that name
+preserves other applications' demand. The
+[2.8 Python example](https://doc.aldebaran.com/2-8/dev/python/examples/sensors/index.html)
+uses the same lifecycle and left/right first-echo memory keys. Ordinary discovery
+and cached state reads must not acquire a persistent producer implicitly.
+
+Read the version-specific table in the
+[2.1 hardware reference](https://doc.aldebaran.com/2-1/family/robots/sonar_robot.html):
+**NAOv5** specifies 0.20–0.80 m, matching
+[NAO6](https://doc.aldebaran.com/2-8/family/nao_technical/sonar_naov6.html).
+The 0.25–2.55 m entry belongs to NAOv4/V3.x, not NAOv5. Search snippets can collapse
+those rows. Below 0.20 m there is proximity information without a usable distance;
+above 0.80 m the return is an estimate. The native key references linked above
+describe nonpositive returns and the maximum-range sentinel as error/no echo.
+No echo cannot establish clear space, and a distant estimate is not a precise
+obstacle boundary. Verify actual sentinels, torso transforms and source update
+behavior on both target robots before physical acceptance.
+
+The initial private adapter uses a 0.5-second settling window after confirmed
+subscription, with null warming readings. This is a software policy, not measured
+hardware readiness or proof of a new native sample. It distinguishes in-range
+values, estimates, too-close indications and invalid/no-echo returns. It retains
+an unfinished subscribe future before cleanup: an unsubscribe that overtakes a
+late subscribe cannot prove the producer stopped. Pending unsubscribe work is
+retained rather than repeatedly queued. Agent/API integration and public observer
+sharing remain separate unfinished work.
+

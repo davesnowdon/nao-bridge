@@ -228,6 +228,89 @@ finally:
     print(result.strip(), flush=True)
 
 
+def check_native_sonar():
+    agent_env = dict(
+        entry.split("=", 1)
+        for entry in Path(f"/proc/{agent_pid()}/environ").read_text().split("\0")
+        if entry
+    )
+    script = """
+import sys, threading, time
+sys.path.insert(0, '/opt/nao-bridge/agent')
+import qi
+from sonar import Sonar, KEYS
+from wire import monotonic
+
+class Memory(object):
+    def getDataListName(self):
+        return KEYS
+    def getListData(self, keys):
+        return [0.4 if key == KEYS[0] else 1.2 for key in keys]
+
+class Source(object):
+    def __init__(self):
+        self.names = set(['other-application'])
+        self.blocked = False
+        self.release = threading.Event()
+    def subscribe(self, name):
+        if self.blocked and not self.release.wait(5):
+            raise RuntimeError('fixture deadline')
+        self.names.add(name)
+    def unsubscribe(self, name):
+        self.names.discard(name)
+
+server, client = qi.Session(), qi.Session()
+server.listenStandalone('tcp://127.0.0.1:0')
+source = qi.multiThreaded()(Source)()
+server.registerService('ALMemory', Memory())
+server.registerService('ALSonar', source)
+client.connect(server.endpoints()[0])
+memory = client.service('ALMemory')
+def call(service, method, *args):
+    return getattr(service, method)(*args, **{'_async': True}).value(1000)
+adapter = Sonar(client, memory, call, lambda *args: None, monotonic)
+late = None
+try:
+    assert adapter.catalog['available'] and source.names == set(['other-application'])
+    body = {'producer_id': 'probe', 'revision': 1, 'enabled': True}
+    assert adapter.configure(body)['status'] == 'warming'
+    token, keys = adapter.sample_request()
+    warming = adapter.readings(token, keys, call(memory, 'getListData', keys))
+    assert warming['sonar.left']['reason'] == 'warming'
+    time.sleep(0.55)
+    values = adapter.readings(token, keys, call(memory, 'getListData', keys))
+    assert values['sonar.left']['quality'] == 'measured'
+    assert values['sonar.right']['quality'] == 'estimated'
+    assert adapter.close() and source.names == set(['other-application'])
+    late = Sonar(client, memory, call, lambda *args: None, monotonic)
+    source.blocked = True
+    try:
+        late.configure(body)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError('delayed subscribe falsely completed')
+    assert late.poisoned and not late.close()
+    assert not late.pending_write.isFinished()
+    source.release.set()
+    late.pending_write.value(3000)
+    assert late.subscription in source.names
+    assert late.close() and source.names == set(['other-application'])
+    print('Native sonar adapter: warm-up, distance quality, own cleanup and late subscribe passed')
+finally:
+    source.release.set()
+    adapter.close()
+    if late:
+        late.close()
+    client.close()
+    server.close()
+"""
+    result = subprocess.check_output(
+        ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
+    )
+    print(result.strip(), flush=True)
+
+
 async def check_native_controls():
     from nao_bridge.config import Settings
     from nao_bridge.errors import BridgeError
@@ -418,6 +501,7 @@ try:
     check_legacy_bundle()
     check_native_sampling()
     check_native_recognition()
+    check_native_sonar()
     asyncio.run(check_native_controls())
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")
