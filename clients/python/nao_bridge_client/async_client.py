@@ -8,7 +8,7 @@ import time
 import uuid
 import warnings
 from collections import deque
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -512,6 +512,22 @@ class AsyncMotion:
 
     async def postures(self) -> PosturesData:
         return decode(PosturesData, await self._nao._request("GET", "/api/motion/postures"))
+
+    async def stop(
+        self,
+        *,
+        scope: Literal["locomotion", "all"] | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        return await self._submit(
+            "stop",
+            {"scope": scope} if scope is not None else {},
+            wait=wait,
+            timeout=timeout,
+            idempotency_key=idempotency_key,
+        )
 
     async def move(
         self,

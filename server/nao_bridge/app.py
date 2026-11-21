@@ -593,6 +593,21 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.post("/api/motion/stop")
+    async def stop_motion(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "MotionStopRequest")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /motion/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.priority_stop(item, scope=value.get("scope", "locomotion")),
+            recovery=True,
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/robot/diagnostics")
     async def diagnostics(request: Request) -> dict[str, Any]:
         return await core.diagnostics()

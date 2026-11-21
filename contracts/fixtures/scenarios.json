@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.4.0",
+  "contract_version": "1.5.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -179,6 +179,24 @@
       "nondeterminism": [
         "opaque origin and operation IDs, acquisition timestamps, float precision",
         "physical stop and odometry accuracy are separate acceptance gates"
+      ]
+    },
+    {
+      "name": "scoped motion stop across sessions",
+      "steps": [
+        "start speech and a finite move as one session",
+        "submit POST /api/motion/stop with {} as a second session",
+        "check move and speech outcomes",
+        "start a joint move and submit POST /api/motion/stop with scope all"
+      ],
+      "expected": [
+        "the locomotion stop confirms native inactivity",
+        "finite move is cancelled and speech continues",
+        "the all-motion stop confirms walking and joint stop and cancels the joint move",
+        "an unconfirmed native result yields unknown with unresolved IDs and keeps ownership"
+      ],
+      "nondeterminism": [
+        "opaque operation IDs and timing of native completion"
       ]
     }
   ]

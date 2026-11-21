@@ -11,7 +11,7 @@ are unchanged. This document tracks further robot-free work against the full
 | Hand/foot bumper state and events | Delivered in increment 2 | Integrated API verification pending |
 | Passive inertial, foot load/contact and joint temperature observations | Adapter, shared state/catalog, schemas, SDK metadata and raw HTTP/native-container verification implemented | Both firmware generations pending |
 | Demand-managed sonar, warm-up and stale/invalid handling | Native adapter, dedicated agent lane, HTTP lifecycle, shared sampling, sync/async SDK and conformance implemented | Pending |
-| Finite displacement/turn, speed mapping, priority stop | Native IPC, HTTP move operation, cancellation, robot-wide priority stop and both SDKs implemented. Dedicated motion stop scopes remain pending. | Pending |
+| Finite displacement/turn, speed mapping, priority stop | Native IPC, HTTP move operation, cancellation, locomotion/all-motion priority stop and both SDKs implemented | Pending |
 | Odometry, origin changes and observation frames | Planar adapter, shared motion state, schemas, raw HTTP and typed SDK observations implemented | Pending |
 | Threshold/hysteresis observations | Pending | Pending |
 | Camera discovery/capture and managed face observation | Pending | Pending |
@@ -72,3 +72,11 @@ owned operations, shared motion state and both Python SDKs. See the
 Increment 3 is draft [PR #38](https://github.com/davesnowdon/nao-bridge/pull/38),
 stacked on #37. CI accepts PRs targeting feature branches so the stack receives
 the same checks before retargeting to main.
+
+Contract 1.5.0 adds scoped priority stop. A session can stop locomotion or all
+motion owned by any session. Speech and observation activities continue.
+The native priority lane fences in-flight operation IDs before applying the
+stop, then confirms native inactivity and the selected operation outcomes.
+All-motion stop also confirms the joint stop mechanism and any required
+joint holds. Unknown outcomes identify unresolved work. Hardware stop and
+hold behavior still require acceptance.

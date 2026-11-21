@@ -1,4 +1,4 @@
-# Using contract 1.4.0 over HTTP
+# Using contract 1.5.0 over HTTP
 
 For interactive requests, open the bridge's `/docs` page (also linked from `/`).
 Swagger UI and all its assets are bundled, including for offline use. Click
@@ -151,11 +151,26 @@ that the native call ended. A native `false` reports a failed move, and
 `reached: null` indicates the service returned no target verdict. Inspect
 odometry to assess the displacement.
 
-Cancel via the operation's cancel endpoint, or use `POST /api/robot/stop` for
-bridge-wide stop. During walking, native `stopMove` requests controlled stop.
+Cancel an owned move via its operation cancel endpoint. During walking,
+native `stopMove` requests controlled stop.
 Cancellation requires an inactive native report and the end of the dispatched
 move call. An unconfirmed result retains the reservation with status `unknown`.
 Hardware stop timing and distance require acceptance on each robot model.
+
+`POST /api/motion/stop` accepts `{}` for the default `locomotion` scope,
+or `{"scope":"all"}` to stop walking, joint commands and joint controls.
+Both scopes can stop motion owned by another session. They leave speech,
+managed sensor sources and recordings running. The all-motion scope requests
+joint hold where a joint control requires it and preserves stiffness.
+Use `POST /api/robot/stop` to stop bridge activities across domains.
+
+The 202 response identifies a `motion.stop` Operation. Check the status
+and `MotionStopResult` once the operation ends. `confirmed_ids` contains
+native operations that were confirmed ended or fenced before dispatch.
+`unresolved_ids` identifies unconfirmed active work. The result gives separate
+`locomotion_confirmed` and `joint_stop_confirmed` values. The latter is
+null for the locomotion scope. Confirmation is based on native execution
+and hold mechanisms. A hardware emergency stop has different guarantees.
 
 Read `GET /api/state?include=motion` and select
 `groups.motion.value.odometry`. The pose is sensor-backed, relative to the

@@ -41,7 +41,7 @@ class JointControls:
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         if not core.info.get("joint_controls", {}).get("available", False):
             raise BridgeError("unsupported", "Joint hold has not passed hardware acceptance", 422)
-        if core.stop_pending():
+        if core.stop_pending(KIND):
             raise BridgeError("resource_busy", "Robot stop is in progress", 409)
         body = {"speed": 0.1, "ttl": 0.5, **copy.deepcopy(body)}
         body["sequence"] = int(body["sequence"])
@@ -176,7 +176,7 @@ class JointControls:
                     not session
                     or session.public["status"] != "active"
                     or session.deadline <= core.clock()
-                    or core.stop_pending()
+                    or core.stop_pending(KIND)
                 ):
                     await core.cancel(op)
                     return

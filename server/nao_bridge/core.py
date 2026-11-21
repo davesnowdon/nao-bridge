@@ -26,7 +26,9 @@ from .sensor_observers import SONAR_IDS, SensorObservers
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
 KNOWN_TERMINAL = TERMINAL - {"unknown"}
-RECOVERY_KINDS = {"session.close", "session.revoke", "robot.stop"}
+STOP_KINDS = {"robot.stop", "motion.stop"}
+STOP_ROUTES = {"POST /robot/stop", "POST /motion/stop"}
+RECOVERY_KINDS = {"session.close", "session.revoke"} | STOP_KINDS
 CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
 MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change", "motion.move"}
 ORDINARY_KINDS = {
@@ -36,6 +38,7 @@ ORDINARY_KINDS = {
     "autonomy.transition",
 } | MOTION_ACTIONS
 NATIVE_KINDS = ORDINARY_KINDS | {CONTROL_KIND}
+MOTION_KINDS = NATIVE_KINDS - {"speech.utterance"}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -69,7 +72,7 @@ class Session:
     public: dict[str, Any]
     deadline: float
     retained_until: float | None = None
-    stop_operation_id: str | None = None
+    stop_operation_ids: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -81,6 +84,7 @@ class Operation:
     retained_resources: list[str] = field(default_factory=list)
     done: asyncio.Event = field(default_factory=asyncio.Event)
     cancel_task: asyncio.Task | None = None
+    stop_scope: str | None = None
 
 
 @dataclass
@@ -331,6 +335,7 @@ class Core:
                 "motion.moves": feature(
                     available and self.info.get("locomotion", {}).get("available", False)
                 ),
+                "motion.stop": feature(available and bool(self.info.get("locomotion"))),
                 "touch.changed": feature(available and self.info.get("touch_available", False)),
                 "motion.posture_changed": feature(
                     available and bool(self.info.get("motion_events", {}).get("posture_fields"))
@@ -690,7 +695,7 @@ class Core:
         create: Callable[[], dict[str, Any]],
         recovery: bool = False,
     ) -> dict[str, Any]:
-        stop = route == "POST /robot/stop"
+        stop = route in STOP_ROUTES
         async with self.admission:
             if self.closing:
                 raise BridgeError("dependency_unavailable", "Bridge is shutting down", 503)
@@ -718,7 +723,7 @@ class Core:
                     not stop
                     and sum(
                         record.recovery == recovery
-                        and not record.fingerprint.startswith("POST /robot/stop\n")
+                        and record.fingerprint.split("\n", 1)[0] not in STOP_ROUTES
                         for record in self.keys.values()
                     )
                     >= capacity
@@ -729,7 +734,7 @@ class Core:
             result = create()
             if stop:
                 for old_key, record in list(self.keys.items()):
-                    if old_key[0] == scope and record.fingerprint.startswith("POST /robot/stop\n"):
+                    if old_key[0] == scope and record.resource_id == result["id"]:
                         del self.keys[old_key]
             if key:
                 resource_kind = (
@@ -765,20 +770,20 @@ class Core:
     ) -> Operation:
         if "speech.recognition" in resources and self.listeners.busy():
             raise BridgeError("resource_busy", "Vocabulary listeners own recognition", 409)
-        if kind in NATIVE_KINDS and self.stop_pending():
-            raise BridgeError("resource_busy", "Robot stop is in progress", 409)
+        if kind in NATIVE_KINDS and self.stop_pending(kind):
+            raise BridgeError("resource_busy", "Stop is in progress for this activity", 409)
         recovery = kind in RECOVERY_KINDS
-        if recovery and kind != "robot.stop":
+        if recovery and kind not in STOP_KINDS:
             self.trim_recovery_history(self.settings.max_recovery_operations - 1)
         capacity = (
             self.settings.max_recovery_operations if recovery else self.settings.max_operations
         )
         if (
-            kind != "robot.stop"
+            kind not in STOP_KINDS
             and sum(
                 (o.public["kind"] in RECOVERY_KINDS) == recovery
                 for o in self.operations.values()
-                if o.public["kind"] != "robot.stop"
+                if o.public["kind"] not in STOP_KINDS
             )
             >= capacity
         ):
@@ -1169,7 +1174,7 @@ class Core:
         if (
             session.public["status"] != "active"
             or session.deadline <= self.clock()
-            or self.stop_pending()
+            or self.stop_pending(op.public["kind"])
         ):
             self.finish(op, "cancelled", {"dispatched": False})
             return
@@ -1372,7 +1377,7 @@ class Core:
             for op in self.operations.values()
             if op.public["session_id"] == sid
             and not op.released
-            and op.public["kind"] != RECORDING_KIND
+            and op.public["kind"] in NATIVE_KINDS
         ]
         for op in affected:
             if op.public["status"] == "accepted":
@@ -1499,9 +1504,21 @@ class Core:
         else:
             self.finish(op, "succeeded", result)
 
-    def stop_pending(self) -> bool:
+    @staticmethod
+    def motion_stop_matches(scope: str | None, kind: str) -> bool:
+        return kind in MOTION_KINDS if scope == "all" else kind == "motion.move"
+
+    def stop_pending(self, kind: str | None = None) -> bool:
         return self.closing or any(
-            op.public["kind"] == "robot.stop" and op.public["status"] not in TERMINAL
+            op.public["status"] not in TERMINAL
+            and (
+                op.public["kind"] == "robot.stop"
+                or (
+                    op.public["kind"] == "motion.stop"
+                    and kind is not None
+                    and self.motion_stop_matches(op.stop_scope, kind)
+                )
+            )
             for op in self.operations.values()
         )
 
@@ -1547,20 +1564,84 @@ class Core:
         stopped["unresolved_ids"].extend(await self.recordings.settle())
         return stopped
 
-    def priority_stop(self, session: Session) -> dict[str, Any]:
-        previous = self.operations.get(session.stop_operation_id or "")
+    def priority_stop(self, session: Session, scope: str | None = None) -> dict[str, Any]:
+        slot = scope or "robot"
+        previous = self.operations.get(session.stop_operation_ids.get(slot, ""))
         if previous:
             if previous.public["status"] not in TERMINAL:
                 return copy.deepcopy(previous.public)
             self.forget_operation(previous.public["id"])
-        op = self.new_operation(session, "robot.stop", [], False)
-        session.stop_operation_id = op.public["id"]
+        op = self.new_operation(session, "motion.stop" if scope else "robot.stop", [], False)
+        op.stop_scope = scope
+        session.stop_operation_ids[slot] = op.public["id"]
         self.spawn(self.run_stop(op))
         return copy.deepcopy(op.public)
+
+    async def stop_motion(self, scope: str) -> dict[str, Any]:
+        affected = [
+            op
+            for op in self.operations.values()
+            if not op.released and self.motion_stop_matches(scope, op.public["kind"])
+        ]
+        for op in affected:
+            if op.public["status"] == "accepted":
+                self.finish(op, "cancelled", {"dispatched": False})
+            elif op.public["status"] == "running":
+                self.update(op, status="cancelling")
+        ids = [
+            op.public["id"]
+            for op in affected
+            if not op.released and op.public["connection_generation"] == self.generation
+        ]
+        try:
+            async with asyncio.timeout(self.settings.backend_timeout_seconds):
+                result = await self.backend.stop(motion_scope=scope, operation_ids=ids)
+                result = await self.joint_controls.settle_stop(result, affected)
+        except Exception:
+            result = {"confirmed_ids": [], "unresolved_ids": []}
+        for op in affected:
+            if op.released:
+                continue
+            if self.stop_confirmed(op, result):
+                self.finish_stopped(op, result)
+            else:
+                self.finish(
+                    op,
+                    "unknown",
+                    error=BridgeError("stop_unconfirmed", "Native motion may continue", 503),
+                )
+        return {
+            "scope": scope,
+            "confirmed_ids": sorted(set(result["confirmed_ids"])),
+            "locomotion_confirmed": result.get("locomotion_confirmed") is True,
+            "joint_stop_confirmed": (
+                result.get("joint_stop_confirmed") is True if scope == "all" else None
+            ),
+            "unresolved_ids": sorted(
+                set(result["unresolved_ids"])
+                | {op.public["id"] for op in affected if not op.released}
+            ),
+        }
 
     async def run_stop(self, op: Operation) -> None:
         self.update(op, status="running", started_at=utc())
         try:
+            if op.stop_scope is not None:
+                result = await self.stop_motion(op.stop_scope)
+                uncertain = (
+                    not result["locomotion_confirmed"]
+                    or result["joint_stop_confirmed"] is False
+                    or bool(result["unresolved_ids"])
+                )
+                self.finish(
+                    op,
+                    "unknown" if uncertain else "succeeded",
+                    result,
+                    BridgeError("stop_unconfirmed", "Native motion stop unconfirmed", 503)
+                    if uncertain
+                    else None,
+                )
+                return
             result = await self.stop_all()
             self.finish(
                 op,
@@ -1771,9 +1852,7 @@ class Core:
 
     def trim_recovery_history(self, limit: int) -> None:
         history = [
-            o
-            for o in self.operations.values()
-            if o.public["kind"] in RECOVERY_KINDS - {"robot.stop"}
+            o for o in self.operations.values() if o.public["kind"] in RECOVERY_KINDS - STOP_KINDS
         ]
         count = len(history)
         for op in history:
@@ -1798,8 +1877,8 @@ class Core:
     def forget_session(self, sid: str) -> None:
         session = self.sessions.pop(sid)
         self.joint_controls.forget_session(sid)
-        if session.stop_operation_id:
-            self.forget_operation(session.stop_operation_id)
+        for oid in session.stop_operation_ids.values():
+            self.forget_operation(oid)
         for key, record in list(self.keys.items()):
             if record.resource_kind == "session" and record.resource_id == sid:
                 del self.keys[key]

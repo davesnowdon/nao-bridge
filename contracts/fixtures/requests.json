@@ -244,6 +244,46 @@
         "speed": 0.3
       },
       "valid": false
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {},
+      "valid": true
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": "all"
+      },
+      "valid": true
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": "locomotion"
+      },
+      "valid": true
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": "speech"
+      },
+      "valid": false
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "scope": null
+      },
+      "valid": false
+    },
+    {
+      "schema": "MotionStopRequest",
+      "value": {
+        "reason": "stop"
+      },
+      "valid": false
     }
   ]
 }

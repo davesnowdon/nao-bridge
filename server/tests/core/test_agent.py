@@ -426,6 +426,45 @@ def test_walk_stop_needs_native_inactivity_and_ended_future(agent_module, inacti
         assert result["unresolved_ids"] == ["move"] and reply["status"] == "unknown"
 
 
+def test_motion_stop_scopes_ignore_speech_and_fence_unseen_commands(agent_module):
+    agent = bare_agent(agent_module)
+    calls = []
+    agent.driver.locomotion = types.SimpleNamespace(
+        stop=lambda: calls.append("locomotion") or {"native_inactive": True}
+    )
+    agent.driver.safety_motion = object()
+    agent.driver.stop_motion = lambda names, **kwargs: calls.append(names)
+    agent.records.update(
+        speech={
+            "session_id": "speaker",
+            "status": "accepted",
+            "phase": "dispatch_started",
+            "action": "speak",
+        },
+        joint={
+            "session_id": "owner",
+            "status": "accepted",
+            "phase": "queued",
+            "action": "trajectory",
+            "names": ["HeadYaw"],
+        },
+    )
+    scope = {"payload": {"motion_scope": "locomotion", "operation_ids": ["late-walk"]}}
+    assert agent_module.valid_stop(scope)
+    assert not agent_module.valid_stop({"payload": {"motion_scope": "unknown"}})
+    assert not agent_module.valid_stop({"payload": {"motion_scope": "all", "operation_ids": [3]}})
+    result = agent.stop(scope)
+    assert result["confirmed_ids"] == ["late-walk"] and result["locomotion_confirmed"]
+    assert agent.records["late-walk"]["result"] == {"cancelled": True, "dispatched": False}
+    assert "stop_requested" not in agent.records["joint"]
+    all_motion = {"payload": {"motion_scope": "all", "operation_ids": ["late-control"]}}
+    result = agent.stop(all_motion)
+    assert set(result["confirmed_ids"]) == {"late-control", "joint"}
+    assert result["joint_stop_confirmed"]
+    assert "stop_requested" not in agent.records["speech"]
+    assert calls == ["locomotion", "locomotion", ["Body"]]
+
+
 def test_motion_private_payload_validation_rejects_unsafe_shapes(agent_module):
     from motion import valid_trajectory
 

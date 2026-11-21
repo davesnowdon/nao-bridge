@@ -16,14 +16,15 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.4.0 replaces the old API without compatibility
+remain available. Contract 1.5.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
 [Increment-3 work](docs/increment-3-status.md) adds passive inertial, foot-load,
 ground-contact and joint-temperature observations to the shared sensor state, plus
 explicit sonar observers with shared ownership and sync/async SDK handles.
-It adds finite walking and local planar odometry through the same public API.
+It adds finite walking, local planar odometry and scoped motion stop through
+the same public API.
 Physical walking, stopping and sensor acceptance remain pending.
 
 Robot-free tests cover real SDK loopback services and injected process failures.

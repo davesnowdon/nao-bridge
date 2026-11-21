@@ -25,6 +25,21 @@ from sonar import valid_configuration as valid_sonar
 from wire import VERSION, encode, frames, monotonic
 
 
+def valid_stop(request):
+    payload = request.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    scope = payload.get("motion_scope")
+    ids = payload.get("operation_ids", [])
+    if scope is None:
+        return not ids
+    return (scope in ("all", "locomotion")
+            and not payload.get("operation_id") and not request.get("session_id")
+            and isinstance(ids, list) and len(ids) <= 32
+            and all(isinstance(key, type(u"")) and 0 < len(key) <= 128 for key in ids)
+            and len(set(ids)) == len(ids))
+
+
 def background(function, *args):
     thread = threading.Thread(target=function, args=args)
     thread.daemon = True
@@ -273,44 +288,79 @@ class Agent(object):
             payload = request.get("payload", {}) if request else {}
             oid = payload.get("operation_id")
             sid = request.get("session_id") if request else None
+            scope = payload.get("motion_scope")
+            requested_ids = payload.get("operation_ids", [])
+            broad_stop = not oid and not sid
             controls = getattr(self, "controls", None)
-            control_ids = controls.stop(oid, sid, defer_hold=True) if controls else []
-            if oid and oid not in self.records and not control_ids and len(self.records) < 4096:
-                # The priority lane can overtake a command that has not arrived yet.
-                self.records[oid] = {"session_id": sid, "status": "completed", "phase": "queued",
-                                     "action": "cancelled", "finished": monotonic(),
-                                     "result": {"cancelled": True, "dispatched": False}}
+            control_ids = controls.stop(oid, sid, defer_hold=True) if controls and scope != "locomotion" else []
+            already_ended, missing = [], []
+            # The priority lane can overtake a command that has not arrived yet.
+            for key in requested_ids if scope else [oid] if oid else []:
+                if key in control_ids:
+                    continue
+                if key not in self.records:
+                    if len(self.records) >= 4096:
+                        missing.append(key)
+                        continue
+                    self.records[key] = {
+                        "session_id": sid, "status": "completed", "phase": "queued",
+                        "action": "cancelled", "finished": monotonic(),
+                        "result": {"cancelled": True, "dispatched": False},
+                    }
+                if self.records[key]["status"] == "completed" or (
+                        scope and self.records[key]["status"] == "rejected"):
+                    already_ended.append(key)
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
                         and (record.get("action") not in ("recognition", "sonar") or key == oid)
+                        and (not scope
+                             or scope == "locomotion" and record.get("motion_kind") == "walk"
+                             or scope == "all" and record.get("action") in ("trajectory", "motion_action", "autonomy"))
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
                 record["stop_requested"] = True
                 if record.get("motion_kind") == "walk" and record["phase"] != "queued":
                     record.setdefault("walk_stop_done", threading.Event()).clear()
-        # Do not stop a different session's native output when the selected set is empty.
         active = [record for _, record in selected if record["phase"] != "queued"]
-        if any(record.get("action", "speak") == "speak" for record in active) or (not oid and not sid):
-            try:
-                self.driver.stop()
-            except Exception:
-                # The say future can confirm cancellation before stopAll replies.
-                logging.warning("stopAll did not confirm", exc_info=True)
         walks = [record for record in active if record.get("motion_kind") == "walk"]
         locomotion = getattr(self.driver, "locomotion", None)
         walk_stopped = False
-        if walks or (not oid and not sid and locomotion):
+        if locomotion and (walks or broad_stop):
             try:
                 walk_stopped = locomotion.stop()["native_inactive"]
             except Exception:
                 logging.warning("Native locomotion stop did not confirm", exc_info=True)
-        motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") and record.get("motion_kind") != "walk" for name in record["names"]))
-        if motion_names or (not oid and not sid and not walks):
+        if not scope and (any(record.get("action", "speak") == "speak" for record in active) or broad_stop):
             try:
-                self.driver.stop_motion(motion_names or ["Body"], stop_posture=(not oid and not sid) or any(record.get("motion_kind") in ("wake", "rest", "posture") for record in active))
+                self.driver.stop()
             except Exception:
+                logging.warning("stopAll did not confirm", exc_info=True)
+        motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") and record.get("motion_kind") != "walk" for name in record["names"]))
+        walk_deadline = monotonic() + 0.2
+        if walk_stopped:
+            for record in walks:
+                future = record.get("future")
+                if future is not None and not future.isFinished():
+                    try:
+                        future.value(max(1, int((walk_deadline - monotonic()) * 1000)))
+                    except Exception:
+                        pass
+        walk_pending = bool(walks) and (not walk_stopped or any(
+            not record.get("future") or not record["future"].isFinished() for record in walks))
+        joint_stop_confirmed = None
+        if (scope != "locomotion" and (scope != "all" or (walk_stopped and not walk_pending))
+                and (motion_names or (broad_stop and not walk_pending))):
+            try:
+                if scope == "all" and not getattr(self.driver, "safety_motion", None):
+                    raise ValueError("Native joint stop unavailable")
+                self.driver.stop_motion(["Body"] if scope == "all" else motion_names or ["Body"],
+                                        stop_posture=broad_stop or any(
+                                            record.get("motion_kind") in ("wake", "rest", "posture") for record in active))
+                joint_stop_confirmed = True
+            except Exception:
+                joint_stop_confirmed = False
                 logging.warning("Native motion stop did not confirm", exc_info=True)
-        confirmed, unresolved = [], []
+        confirmed, unresolved = already_ended, missing
         if controls:
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
@@ -324,11 +374,6 @@ class Agent(object):
                 continue
             future = record.get("future")
             if record.get("motion_kind") == "walk":
-                if future is not None and walk_stopped and not future.isFinished():
-                    try:
-                        future.value(max(1, int((deadline - monotonic()) * 1000)))
-                    except Exception:
-                        pass
                 with self.lock:
                     stopped = walk_stopped and future is not None and future.isFinished()
                     if stopped:
@@ -357,6 +402,10 @@ class Agent(object):
             value = controls.snapshot(key)
             (confirmed if value["status"] in ("succeeded", "cancelled") else unresolved).append(key)
         result = {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
+        if scope:
+            result.update(locomotion_confirmed=walk_stopped and not any(
+                key in unresolved and record.get("motion_kind") == "walk" for key, record in selected),
+                joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
                         if key in self.records and self.records[key].get("action") == "autonomy" and "result" in self.records[key])
         if outcomes:
@@ -496,10 +545,13 @@ class Agent(object):
                             except ControlError as error:
                                 self.reply(replies, request, "rejected", code=error.code, message=str(error))
                         elif lane == "priority" and action == "stop":
-                            try:
-                                self.priority.put_nowait((request, replies))
-                            except queue.Full:
-                                self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
+                            if not valid_stop(request):
+                                self.reply(replies, request, "rejected", code="invalid_request", message="Invalid stop request")
+                            else:
+                                try:
+                                    self.priority.put_nowait((request, replies))
+                                except queue.Full:
+                                    self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
                         elif lane == "controls" and action in ("joint_setpoint", "control_status"):
                             try:
                                 oid = request.get("payload", {}).get("operation_id")

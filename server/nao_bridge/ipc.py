@@ -310,9 +310,17 @@ class AgentBackend:
         )
 
     async def stop(
-        self, operation_id: str | None = None, session_id: str | None = None
+        self,
+        operation_id: str | None = None,
+        session_id: str | None = None,
+        *,
+        motion_scope: str | None = None,
+        operation_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        return await self._rpc("priority", "stop", {"operation_id": operation_id}, session_id)
+        payload: dict[str, Any] = {"operation_id": operation_id}
+        if motion_scope is not None:
+            payload.update(motion_scope=motion_scope, operation_ids=operation_ids or [])
+        return await self._rpc("priority", "stop", payload, session_id)
 
     async def fence(self, session_id: str) -> bool:
         return (await self._rpc("priority", "fence", {}, session_id)).get("fenced", False)

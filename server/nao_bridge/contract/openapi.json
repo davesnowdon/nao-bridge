@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, finite walking and local odometry. Physical motion, hold and new sensor acceptance remain pending."
   },
   "servers": [
@@ -1273,6 +1273,76 @@
             }
           }
         ]
+      }
+    },
+    "/motion/stop": {
+      "post": {
+        "operationId": "stopMotion",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MotionStopRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "description": "Identical retained requests return the original resource; changed content conflicts."
+          }
+        ],
+        "description": "Stop motion across sessions using the priority lane. The default scope is locomotion. The Operation reports native confirmation."
       }
     },
     "/motion/trajectory_runs": {
@@ -2895,6 +2965,12 @@
       },
       "PlanarVector": {
         "$ref": "schemas.json#/$defs/PlanarVector"
+      },
+      "MotionStopRequest": {
+        "$ref": "schemas.json#/$defs/MotionStopRequest"
+      },
+      "MotionStopResult": {
+        "$ref": "schemas.json#/$defs/MotionStopResult"
       }
     }
   }

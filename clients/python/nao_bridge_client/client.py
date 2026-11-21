@@ -4,7 +4,7 @@ import asyncio
 import os
 import threading
 from collections.abc import Coroutine
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
 from .controls import AsyncJointControl
@@ -162,6 +162,26 @@ class Motion:
 
     def postures(self) -> PosturesData:
         return self._nao._run(self._nao._async.motion.postures())
+
+    def stop(
+        self,
+        *,
+        scope: Literal["locomotion", "all"] | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.motion.stop(
+                    scope=scope,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
 
     def move(
         self,

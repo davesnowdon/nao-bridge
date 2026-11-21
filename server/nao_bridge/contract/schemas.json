@@ -3140,6 +3140,62 @@
         "velocity_source"
       ],
       "additionalProperties": true
+    },
+    "MotionStopRequest": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "enum": [
+            "locomotion",
+            "all"
+          ],
+          "default": "locomotion"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MotionStopResult": {
+      "type": "object",
+      "description": "The result of a motion.stop Operation after a stop attempt. Confirmation is native execution evidence. Joint confirmation is null for the locomotion scope.",
+      "properties": {
+        "scope": {
+          "enum": [
+            "locomotion",
+            "all"
+          ]
+        },
+        "confirmed_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "unresolved_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "locomotion_confirmed": {
+          "type": "boolean"
+        },
+        "joint_stop_confirmed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "scope",
+        "confirmed_ids",
+        "unresolved_ids",
+        "locomotion_confirmed",
+        "joint_stop_confirmed"
+      ],
+      "additionalProperties": true
     }
   }
 }

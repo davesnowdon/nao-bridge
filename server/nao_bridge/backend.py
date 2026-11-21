@@ -3,6 +3,7 @@ import copy
 import math
 import time
 import uuid
+from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -36,7 +37,12 @@ class Backend(Protocol):
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
     async def stop(
-        self, operation_id: str | None = None, session_id: str | None = None
+        self,
+        operation_id: str | None = None,
+        session_id: str | None = None,
+        *,
+        motion_scope: str | None = None,
+        operation_ids: list[str] | None = None,
     ) -> dict[str, Any]: ...
     async def fence(self, session_id: str) -> bool: ...
     async def diagnostics(self) -> dict[str, Any]: ...
@@ -57,6 +63,7 @@ class FakeBackend:
         self.autonomy_results: dict[str, dict[str, Any]] = {}
         self.controls = FakeControls(self)
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
+        self.motion_stop_ids: deque[str] = deque(maxlen=4096)
         self.revoked: set[str] = set()
         self.sink: EventSink | None = None
         self.samples_task: asyncio.Task | None = None
@@ -469,6 +476,8 @@ class FakeBackend:
             raise BackendUnknown("Robot disconnected before dispatch could be established")
         if session_id in self.revoked:
             raise BridgeError("session_invalid", "Agent rejected fenced session", 409)
+        if operation_id in self.motion_stop_ids:
+            return {"cancelled": True, "dispatched": False}
         self.calls.append(
             {
                 "id": operation_id,
@@ -497,15 +506,47 @@ class FakeBackend:
             self.active.pop(operation_id, None)
 
     async def stop(
-        self, operation_id: str | None = None, session_id: str | None = None
+        self,
+        operation_id: str | None = None,
+        session_id: str | None = None,
+        *,
+        motion_scope: str | None = None,
+        operation_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        controls = await self.controls.stop(operation_id, session_id)
+        controls = (
+            {}
+            if motion_scope == "locomotion"
+            else await self.controls.stop(operation_id, session_id)
+        )
+        selected = (
+            {
+                call["id"]
+                for call in self.calls
+                if (
+                    call["action"] == "walk"
+                    if motion_scope == "locomotion"
+                    else call["action"] != "speech"
+                )
+            }
+            if motion_scope
+            else set()
+        )
         matched = [
             key
             for key, (owner, _) in self.active.items()
             if (operation_id is None or key == operation_id)
             and (session_id is None or owner == session_id)
+            and (motion_scope is None or key in selected)
         ]
+        confirmed = self.connected and self.stop_confirmed
+        scope_result = (
+            {
+                "locomotion_confirmed": confirmed,
+                "joint_stop_confirmed": confirmed if motion_scope == "all" else None,
+            }
+            if motion_scope
+            else {}
+        )
         if not self.connected or not self.stop_confirmed:
             return {
                 "confirmed_ids": [],
@@ -513,13 +554,17 @@ class FakeBackend:
                     set(matched + list(controls) + ([operation_id] if operation_id else []))
                 ),
                 "controls": controls,
+                **scope_result,
             }
+        if motion_scope:
+            self.motion_stop_ids.extend(operation_ids or [])
         for key in matched:
             self.active[key][1].set()
         completed = [
             key
             for key in self.autonomy_results
             if (operation_id is None or key == operation_id)
+            and (motion_scope is None or key in selected)
             and (
                 session_id is None
                 or any(
@@ -530,15 +575,24 @@ class FakeBackend:
         unresolved = {oid for oid, value in controls.items() if not value["released"]}
         return {
             "confirmed_ids": list(
-                set(matched + completed + list(controls) + ([operation_id] if operation_id else []))
+                set(
+                    matched
+                    + completed
+                    + list(controls)
+                    + (operation_ids or [])
+                    + ([operation_id] if operation_id else [])
+                )
                 - unresolved
             ),
             "unresolved_ids": list(unresolved),
             "controls": controls,
             "results": {key: self.autonomy_results[key] for key in completed},
+            **scope_result,
         }
 
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload["operation_id"] in self.motion_stop_ids:
+            raise BridgeError("control_ended", "Control was stopped before dispatch", 409)
         return await self.controls.submit(session_id, payload)
 
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]:

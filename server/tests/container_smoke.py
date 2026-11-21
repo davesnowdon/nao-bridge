@@ -902,6 +902,35 @@ try:
     print(
         "Native HTTP walking: displacement, origin and controlled cancellation passed", flush=True
     )
+    speech = probe.request(
+        "POST", "/api/speech/utterances", {"text": "[fixture:block]"}, status=202
+    )
+    walk = probe.request("POST", "/api/motion/moves", {"yaw": 0.2}, status=202)
+    until(lambda: motion_state()["locomotion_active"], timeout=2)
+    stop = probe.request("POST", "/api/motion/stop", {}, status=202)
+    stopped = probe.wait(stop)
+    assert stopped["status"] == "succeeded", stopped
+    probe.validate("MotionStopResult", stopped["result"])
+    assert stopped["result"]["scope"] == "locomotion"
+    assert probe.wait(walk)["status"] == "cancelled"
+    assert until(lambda: not motion_state()["locomotion_active"])
+    joint = probe.request(
+        "POST",
+        "/api/motion/joint_moves",
+        {"positions": {"HeadYaw": 0.4}, "duration": 2},
+        status=202,
+    )
+    until(lambda: probe.request("GET", "/api/operations/" + joint["id"])["status"] == "running")
+    time.sleep(0.1)
+    stop = probe.request("POST", "/api/motion/stop", {"scope": "all"}, status=202)
+    stopped = probe.wait(stop)
+    assert stopped["status"] == "succeeded", stopped
+    assert stopped["result"]["joint_stop_confirmed"] is True
+    assert probe.wait(joint)["status"] == "cancelled"
+    assert probe.request("GET", "/api/operations/" + speech["id"])["status"] == "running"
+    probe.request("POST", "/api/operations/" + speech["id"] + "/cancel", {}, status=202)
+    assert probe.wait(speech)["status"] == "cancelled"
+    print("Native HTTP motion stop: walking and joint scopes preserve speech", flush=True)
     print(
         "Native sample recording: measured state, NDJSON, checksum and range download passed",
         flush=True,

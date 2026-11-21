@@ -1,4 +1,4 @@
-# HTTP/SSE contract 1.4.0
+# HTTP/SSE contract 1.5.0
 
 The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
 and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server

@@ -1,6 +1,6 @@
 # NAO Bridge Python client
 
-The replacement client provides `Nao` and `AsyncNao` for the version 1.4 HTTP/SSE
+The replacement client provides `Nao` and `AsyncNao` for the version 1.5 HTTP/SSE
 contract. Package version 0.2 removes the old `NAOBridgeClient` API. Python 3.10+
 is supported; a NAOqi installation is unnecessary on the client.
 
@@ -47,6 +47,7 @@ asyncio.run(main())
 | `motion.wake()`, `.rest()`, `.set_stiffness(...)`, `.posture(...)` | Explicit preparation with session ownership |
 | `motion.move_joints(...)`, `.head(...)`, `.hand(...)`, `.play(...)` | Finite absolute targets and portable trajectories; optional same-session replacement |
 | `motion.move(x=..., y=..., yaw=...)`, `.odometry()` | Finite robot-relative walking and typed, timestamped planar observations |
+| `motion.stop(scope=...)` | Stops locomotion or all motion across sessions, leaving other activities running |
 | `motion.set_joint_targets(...)` | One ordered target update; no background refresh |
 | `motion.joint_control(...)` | Scoped latest-target refresh and cancellation on exit |
 | `autonomy.configure(...)`, `.state(...)` | Explicit discovered settings and observed values |
@@ -132,7 +133,9 @@ with Nao() as nao:
 
 The async client uses the same methods with `await`. Use `wait=False` to
 retain the operation immediately and cancel it explicitly if needed. A local
-wait timeout leaves the move running. `odometry(require_fresh=True)` requires
+wait timeout leaves the move running. `motion.stop()` requests priority
+locomotion stop across sessions. Use `scope="all"` to include joint commands
+and joint controls. `odometry(require_fresh=True)` requires
 a fresh motion sample with a usable pose. Velocity may still be unavailable.
 See the [wire contract](../../docs/http-api.md#finite-walking-and-odometry)
 for axes, limits and stop confirmation.
