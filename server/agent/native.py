@@ -17,6 +17,7 @@ from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 from camera import VideoDevice, FixtureVideo
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
+from velocity import MAX_ROTATION, MAX_TRANSLATION
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
     CONTACTS = json.load(source)
@@ -44,6 +45,7 @@ def contact_values(values):
 
 class NativeDriver(object):
     joint_hold_verified = False
+    velocity_stop_verified = False
 
     def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
@@ -151,6 +153,12 @@ class NativeDriver(object):
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
             "max_active": 4, "max_ttl": 1.0, "default_ttl": 0.5, "default_speed": 0.1,
         }
+        self.description["velocity_control"] = {
+            "available": self.velocity_control_available(),
+            "reason": None if self.velocity_control_available() else "hardware_velocity_stop_unverified",
+            "frame": "robot", "max_ttl": 1.0, "default_ttl": 0.5,
+            "max_translation_m_s": MAX_TRANSLATION, "max_rotation_rad_s": MAX_ROTATION,
+        }
         self._connected.set()
         return self.description
 
@@ -244,6 +252,9 @@ class NativeDriver(object):
 
     def joint_control_available(self):
         return bool(self.joint_hold_verified and self.motion and self.safety_motion)
+
+    def velocity_control_available(self):
+        return bool(self.velocity_stop_verified and self.locomotion and self.locomotion.catalog["available"])
 
     def validate_joint_target(self, payload):
         if not self.motion:
@@ -436,6 +447,7 @@ class FixtureMemory(object):
 
 class FixtureDriver(NativeDriver):
     joint_hold_verified = True
+    velocity_stop_verified = True
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 

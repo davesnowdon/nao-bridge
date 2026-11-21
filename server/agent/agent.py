@@ -24,6 +24,7 @@ from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
 from camera import CameraError, CameraUnknown, handoff, valid_capture, valid_capture_id
 from faces import valid_configuration as valid_faces
+from velocity import VelocityControls
 from wire import VERSION, encode, frames, monotonic
 
 PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
@@ -82,6 +83,8 @@ class Agent(object):
         self.controls = JointControls(self.driver, self.lock, monotonic,
                                       lambda function, *args: background(self.run_control, function, *args),
                                       lambda request: self.valid(request, initial=False) is None, self.observe)
+        self.velocity_controls = VelocityControls(
+            self.driver, self.lock, monotonic, self.controls.spawn, self.controls.authority, self.observe)
 
     def observe(self, kind, data):
         try:
@@ -127,6 +130,7 @@ class Agent(object):
             if expired:
                 self.lose_authority("heartbeat_lost")
             self.controls.tick()
+            self.velocity_controls.tick()
 
     def valid(self, request, initial=True):
         if request.get("agent") != self.instance or request.get("api") != self.api or request.get("epoch") != self.epoch:
@@ -138,7 +142,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "camera_capture") and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "camera_capture") and request.get("session_id") in self.revoked:
             return "fenced_session"
         return None
 
@@ -353,10 +357,18 @@ class Agent(object):
             broad_stop = not oid and not sid
             controls = getattr(self, "controls", None)
             control_ids = controls.stop(oid, sid, defer_hold=True) if controls and scope != "locomotion" else []
+            velocity = getattr(self, "velocity_controls", None)
+            velocity_engaged = set(key for key, record in velocity.records.items()
+                                   if not record["released"]) if velocity else set()
+            velocity_ids = [key for key in velocity.stop(oid, sid)
+                            if key in velocity_engaged or key == oid or key in requested_ids] if velocity else []
+            velocity_stopping = [key for key in velocity_ids
+                                 if velocity.records[key]["status"] == "cancelling"]
+            velocity_deadline = monotonic() + 1.1
             already_ended, missing = [], []
             # The priority lane can overtake a command that has not arrived yet.
             for key in requested_ids if scope else [oid] if oid else []:
-                if key in control_ids:
+                if key in control_ids or key in velocity_ids:
                     continue
                 if key not in self.records:
                     if len(self.records) >= 4096:
@@ -386,7 +398,7 @@ class Agent(object):
         walks = [record for record in active if record.get("motion_kind") == "walk"]
         locomotion = getattr(self.driver, "locomotion", None)
         walk_stopped = False
-        if locomotion and (walks or broad_stop):
+        if locomotion and (walks or (broad_stop and not velocity_stopping)):
             try:
                 walk_stopped = locomotion.stop()["native_inactive"]
             except Exception:
@@ -396,6 +408,15 @@ class Agent(object):
                 self.driver.stop()
             except Exception:
                 logging.warning("stopAll did not confirm", exc_info=True)
+        if velocity_stopping:
+            while monotonic() < velocity_deadline and any(
+                    velocity.snapshot(key)["status"] == "cancelling" for key in velocity_stopping):
+                time.sleep(0.005)
+            velocity_stopped = all(
+                (velocity.snapshot(key)["stop"] or {}).get("confirmed") is True
+                for key in velocity_stopping)
+            if not walks:
+                walk_stopped = velocity_stopped
         motion_names = sorted(set(name for record in active if record.get("action") in ("trajectory", "motion_action") and record.get("motion_kind") != "walk" for name in record["names"]))
         walk_deadline = monotonic() + 0.2
         if walk_stopped:
@@ -408,6 +429,10 @@ class Agent(object):
                         pass
         walk_pending = bool(walks) and (not walk_stopped or any(
             not record.get("future") or not record["future"].isFinished() for record in walks))
+        if velocity_ids:
+            walk_pending = walk_pending or any(
+                not value["released"] and value["status"] not in ("succeeded", "cancelled")
+                for value in (velocity.snapshot(key) for key in velocity_ids))
         joint_stop_confirmed = None
         if (scope != "locomotion" and (scope != "all" or (walk_stopped and not walk_pending))
                 and (motion_names or (broad_stop and not walk_pending))):
@@ -462,10 +487,17 @@ class Agent(object):
         for key in control_ids:
             value = controls.snapshot(key)
             (confirmed if value["status"] in ("succeeded", "cancelled") else unresolved).append(key)
+        velocity_results = {key: velocity.snapshot(key) for key in velocity_ids}
+        for key, value in velocity_results.items():
+            if value["status"] in ("succeeded", "cancelled"):
+                confirmed.append(key)
+            elif not value["released"] or oid == key or key in requested_ids:
+                unresolved.append(key)
         result = {"confirmed_ids": confirmed, "unresolved_ids": unresolved}
         if scope:
             result.update(locomotion_confirmed=walk_stopped and not any(
-                key in unresolved and record.get("motion_kind") == "walk" for key, record in selected),
+                key in unresolved and record.get("motion_kind") == "walk" for key, record in selected)
+                and not any(key in unresolved for key in velocity_ids),
                 joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
                         if key in self.records and self.records[key].get("action") == "autonomy" and "result" in self.records[key])
@@ -473,6 +505,8 @@ class Agent(object):
             result["results"] = outcomes
         if control_ids:
             result["controls"] = dict((key, controls.snapshot(key)) for key in control_ids)
+        if velocity_results:
+            result["velocity_controls"] = velocity_results
         return result
 
     def safety_worker(self):
@@ -597,12 +631,13 @@ class Agent(object):
                             else:
                                 self.revoked[sid] = monotonic()
                                 self.reply(replies, request, result={"fenced": True, "epoch": self.epoch})
-                        elif lane == "priority" and action == "release_controls":
+                        elif lane == "priority" and action in ("release_controls", "release_velocity_controls"):
                             try:
                                 sid = request.get("session_id")
                                 if sid not in self.revoked:
                                     raise ControlError("fencing_unconfirmed", "Session must be fenced before release")
-                                self.reply(replies, request, result={"released_ids": self.controls.release(sid)})
+                                manager = self.controls if action == "release_controls" else self.velocity_controls
+                                self.reply(replies, request, result={"released_ids": manager.release(sid)})
                             except ControlError as error:
                                 self.reply(replies, request, "rejected", code=error.code, message=str(error))
                         elif lane == "priority" and action == "stop":
@@ -613,18 +648,24 @@ class Agent(object):
                                     self.priority.put_nowait((request, replies))
                                 except queue.Full:
                                     self.reply(replies, request, "rejected", code="limit_exceeded", message="Priority queue full")
-                        elif lane == "controls" and action in ("joint_setpoint", "control_status"):
+                        elif lane == "controls" and action in (
+                                "joint_setpoint", "control_status", "velocity_setpoint", "velocity_status"):
                             try:
                                 oid = request.get("payload", {}).get("operation_id")
                                 if not isinstance(oid, type(u"")) or not 0 < len(oid) <= 128:
                                     raise ControlError("invalid_request", "Invalid control operation ID")
-                                if action == "joint_setpoint":
-                                    if oid in self.records:
+                                velocity = action.startswith("velocity_")
+                                manager = self.velocity_controls if velocity else self.controls
+                                peer = self.controls if velocity else self.velocity_controls
+                                if action.endswith("_setpoint"):
+                                    if oid in self.records or oid in peer.records:
                                         raise ControlError("control_ended", "Operation ID is already used or stopped")
-                                    value = self.controls.submit(request)
+                                    if any(not item["released"] for item in peer.records.values()):
+                                        raise ControlError("resource_busy", "Active control owns overlapping joints")
+                                    value = manager.submit(request)
                                 else:
-                                    value = self.controls.snapshot(oid)
-                                    if self.controls.records[oid]["identity"][0] != request.get("session_id"):
+                                    value = manager.snapshot(oid)
+                                    if manager.records[oid]["identity"][0] != request.get("session_id"):
                                         raise ControlError("forbidden", "Control belongs to another session")
                                 self.reply(replies, request, result=value)
                             except ValueError as error:
@@ -698,12 +739,14 @@ class Agent(object):
             with self.lock:
                 now = monotonic()
                 self.controls.prune(self.revoked)
+                self.velocity_controls.prune(self.revoked)
                 for rid, record in list(self.records.items()):
                     if record["status"] in ("completed", "rejected") and now - record.get("finished", now) > 900:
                         del self.records[rid]
                 for sid, revoked_at in list(self.revoked.items()):
                     if (now - revoked_at > 900 and not any(r["session_id"] == sid for r in self.records.values())
-                            and not any(r["identity"][0] == sid for r in self.controls.records.values())):
+                            and not any(r["identity"][0] == sid for manager in (self.controls, self.velocity_controls)
+                                        for r in manager.records.values())):
                         del self.revoked[sid]
 
 

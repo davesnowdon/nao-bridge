@@ -363,6 +363,17 @@ class AgentBackend:
             "controls", "control_status", {"operation_id": operation_id}, session_id
         )
 
+    async def velocity_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("controls", "velocity_setpoint", payload, session_id)
+
+    async def velocity_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]:
+        return await self._rpc(
+            "controls", "velocity_status", {"operation_id": operation_id}, session_id
+        )
+
+    async def release_velocity_controls(self, session_id: str) -> dict[str, Any]:
+        return await self._rpc("priority", "release_velocity_controls", {}, session_id)
+
     async def stop(
         self,
         operation_id: str | None = None,

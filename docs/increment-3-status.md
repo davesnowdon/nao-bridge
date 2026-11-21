@@ -16,7 +16,7 @@ are unchanged. This document tracks further robot-free work against the full
 | Threshold/hysteresis observations | Shared battery and sonar feed, per-subscription hysteresis, SSE schema and both SDKs implemented | Live source behavior pending |
 | Camera discovery and still capture | Native adapter, bounded RGB transfer, PNG assets, HTTP and both Python SDKs implemented | Both firmware generations pending |
 | Managed face observation | Owned native source, shared HTTP lifecycle, SSE and both Python SDKs implemented | Both firmware generations pending |
-| Owned velocity controls, independent expiry and controlled stop | Pending; must stay unavailable on hardware until its gate passes | Pending |
+| Owned velocity controls, independent expiry and controlled stop | Agent and private IPC implemented. HTTP and SDK integration pending | Native hardware remains gated pending measured stop and expiry |
 | Public-API Wanderer reference application | Pending | Pending |
 
 The passive adapter discovers native memory keys once per connection, then adds
@@ -118,3 +118,16 @@ SSE detections, as well as the private IPC and fault-recovery scenarios.
 The contract guard passed against both the camera commit and the PR #37 base.
 On physical NAO6 and NAOv5, face mode, event payloads, concurrent consumers and
 cleanup after sudden agent loss still need verification.
+
+The private velocity controller reuses the joint control sequence ledger, latest
+pending setpoint, and independent watchdog. Fixture input is a robot-frame
+planar target in m/s and rad/s. Expiry and authority loss request a controlled
+`stopMove` and confirm native inactivity. If an update is still in flight, the
+urgent stop leaves the outcome unknown. The agent attempts another stop on that
+same connection after the write settles. The old control ID remains closed.
+The production driver keeps its velocity acceptance gate false.
+
+The pinned SDK fixture verified ordered updates, expiry and scoped stop with
+four ordinary command workers occupied. A separate agent watchdog check
+confirmed the stop after heartbeat authority loss. The late-write and
+stop-order regressions ran in the host test suite.

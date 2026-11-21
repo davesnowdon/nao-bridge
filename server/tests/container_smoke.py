@@ -398,6 +398,37 @@ finally:
     client.close()
     safety.close()
     server.close()
+
+from agent import Agent, background
+agent = Agent()
+agent.driver.connect()
+try:
+    agent.api = 'velocity-watchdog'
+    agent.heartbeat = monotonic()
+    now = monotonic()
+    request = {
+        'api': agent.api, 'agent': agent.instance, 'epoch': agent.epoch,
+        'action': 'velocity_setpoint', 'session_id': u'watchdog-session', 'deadline': now + 1,
+        'payload': {'operation_id': u'watchdog-move', 'control_id': u'watchdog-lease',
+                    'sequence': 0, 'x': 0.05, 'y': 0., 'yaw': 0., 'expires': now + 1},
+    }
+    controls = agent.velocity_controls
+    controls.submit(request)
+    while controls.snapshot(u'watchdog-move')['dispatched_sequence'] != 0:
+        assert monotonic() < now + 0.8
+        time.sleep(0.005)
+    assert agent.driver.motion_impl.moveIsActive()
+    agent.heartbeat = monotonic() - 1.1
+    background(agent.watchdog)
+    while controls.snapshot(u'watchdog-move')['status'] != 'cancelled':
+        assert monotonic() < now + 2.0
+        time.sleep(0.005)
+    outcome = controls.snapshot(u'watchdog-move')
+    assert outcome['reason'] == 'authority_lost' and outcome['stop']['confirmed']
+    assert not agent.driver.motion_impl.moveIsActive()
+    print('Native velocity watchdog: authority loss confirmed stop in the pinned SDK fixture')
+finally:
+    agent.driver.close()
 """
     result = subprocess.check_output(
         ["/opt/legacy/bin/python2.7", "-c", script], env=agent_env, text=True, timeout=15
@@ -687,6 +718,65 @@ async def check_native_controls():
         print(
             "Native joint controls: ordered updates, expiry/hold with four blocked workers, "
             "ended IDs and fencing passed",
+            flush=True,
+        )
+        assert info["velocity_control"]["available"]
+        velocity = {
+            "operation_id": "velocity-one",
+            "control_id": "velocity-lease",
+            "sequence": 0,
+            "x": 0.05,
+            "y": 0.02,
+            "yaw": 0.15,
+            "expires": time.monotonic() + 0.8,
+        }
+
+        async def velocity_at(oid, predicate):
+            report = await backend.velocity_control_status("walking", oid)
+            return report if predicate(report) else None
+
+        await backend.velocity_setpoint("walking", velocity)
+        velocity = {**velocity, "sequence": 1, "x": 0.07}
+        await backend.velocity_setpoint("walking", velocity)
+        await poll(
+            lambda: velocity_at("velocity-one", lambda report: report["dispatched_sequence"] == 1)
+        )
+        assert (await backend.velocity_setpoint("walking", velocity))["expires"] == velocity[
+            "expires"
+        ]
+        report = await poll(
+            lambda: velocity_at("velocity-one", lambda value: value["status"] == "succeeded")
+        )
+        assert report["reason"] == "velocity_expired" and report["stop"]["confirmed"]
+        expired = {**velocity, "sequence": 2, "expires": time.monotonic() + 0.7}
+        try:
+            await backend.velocity_setpoint("walking", expired)
+        except BridgeError as exc:
+            assert exc.code == "control_ended"
+        else:
+            raise AssertionError("Expired velocity lease reopened")
+
+        second = {
+            **expired,
+            "operation_id": "velocity-two",
+            "control_id": "velocity-peer",
+            "sequence": 0,
+        }
+        await backend.velocity_setpoint("walking", second)
+        await poll(
+            lambda: velocity_at("velocity-two", lambda value: value["dispatched_sequence"] == 0)
+        )
+        stop = await backend.stop(motion_scope="locomotion", operation_ids=["velocity-two"])
+        assert (
+            stop["locomotion_confirmed"]
+            and stop["velocity_controls"]["velocity-two"]["stop"]["confirmed"]
+        )
+        assert (await backend.velocity_control_status("walking", "velocity-two"))[
+            "status"
+        ] == "cancelled"
+        assert all(not task.done() for task in blocked)
+        print(
+            "Native velocity: ordered expiry and scoped stop with four blocked workers passed",
             flush=True,
         )
     finally:

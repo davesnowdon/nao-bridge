@@ -327,3 +327,19 @@ camera identity, frame rate/age, concurrent consumers and stale subscriptions
 following sudden agent loss. [ALExtractor API](https://doc.aldebaran.com/2-8/naoqi/core/alextractor-api.html)
 and [ALVisionExtractor API](https://doc.aldebaran.com/2-8/naoqi/core/alvisionextractor-api.html).
 
+## Continuous robot-frame velocity
+
+The native adapter uses `ALMotion.move` to pass robot-frame m/s and rad/s. The
+NAOqi references describe this as a nonblocking call and describe `stopMove`
+as the controlled stop. Fixture bounds are a planar norm of 0.10 m/s and an
+absolute yaw rate of 0.40 rad/s. Physical acceptance must measure behavior
+and stopping at the enabled speeds and surfaces. [NAOqi 2.1 locomotion API](https://doc.aldebaran.com/2-1/naoqi/motion/control-walk-api.html)
+and [NAOqi 2.8 locomotion API](https://doc.aldebaran.com/2-8/naoqi/motion/control-walk-api.html).
+
+The agent starts a separate stop when the target lease expires or the API
+heartbeat authority ends. A native update that may still arrive keeps the
+lease outcome unknown and triggers another stop once that write settles.
+A generation change ends that reconciliation. Loss of the agent, container
+or robot link can prevent further stop attempts. Neither an acknowledgement
+nor a fixture result measures stopping distance on a robot.
+

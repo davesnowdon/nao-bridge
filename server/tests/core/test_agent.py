@@ -84,6 +84,27 @@ def test_stop_includes_completed_control_without_ordinary_ledger_entry(agent_mod
     }
 
 
+@pytest.mark.parametrize("scope", [None, "all"])
+def test_priority_stop_keeps_joint_stop_behind_unconfirmed_velocity(agent_module, scope):
+    agent = bare_agent(agent_module)
+    pending = {"status": "unknown", "released": False, "stop": {"confirmed": False}}
+    agent.velocity_controls = types.SimpleNamespace(
+        records={"velocity": pending},
+        stop=lambda *args: ["velocity"],
+        snapshot=lambda oid: pending,
+    )
+    agent.driver.locomotion = types.SimpleNamespace(stop=lambda: {"native_inactive": True})
+    agent.driver.stop = lambda: None
+    agent.driver.stop_motion = lambda *args, **kwargs: pytest.fail(
+        "Whole-body stop overtook unconfirmed controlled locomotion stop"
+    )
+    result = agent.stop({"payload": {"motion_scope": scope}}) if scope else agent.stop(None)
+    assert result["unresolved_ids"] == ["velocity"]
+    assert result["velocity_controls"]["velocity"] == pending
+    if scope:
+        assert not result["locomotion_confirmed"] and result["joint_stop_confirmed"] is None
+
+
 def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
     import autonomy
 

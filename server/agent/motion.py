@@ -130,6 +130,7 @@ class FixtureMotion(object):
         self.idle = True
         self.base_pose = [0., 0., 0.]
         self.base_move = None
+        self.base_velocity = [0., 0., 0.]
 
     def getBodyNames(self, group):
         return self.names if group == "Body" else sorted(self.chains) if group == "Chains" else self.chains[group]
@@ -210,7 +211,7 @@ class FixtureMotion(object):
 
     def moveIsActive(self):
         with self.lock:
-            return self.base_move is not None
+            return self.base_move is not None or any(self.base_velocity)
 
     def getMoveConfig(self, which):
         return [["MaxStepFrequency", 0. if which == "Min" else 1.]]
@@ -221,7 +222,11 @@ class FixtureMotion(object):
 
     def getRobotVelocity(self):
         with self.lock:
-            return [0.1 if self.base_move else 0., 0., 0.]
+            return [0.1, 0., 0.] if self.base_move else list(self.base_velocity)
+
+    def move(self, x, y, yaw):
+        with self.lock:
+            self.base_velocity = [x, y, yaw]
 
     def moveTo(self, x, y, yaw, config):
         import threading
@@ -243,6 +248,7 @@ class FixtureMotion(object):
 
     def stopMove(self):
         with self.lock:
+            self.base_velocity = [0., 0., 0.]
             if self.base_move:
                 self.base_move.set()
 

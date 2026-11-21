@@ -118,6 +118,9 @@ class Locomotion(object):
 
     def prepare(self, payload):
         self.move_config(payload)
+        self.prepare_walk()
+
+    def prepare_walk(self):
         awake = self.call(self.motion, "robotIsWakeUp")
         stiffness = self.call(self.motion, "getStiffnesses", self.names)
         moving = self.call(self.motion, "moveIsActive")
@@ -128,6 +131,9 @@ class Locomotion(object):
     def dispatch(self, payload):
         config = self.move_config(payload)
         return self.motion.moveTo(payload["x"], payload["y"], payload["yaw"], config, _async=True)
+
+    def dispatch_velocity(self, payload):
+        return self.motion.move(payload["x"], payload["y"], payload["yaw"], _async=True)
 
     def stop(self, timeout=1.0):
         if not finite(timeout) or timeout <= 0:
