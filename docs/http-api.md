@@ -383,6 +383,31 @@ typed terminal outcomes as speech. Use `Trajectory.from_json(text)` / `.to_json(
 for portable file validation and round-tripping; runtime joint constraints are
 validated by the server. See [the example trajectory](../contracts/fixtures/trajectory.json).
 
+### Built-in gestures
+
+`GET /motion/gestures` lists `wave`, `nod`, and `shake` with their required
+posture, available variants, and joint resources. A wave has left and right
+variants. Each head gesture reserves both head joints. The catalog is
+session-free and includes the connection generation.
+
+`POST /motion/gesture_runs` returns a `motion.gesture_run` Operation.
+Choose a `name` and optionally specify `repetitions` from 1 to 3 (default 1)
+and `strength` from 0.25 to 1 (default 0.65). Wave also accepts `side`
+`left` or `right`, with a default of `right`. Both Python clients expose
+`motion.gestures()` and `motion.gesture("wave", side="right")`.
+
+A gesture requires fresh measured joint angles, an awake robot, stiff
+target joints, and idle locomotion. Wave requires `StandInit`. The bridge
+compiles a bounded trajectory from the observed pose, plans a return to that
+pose on normal completion, and checks joint limits and the head gesture
+envelope. The agent rechecks the starting angles and required posture before
+dispatch. A completed operation reports the planned trajectory duration.
+
+Cancellation requests scoped joint stop and checks that the interpolation
+has ended. The robot can stop at an intermediate pose. An unconfirmed stop
+retains the joint resources. Physical gesture execution stays gated pending
+hardware acceptance.
+
 ### Replacing a finite move
 
 Joint moves and trajectory runs accept `replace_operation_id`, naming a standalone

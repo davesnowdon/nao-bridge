@@ -294,6 +294,35 @@ def test_behavior_catalog_page_fits_the_private_ipc_frame(agent_module):
     )
 
 
+@pytest.mark.parametrize("native_confirmation", [False, True])
+def test_gesture_stop_requires_joint_stop_acknowledgement(agent_module, native_confirmation):
+    agent = bare_agent(agent_module)
+    agent.driver.safety_motion = object()
+
+    def stop(names, stop_posture=False):
+        assert names == ["RElbowRoll", "RElbowYaw"]
+        assert not stop_posture
+        if not native_confirmation:
+            raise RuntimeError("Native stop failed")
+
+    agent.driver.stop_motion = stop
+    agent.records["gesture"] = {
+        "session_id": "session",
+        "action": "trajectory",
+        "motion_kind": "gesture",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "names": ["RElbowRoll", "RElbowYaw"],
+        "future": types.SimpleNamespace(isFinished=lambda: True),
+    }
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "gesture"}})
+    if native_confirmation:
+        assert result["confirmed_ids"] == ["gesture"]
+        assert result["results"]["gesture"]["stop_confirmed"] is True
+    else:
+        assert result["unresolved_ids"] == ["gesture"] and not result["confirmed_ids"]
+
+
 def test_finite_control_thread_can_finish_normally_without_killing_agent(agent_module, monkeypatch):
     agent = bare_agent(agent_module)
     monkeypatch.setattr(
@@ -495,7 +524,13 @@ def test_native_joint_discovery_and_observation_preserve_units_and_sources(agent
     assert joints["LHand"]["unit"] == "ratio"
     assert joints["HeadYaw"]["unit"] == "rad"
     assert joints["LHipYawPitch"]["coupled_with"] == ["RHipYawPitch"]
-    assert observer.chains["LArm"] == ["LShoulderPitch", "LHand"]
+    assert observer.chains["LArm"] == [
+        "LShoulderPitch",
+        "LShoulderRoll",
+        "LElbowYaw",
+        "LElbowRoll",
+        "LHand",
+    ]
     state = observer.sample_joints()
     assert state["measured"]["HeadYaw"] == 0.1
     assert state["commanded"]["HeadYaw"] == 0.2

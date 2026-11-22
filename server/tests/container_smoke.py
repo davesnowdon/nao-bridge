@@ -815,6 +815,7 @@ try:
         "light_transitions_and_readback",
         "animated_speech",
         "installed_behavior_run_and_stop",
+        "parallel_wave_speech_and_lights",
     } <= set(summary["checks"]), summary
     print(json.dumps(summary))
     speech_session = probe.request("POST", "/api/sessions", {"name": "animated-stop"}, status=201)

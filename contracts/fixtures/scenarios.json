@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.12.0",
+  "contract_version": "1.13.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -75,6 +75,27 @@
       "client_decisions": [
         "Check the run capability even when installed names are present.",
         "Use the operation result to reconcile ownership. Use behavior.changed for native running observation."
+      ]
+    },
+    {
+      "name": "bounded gestures alongside speech and lights",
+      "steps": [
+        "GET /api/motion/gestures and inspect wave side capabilities",
+        "POST /api/motion/gesture_runs with name wave while in StandInit",
+        "start plain speech and eye lighting while the wave is running",
+        "await the three operation outcomes",
+        "start a repeated left wave and request cancellation"
+      ],
+      "expected": [
+        "wave lists StandInit and side-specific arm joint resources",
+        "motion.gesture_run reserves the right arm by default",
+        "both operations are admitted with disjoint resources",
+        "all three succeeded and the wave reports its planned duration",
+        "cancelled after confirmed joint stop and ended interpolation"
+      ],
+      "client_decisions": [
+        "Use the catalog to choose a supported gesture and posture.",
+        "Check measured joint state after cancellation. Cancellation can leave an intermediate pose."
       ]
     },
     {

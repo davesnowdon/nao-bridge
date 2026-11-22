@@ -37,6 +37,7 @@ from .models import (
     Capabilities,
     ErrorDetail,
     Event,
+    GestureCatalog,
     JointCatalog,
     LightCatalog,
     LightSample,
@@ -819,6 +820,30 @@ class AsyncMotion:
             body["replace_operation_id"] = replace_operation_id
         return await self._submit(
             "joint_moves", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
+    async def gestures(self) -> GestureCatalog:
+        return decode(GestureCatalog, await self._nao._request("GET", "/api/motion/gestures"))
+
+    async def gesture(
+        self,
+        name: str,
+        *,
+        side: Literal["left", "right"] | None = None,
+        repetitions: int | None = None,
+        strength: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"name": name}
+        body.update(
+            (key, value)
+            for key, value in (("side", side), ("repetitions", repetitions), ("strength", strength))
+            if value is not None
+        )
+        return await self._submit(
+            "gesture_runs", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
         )
 
     async def play(

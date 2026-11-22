@@ -78,6 +78,23 @@ class BehaviorChangedData(WireModel):
     running: list[str] | None
 
 
+class GestureVariant(WireModel):
+    side: Literal["left", "right"] | None
+    resources: list[str]
+    support: Capability
+
+
+class GestureDefinition(WireModel):
+    name: str
+    required_posture: str | None
+    variants: list[GestureVariant]
+
+
+class GestureCatalog(WireModel):
+    items: list[GestureDefinition]
+    connection_generation: int
+
+
 class Capabilities(WireModel):
     contract_version: str
     connection_generation: int

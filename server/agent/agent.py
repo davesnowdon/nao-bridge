@@ -33,7 +33,7 @@ PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": 
 COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
                 autonomy=valid_autonomy, camera_capture=valid_capture, light_transition=valid_light,
                 behavior_run=valid_behavior)
-GUARDED_MOTION = ("walk", "animated_speech", "behavior")
+GUARDED_MOTION = ("walk", "animated_speech", "behavior", "gesture")
 
 
 def valid_stop(request):
@@ -283,7 +283,7 @@ class Agent(object):
                         result["name"] = record["behavior_name"]
                     elif kind == "animated_speech":
                         result["animated"] = True
-                    else:
+                    elif kind == "walk":
                         result["reached"] = native_result
                     record.update(status="completed", result=result, finished=monotonic())
                     self.reply(replies, request, result=result)
@@ -298,6 +298,7 @@ class Agent(object):
             if record["status"] != "completed":
                 record.update(status="unknown", finished=monotonic())
         message = {"animated_speech": "Animated speech outcome unconfirmed",
+                   "gesture": "Gesture outcome unconfirmed",
                    "behavior": "Installed behavior outcome unconfirmed"}.get(kind, "Walking outcome unconfirmed")
         self.reply(replies, request, "unknown", message=message)
 
@@ -435,6 +436,7 @@ class Agent(object):
         active = [record for _, record in selected if record["phase"] != "queued"]
         walks = [record for record in active if record.get("motion_kind") == "walk"]
         animations = [record for record in active if record.get("motion_kind") == "animated_speech"]
+        gestures = any(record.get("motion_kind") == "gesture" for record in active)
         behavior_stops = set()
         for key, record in selected:
             if record["phase"] != "queued" and record.get("motion_kind") == "behavior":
@@ -488,7 +490,7 @@ class Agent(object):
         if (scope != "locomotion" and (scope != "all" or (walk_stopped and not walk_pending))
                 and (motion_names or (broad_stop and not walk_pending))):
             try:
-                if (scope == "all" or animations) and not getattr(self.driver, "safety_motion", None):
+                if (scope == "all" or animations or gestures) and not getattr(self.driver, "safety_motion", None):
                     raise ValueError("Native joint stop unavailable")
                 self.driver.stop_motion(["Body"] if scope == "all" else motion_names or ["Body"],
                                         stop_posture=broad_stop or any(
@@ -514,10 +516,16 @@ class Agent(object):
             if record.get("motion_kind") in GUARDED_MOTION:
                 animated = record["motion_kind"] == "animated_speech"
                 behavior = record["motion_kind"] == "behavior"
-                stop_acknowledged = key in behavior_stops if behavior else walk_stopped and (
-                    not animated or speech_stopped and joint_stop_confirmed
-                )
-                if (animated or behavior) and stop_acknowledged and future is not None and not future.isFinished():
+                gesture = record["motion_kind"] == "gesture"
+                if behavior:
+                    stop_acknowledged = key in behavior_stops
+                elif gesture:
+                    stop_acknowledged = joint_stop_confirmed
+                else:
+                    stop_acknowledged = walk_stopped and (
+                        not animated or speech_stopped and joint_stop_confirmed
+                    )
+                if (animated or behavior or gesture) and stop_acknowledged and future is not None and not future.isFinished():
                     try:
                         future.value(max(1, int((deadline - monotonic()) * 1000)))
                     except Exception:
@@ -574,7 +582,7 @@ class Agent(object):
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
                         if key in self.records and "result" in self.records[key]
                         and (self.records[key].get("action") in ("autonomy", "light_transition")
-                             or self.records[key].get("motion_kind") in ("animated_speech", "behavior")))
+                             or self.records[key].get("motion_kind") in ("animated_speech", "behavior", "gesture")))
         if outcomes:
             result["results"] = outcomes
         if control_ids:
@@ -781,7 +789,9 @@ class Agent(object):
                                     payload = request["payload"]
                                     motion_kind = ("animated_speech" if action == "speak" and payload.get("animated")
                                                    else payload.get("kind") if action == "motion_action"
-                                                   else "behavior" if action == "behavior_run" else None)
+                                                   else "behavior" if action == "behavior_run"
+                                                   else "gesture" if action == "trajectory" and "gesture" in payload
+                                                   else None)
                                     self.records[rid] = {"session_id": request["session_id"], "status": "accepted", "phase": "queued", "action": action, "names": payload.get("names", []), "motion_kind": motion_kind}
                         else:
                             self.reply(replies, request, "rejected", code="invalid_request", message="Unsupported agent action")

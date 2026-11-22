@@ -17,6 +17,15 @@ from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
 from .face_observers import CHANGED as FACE_OBSERVER_CHANGED
 from .face_observers import DETECTIONS, MAX_HISTORY, MAX_OBSERVERS, FaceObservers
+from .gestures import (
+    GESTURE_KIND,
+    REQUIRED_POSTURE,
+    VARIANTS,
+    compile_gesture,
+    gesture_resources,
+    gesture_support,
+    gesture_variants,
+)
 from .joint_controls import KIND as CONTROL_KIND
 from .joint_controls import VELOCITY_KIND, JointControls, VelocityControls
 from .lights import LIGHT_KIND, transition_payload
@@ -54,6 +63,7 @@ ORDINARY_KINDS = (
     {
         "motion.joint_move",
         "motion.trajectory_run",
+        GESTURE_KIND,
         "autonomy.transition",
         BEHAVIOR_RUN,
         LIGHT_KIND,
@@ -421,6 +431,14 @@ class Core:
                     available and any(joint["writable"] for joint in self.info.get("joints", []))
                 ),
                 "motion.joints": feature(available and bool(self.info.get("joints"))),
+                "motion.gestures": feature(
+                    available
+                    and any(
+                        variant["support"]["status"] == "available"
+                        for item in self.gestures()["items"]
+                        for variant in item["variants"]
+                    )
+                ),
                 "motion.joint_setpoints": {
                     "status": "available"
                     if available and self.info.get("joint_controls", {}).get("available")
@@ -1158,6 +1176,70 @@ class Core:
         op.task = self.spawn(self.run_native(op, body))
         return copy.deepcopy(op.public)
 
+    def gestures(self) -> dict[str, Any]:
+        return {
+            "connection_generation": self.generation,
+            "items": gesture_variants(
+                {joint["name"]: joint for joint in self.info.get("joints", [])},
+                self.info.get("gestures_verified", False),
+                self.connection == "connected",
+            ),
+        }
+
+    def gesture(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        name = body["name"]
+        variants = VARIANTS.get(name)
+        if variants is None:
+            raise BridgeError("unsupported", "Unknown gesture", 422)
+        side = body.get("side", "right" if name == "wave" else None)
+        if side not in variants:
+            raise BridgeError("invalid_request", "Only a wave accepts a side")
+        names = variants[side]
+        joints = self.info.get("joints", [])
+        catalog = {joint["name"]: joint for joint in joints}
+        support = gesture_support(names, catalog, self.info.get("gestures_verified", False), True)
+        if support["status"] != "available":
+            raise BridgeError("unsupported", "Gesture unavailable", 422, support)
+        self.require_joint_motion(gesture_resources(names, catalog))
+        state = self.state(["joints", "motion"])["groups"]
+        motion = state["motion"]["value"]
+        required = REQUIRED_POSTURE[name]
+        if motion["locomotion_active"] is not False or (
+            required is not None and motion["posture"] != required
+        ):
+            raise BridgeError(
+                "precondition_failed",
+                "Gesture requires an idle robot in the required posture",
+                409,
+                {"required_posture": required},
+            )
+        measured = state["joints"]["value"]["measured"]
+        start = {joint: measured.get(joint) for joint in names}
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in start.values()
+        ):
+            raise BridgeError("precondition_failed", "Gesture requires measured joint angles", 409)
+        plan = compile_gesture(
+            name, side, body.get("repetitions", 1), body.get("strength", 0.65), start, joints
+        )
+        payload = {
+            "names": plan.names,
+            "angles": plan.angles,
+            "times": plan.times,
+            "gesture": {
+                "measured_start": [start[joint] for joint in plan.names],
+                "required_posture": required,
+            },
+        }
+        op = self.new_operation(session, GESTURE_KIND, plan.resources)
+        op.task = self.spawn(self.run_native(op, payload))
+        return copy.deepcopy(op.public)
+
     def trajectory(
         self, session: Session, body: dict[str, Any], kind: str = "motion.trajectory_run"
     ) -> dict[str, Any]:
@@ -1432,6 +1514,8 @@ class Core:
             result = await dispatch(op.public["id"], op.public["session_id"], payload)
             if op.public["kind"] in MOTION_ACTIONS:
                 result["state_refreshed"] = await self.refresh_motion_after(self.clock())
+            if op.public["kind"] == GESTURE_KIND and not result.get("cancelled"):
+                result["planned_duration_seconds"] = max(times[-1] for times in payload["times"])
             if op.public["kind"] == "autonomy.transition":
                 result["state_refreshed"] = await self.refresh_motion_after(
                     self.clock(), ("autonomy",)
@@ -1575,7 +1659,8 @@ class Core:
             return
         result = stopped.get("results", {}).get(op.public["id"])
         if op.public["kind"] == LIGHT_KIND or (
-            op.public["kind"] in {ANIMATED_SPEECH, BEHAVIOR_RUN} and isinstance(result, dict)
+            op.public["kind"] in {ANIMATED_SPEECH, BEHAVIOR_RUN, GESTURE_KIND}
+            and isinstance(result, dict)
         ):
             result = (
                 result if isinstance(result, dict) else {"cancelled": True, "dispatched": False}

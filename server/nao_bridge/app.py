@@ -573,6 +573,25 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         query(request, set())
         return await submit_motion_action(request, "walk", "MoveCreate", "moves")
 
+    @app.get("/api/motion/gestures")
+    async def gestures(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.gestures()
+
+    @app.post("/api/motion/gesture_runs")
+    async def gesture(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "GestureRunCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /motion/gesture_runs",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.gesture(owner, value),
+        )
+        return created(result, "operations", 202)
+
     @app.post("/api/motion/trajectory_runs")
     async def trajectory(request: Request) -> Response:
         value = await body(request, "TrajectoryRunCreate")

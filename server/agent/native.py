@@ -50,6 +50,7 @@ class NativeDriver(object):
     velocity_stop_verified = False
     animated_speech_stop_verified = False
     behavior_stop_verified = False
+    gestures_verified = False
 
     def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
@@ -161,6 +162,7 @@ class NativeDriver(object):
         self.behaviors = Behaviors(self.session, self.safety_session, self.memory, self.call,
                                    self.observe, self.behavior_stop_verified)
         self.description["behaviors"] = self.behaviors.catalog
+        self.description["gestures_verified"] = bool(self.gestures_verified and self.safety_motion)
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -284,6 +286,23 @@ class NativeDriver(object):
                 if not bounds["writable"] or not all(bounds["minimum"] <= value <= bounds["maximum"] for value in values):
                     raise ValueError("Joint target outside limits")
         self.require_stiff(payload["names"])
+        if "gesture" in payload:
+            self.prepare_gesture(payload)
+
+    def prepare_gesture(self, payload):
+        if not self.gestures_verified or not self.safety_motion:
+            raise ValueError("Physical gesture execution is unavailable")
+        names, gesture = payload["names"], payload["gesture"]
+        expected = gesture["required_posture"]
+        measured = self.call(self.motion.motion, "getAngles", names, True)
+        if (len(measured) != len(names) or not all(isinstance(value, numbers.Real)
+                and not isinstance(value, bool) and abs(value - start) <= 0.1
+                for value, start in zip(measured, gesture["measured_start"]))
+                or self.call(self.motion.motion, "moveIsActive") is not False
+                or expected is not None and (not self.posture or self.posture.sample() != expected)):
+            error = ValueError("The native gesture starting pose changed before dispatch")
+            error.code = "precondition_failed"
+            raise error
 
     def require_stiff(self, names):
         awake = self.call(self.motion.motion, "robotIsWakeUp")
@@ -517,6 +536,7 @@ class FixtureDriver(NativeDriver):
     velocity_stop_verified = True
     animated_speech_stop_verified = True
     behavior_stop_verified = True
+    gestures_verified = True
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 

@@ -109,10 +109,11 @@ class FakeBackend:
         self.face_calls: list[dict[str, Any]] = []
         self.face_failure: str | None = None
         self.next_face = 0.0
+        arms = ("ShoulderPitch", "ShoulderRoll", "ElbowYaw", "ElbowRoll", "Hand")
         self.chains = {
             "Head": ["HeadYaw", "HeadPitch"],
-            "LArm": ["LShoulderPitch", "LHand"],
-            "RArm": ["RShoulderPitch", "RHand"],
+            "LArm": ["L" + joint for joint in arms],
+            "RArm": ["R" + joint for joint in arms],
             "LLeg": ["LHipYawPitch"],
             "RLeg": ["RHipYawPitch"],
         }
@@ -263,6 +264,7 @@ class FakeBackend:
                     "touch_events": list(self.touch) if connected else [],
                     "sensor_catalog": copy.deepcopy(self.sensor_catalog),
                     "joints": self.joints,
+                    "gestures_verified": connected,
                     "chains": self.chains,
                     "postures": ["StandInit", "Sit", "Crouch"],
                     "autonomy": self.autonomy_catalog,
@@ -533,7 +535,28 @@ class FakeBackend:
     async def trajectory(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        result = await self._execute(operation_id, session_id, payload, "trajectory")
+        gesture = payload.get("gesture")
+        delay = 0.0
+        if gesture is not None:
+            required = gesture["required_posture"]
+            measured = self.joint_state["measured"]
+            if (
+                self.motion_state["locomotion_active"] is not False
+                or (required is not None and self.motion_state["posture"] != required)
+                or any(
+                    abs(measured[name] - start) > 0.1
+                    for name, start in zip(payload["names"], gesture["measured_start"], strict=True)
+                )
+            ):
+                raise BridgeError("precondition_failed", "The gesture starting pose changed", 409)
+            delay = max(times[-1] for times in payload["times"])
+        result = await self._execute(operation_id, session_id, payload, "trajectory", delay=delay)
+        if (
+            gesture is not None
+            and result.get("cancelled")
+            and result.get("dispatched") is not False
+        ):
+            result["stop_confirmed"] = True
         if not result.get("cancelled"):
             for name, points in zip(payload["names"], payload["angles"], strict=True):
                 peers = [name, *next(j["coupled_with"] for j in self.joints if j["name"] == name)]

@@ -16,6 +16,7 @@ from .models import (
     CamerasData,
     Capabilities,
     Event,
+    GestureCatalog,
     JointCatalog,
     LightCatalog,
     LightSample,
@@ -370,6 +371,33 @@ class Motion:
                 )
             ),
         )
+
+    def gestures(self) -> GestureCatalog:
+        return self._nao._run(self._nao._async.motion.gestures())
+
+    def gesture(
+        self,
+        name: str,
+        *,
+        side: Literal["left", "right"] | None = None,
+        repetitions: int | None = None,
+        strength: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.motion.gesture(
+                name,
+                side=side,
+                repetitions=repetitions,
+                strength=strength,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
 
     def play(
         self,

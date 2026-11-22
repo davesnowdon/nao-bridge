@@ -402,6 +402,51 @@ class Probe:
         finally:
             self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
 
+    def gestures(self):
+        catalog = self.request("GET", "/api/motion/gestures", schema="GestureCatalog")
+        wave = next(item for item in catalog["items"] if item["name"] == "wave")
+        assert wave["required_posture"] == "StandInit"
+        right = next(item for item in wave["variants"] if item["side"] == "right")
+        assert right["support"]["status"] == "available"
+        assert right["resources"] == [
+            "joint.RElbowRoll",
+            "joint.RElbowYaw",
+            "joint.RShoulderPitch",
+            "joint.RShoulderRoll",
+        ]
+        action = self.request(
+            "POST", "/api/motion/gesture_runs", {"name": "wave"}, status=202, schema="Operation"
+        )
+        assert action["kind"] == "motion.gesture_run" and action["resources"] == right["resources"]
+        speech = self.request(
+            "POST", "/api/speech/utterances", {"text": "Waving with the bridge fixture"}, status=202
+        )
+        light = self.request(
+            "POST", "/api/lights/transitions", {"group": "eyes", "color": "#0080ff"}, status=202
+        )
+        assert self.wait(speech)["status"] == "succeeded"
+        assert self.wait(light)["status"] == "succeeded"
+        result = self.wait(action)
+        assert (
+            result["status"] == "succeeded"
+            and 2.5 <= result["result"]["planned_duration_seconds"] <= 12
+        )
+        action = self.request(
+            "POST",
+            "/api/motion/gesture_runs",
+            {"name": "wave", "side": "left", "repetitions": 3},
+            status=202,
+        )
+        path = "/api/operations/" + action["id"]
+        deadline = time.monotonic() + 2
+        while self.request("GET", path)["status"] != "running":
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+        time.sleep(0.15)
+        self.request("POST", path + "/cancel", {}, status=202)
+        cancelled = self.wait(action)
+        assert cancelled["status"] == "cancelled" and cancelled["result"]["stop_confirmed"]
+
     def velocity_control(self):
         path = "/api/motion/velocity"
         self.request(
@@ -524,6 +569,7 @@ def run(url):
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
     velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
     behaviors = capabilities["features"]["behaviors.runs"]["status"] == "available"
+    gestures = capabilities["features"]["motion.gestures"]["status"] == "available"
     sensor_state = probe.request(
         "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
     )
@@ -698,6 +744,8 @@ def run(url):
             assert result["status"] == "succeeded" and result["result"]["state_refreshed"]
         owners = probe.request("GET", "/api/robot/diagnostics")["configuration_owners"]
         assert owners["joint.HeadYaw"] == session["id"]
+        if gestures:
+            probe.gestures()
         probe.request(
             "POST",
             "/api/speech/utterances",
@@ -765,7 +813,8 @@ def run(url):
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])
         + (["animated_speech"] if animated else [])
-        + (["installed_behavior_run_and_stop"] if behaviors else []),
+        + (["installed_behavior_run_and_stop"] if behaviors else [])
+        + (["parallel_wave_speech_and_lights"] if gestures else []),
     }
 
 
