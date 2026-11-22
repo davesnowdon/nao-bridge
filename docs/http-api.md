@@ -541,6 +541,42 @@ unknown outcome and retains resources if confirmation is missing. The
 animated mode is enabled in the fixtures and remains gated on physical
 robots pending acceptance.
 
+## Installed behaviors
+
+`GET /behaviors` is session-free. It returns installed names sorted by name,
+a `next_cursor` for the next page, and the connection generation. Send the
+cursor back with `limit` between 1 and 12. Start a new listing after a generation
+change. Discovery is refreshed when the native connection opens. The catalog
+can expose up to 512 names and marks larger inventories as truncated.
+
+The response also reports whether execution is available and the last
+observed list of running native behaviors. The `behavior.changed` SSE event
+carries a replacement running list whenever the native source reports a
+change. An empty list means the observed set is empty. A null list means
+observation is unavailable. These observations include runs started outside
+the bridge and carry no bridge operation ID. After a stream reset, read the
+catalog again before relying on the running list.
+
+When execution is available, send `{"name": "installed-package/behavior"}`
+to `POST /behaviors/runs` with an active session. The agent rechecks the
+installation and refuses to take over a behavior already running on the
+robot. Runs require fresh awake and stiff motion state. The
+`behavior.run` Operation reserves behavior execution, speech output,
+locomotion, and all discovered joint and light resources. Policies that
+pause vocabulary listening during output also apply to an installed behavior.
+Native completion establishes that the named run has returned and is no
+longer running.
+
+Cancel or issue an all-motion or robot stop to request a scoped native stop
+of bridge-owned behavior work. Confirmation requires that the native stop
+returns, the run call settles, and the named behavior is reported inactive.
+An unresolved run retains its resources. Physical execution stays gated
+pending hardware verification. Discovery and running-set observations can
+still be available.
+
+Both Python clients expose `behaviors.list(cursor=..., limit=...)` and
+`behaviors.run(name)`.
+
 ## Vocabulary listeners
 
 `POST /speech/listeners` creates an owned activity and returns 201 with its status

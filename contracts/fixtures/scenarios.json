@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.11.0",
+  "contract_version": "1.12.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -54,6 +54,27 @@
       "client_decisions": [
         "Request animated speech only when the capability is available for the selected language.",
         "Reconcile both operation results before issuing more motion after an uncertain stop."
+      ]
+    },
+    {
+      "name": "installed behavior discovery, observed running sets and named stop",
+      "steps": [
+        "GET /api/behaviors?limit=1 and follow next_cursor",
+        "POST /api/behaviors/runs for fixture/greet and await completion",
+        "subscribe to behavior.changed and wait for stream.ready",
+        "start fixture/long and read the observed running set",
+        "cancel its Operation and read the outcome and SSE"
+      ],
+      "expected": [
+        "fixture/greet and fixture/long on separate pages",
+        "behavior.run owns behavior execution, speech, locomotion, joints and lights; succeeded",
+        "201 subscription and stream ready",
+        "observed running set includes fixture/long",
+        "confirmed scoped cancel, with running-set events showing start and end"
+      ],
+      "client_decisions": [
+        "Check the run capability even when installed names are present.",
+        "Use the operation result to reconcile ownership. Use behavior.changed for native running observation."
       ]
     },
     {

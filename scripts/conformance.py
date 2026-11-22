@@ -5,7 +5,7 @@ import hashlib
 import http.client
 import json
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -356,6 +356,52 @@ class Probe:
         finally:
             self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
 
+    def behaviors(self):
+        first = self.request("GET", "/api/behaviors?limit=1", schema="BehaviorPage")
+        assert first["support"]["status"] == "available"
+        assert first["items"] == [{"name": "fixture/greet"}]
+        path = "/api/behaviors?" + urlencode({"cursor": first["next_cursor"], "limit": 1})
+        last = self.request("GET", path, schema="BehaviorPage")
+        assert last["items"] == [{"name": "fixture/long"}] and last["next_cursor"] is None
+        path = "/api/behaviors/runs"
+        greeting = self.request(
+            "POST", path, {"name": "fixture/greet"}, status=202, schema="Operation"
+        )
+        assert greeting["kind"] == "behavior.run"
+        assert {"speech.output", "locomotion", "behaviors.execution"} <= set(greeting["resources"])
+        outcome = self.wait(greeting)
+        assert outcome["status"] == "succeeded" and outcome["result"]["name"] == "fixture/greet"
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"events": ["behavior.changed"]},
+            status=201,
+            schema="Subscription",
+        )
+
+        def run_and_cancel():
+            activity = self.request("POST", path, {"name": "fixture/long"}, status=202)
+            deadline = time.monotonic() + 3
+            while self.request("GET", "/api/behaviors")["running"] != ["fixture/long"]:
+                assert time.monotonic() < deadline
+                time.sleep(0.02)
+            self.request("POST", "/api/operations/" + activity["id"] + "/cancel", {}, status=202)
+            outcome = self.wait(activity)
+            assert outcome["status"] == "cancelled" and outcome["result"]["stop_confirmed"], outcome
+            assert outcome["result"]["name"] == "fixture/long"
+
+        try:
+            self.stream(
+                sub,
+                on_ready=run_and_cancel,
+                observations=[
+                    ("behavior.changed", "BehaviorChanged", {"running": ["fixture/long"]}),
+                    ("behavior.changed", "BehaviorChanged", {"running": []}),
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+
     def velocity_control(self):
         path = "/api/motion/velocity"
         self.request(
@@ -379,7 +425,16 @@ class Probe:
         rejected = self.request("PUT", path, {**update, "sequence": 2}, status=409, schema="Error")
         assert rejected["error"]["code"] == "control_ended"
 
-    def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
+    def stream(
+        self,
+        subscription,
+        *,
+        reconnect=False,
+        touch=False,
+        contacts=(),
+        observations=(),
+        on_ready=None,
+    ):
         conn = self.connection(timeout=3)
         headers = {
             "X-Session-ID": self.session,
@@ -421,6 +476,8 @@ class Probe:
                     assert event["id"] not in ids
                     ids.add(event["id"])
                     seen.add(event["type"])
+                    if event["type"] == "stream.ready" and on_ready:
+                        on_ready()
                     for expected in pending_observations[:]:
                         kind, schema, data = expected
                         if event["type"] == kind and (
@@ -466,6 +523,7 @@ def run(url):
     captures = capabilities["features"]["vision.captures"]["status"] == "available"
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
     velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
+    behaviors = capabilities["features"]["behaviors.runs"]["status"] == "available"
     sensor_state = probe.request(
         "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
     )
@@ -525,6 +583,8 @@ def run(url):
             probe.camera_capture()
         if faces:
             probe.vision_observers()
+        if behaviors:
+            probe.behaviors()
         lights = probe.request("GET", "/api/lights", schema="LightCatalog")["support"]["status"]
         if lights == "available":
             probe.light_transitions()
@@ -704,7 +764,8 @@ def run(url):
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])
-        + (["animated_speech"] if animated else []),
+        + (["animated_speech"] if animated else [])
+        + (["installed_behavior_run_and_stop"] if behaviors else []),
     }
 
 

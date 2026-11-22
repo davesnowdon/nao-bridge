@@ -253,6 +253,47 @@ def test_animated_speech_stop_requires_all_native_confirmations(agent_module, un
         assert result["confirmed_ids"] == [] and result["unresolved_ids"] == ["animation"]
 
 
+@pytest.mark.parametrize(
+    ("ended", "inactive", "confirmed"),
+    [(True, True, True), (True, False, False), (False, True, False)],
+)
+def test_named_behavior_stop_requires_run_to_settle(agent_module, ended, inactive, confirmed):
+    agent = bare_agent(agent_module)
+    calls = []
+    agent.records["run"] = {
+        "session_id": "session",
+        "action": "behavior_run",
+        "motion_kind": "behavior",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "future": types.SimpleNamespace(isFinished=lambda: ended, value=lambda timeout: None),
+        "behavior": types.SimpleNamespace(request_stop=calls.append, inactive=lambda _: inactive),
+        "behavior_name": "fixture/long",
+    }
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "run"}})
+    assert calls == ["fixture/long"]
+    if confirmed:
+        assert result["confirmed_ids"] == ["run"]
+        assert result["results"]["run"]["name"] == "fixture/long"
+    else:
+        assert result["unresolved_ids"] == ["run"] and not result["confirmed_ids"]
+
+
+def test_behavior_catalog_page_fits_the_private_ipc_frame(agent_module):
+    from behaviors import MAX_NAMES, MAX_PAGE, Behaviors
+
+    adapter = Behaviors.__new__(Behaviors)
+    adapter.names = ["é" * 126 + f"/{index:03}" for index in range(MAX_NAMES)]
+    adapter.running = adapter.names[:5]
+    first = adapter.page(None, MAX_PAGE)
+    last = adapter.page(adapter.names[-2], MAX_PAGE)
+    assert first["next_cursor"] == adapter.names[MAX_PAGE - 1]
+    assert last["items"] == [{"name": adapter.names[-1]}] and last["next_cursor"] is None
+    assert b"\\u00e9" in agent_module.encode(
+        {"result": first, "id": "reply", "status": "completed", "agent": "fixture", "epoch": 1}
+    )
+
+
 def test_finite_control_thread_can_finish_normally_without_killing_agent(agent_module, monkeypatch):
     agent = bare_agent(agent_module)
     monkeypatch.setattr(

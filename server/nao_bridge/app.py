@@ -586,6 +586,28 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/behaviors")
+    async def behavior_catalog(request: Request) -> dict[str, Any]:
+        query(request, {"cursor", "limit"})
+        cursor = request.query_params.get("cursor")
+        if cursor is not None and (not cursor.strip() or len(cursor.encode("utf-8")) > 256):
+            raise BridgeError("invalid_request", "Invalid behavior cursor")
+        return await core.behavior_page(cursor, bounded_int(request, "limit", 12, 12, 1))
+
+    @app.post("/api/behaviors/runs")
+    async def behavior_run(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "BehaviorRunCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /behaviors/runs",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.behavior_run(owner, value),
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/lights")
     async def light_groups(request: Request) -> dict[str, Any]:
         query(request, set())
@@ -708,7 +730,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     "support": core.capabilities()["features"]["touch.changed"]
                     if name == "touch.changed"
                     else core.capabilities()["features"][name]
-                    if name in {"motion.posture_changed", "motion.fall_changed"}
+                    if name in {"motion.posture_changed", "motion.fall_changed", "behavior.changed"}
                     else core.capabilities()["features"]["speech.listeners"]
                     if name in {"speech.recognized", "speech.listener_changed"}
                     else core.capabilities()["features"]["sensors.observers"]

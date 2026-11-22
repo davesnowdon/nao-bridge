@@ -58,3 +58,30 @@ The contract guard passed against PR #38 and contract 1.10.0.
 
 See the [speech contract](http-api.md#speech) and the
 [NAOqi local animated-speech configuration](https://doc.aldebaran.com/2-8/naoqi/audio/alanimatedspeech-api.html).
+
+## Installed behaviors
+
+Contract 1.12.0 adds paginated installed behavior discovery, observed running
+sets over HTTP/SSE and sync/async Python support. The private agent reads the
+installed catalog once per connection. Bounded pages avoid oversized IPC
+frames, including when the robot has a large catalog. Discovery and
+observation are independent of the native run acceptance gate.
+
+Runs reserve speech output and all discovered joint, locomotion and light
+resources. The fixture verifies run completion, named cancellation, event
+delivery and same-name foreign-run rejection. A cancellation retains
+ownership until the named stop returns, the original run settles and the
+native service reports inactivity.
+
+`make check` passed 631 server/integration tests and 47 SDK tests.
+`make test-container` passed raw HTTP paging, a completed run, native SSE
+start/end observations and named cancellation. The contract guard passed
+against PR #38 and contract 1.11.0.
+
+On each physical robot, acceptance still needs to verify discovery, running
+callbacks, observed completion of chosen installed behaviors and the
+distinction between the named behavior ending and its physical effects.
+Physical runs remain gated.
+
+See [installed behaviors](http-api.md#installed-behaviors) and the
+[NAOqi behavior manager API](https://doc.aldebaran.com/2-8/naoqi/core/albehaviormanager-api.html).

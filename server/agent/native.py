@@ -18,6 +18,7 @@ from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 from camera import VideoDevice, FixtureVideo
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
 from lights import Lights, FixtureLights
+from behaviors import EVENT as BEHAVIOR_EVENT, Behaviors, FixtureBehaviors
 from velocity import MAX_ROTATION, MAX_TRANSLATION
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
@@ -48,6 +49,7 @@ class NativeDriver(object):
     joint_hold_verified = False
     velocity_stop_verified = False
     animated_speech_stop_verified = False
+    behavior_stop_verified = False
 
     def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
@@ -73,6 +75,7 @@ class NativeDriver(object):
         self.camera = None
         self.faces = None
         self.lights = None
+        self.behaviors = None
         self.passive_sensors = None
         self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
@@ -155,6 +158,9 @@ class NativeDriver(object):
         self.lights = Lights(self.session, self.memory, self.call)
         self.description["lights"] = self.lights.catalog()
         self.discover_animated_speech()
+        self.behaviors = Behaviors(self.session, self.safety_session, self.memory, self.call,
+                                   self.observe, self.behavior_stop_verified)
+        self.description["behaviors"] = self.behaviors.catalog
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -385,6 +391,9 @@ class NativeDriver(object):
         self.locomotion = self.odometry = None
         self.lights = None
         self.animated_speech = None
+        if self.behaviors:
+            self.behaviors.close()
+            self.behaviors = None
         if self.faces:
             self.faces.close()
             self.faces = None
@@ -473,7 +482,7 @@ class FixtureMemory(object):
     def __init__(self):
         self.sources = dict((event, FixtureTouch()) for event in TOUCH)
         self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
-        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT])
+        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT, BEHAVIOR_EVENT])
         self.values = dict((key, 0) for key in MEMORY_KEYS)
         self.values[BATTERY_KEY] = 76
         self.values.update(zip(SONAR_KEYS, [0.4, 1.2]))
@@ -507,6 +516,7 @@ class FixtureDriver(NativeDriver):
     joint_hold_verified = True
     velocity_stop_verified = True
     animated_speech_stop_verified = True
+    behavior_stop_verified = True
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
@@ -525,6 +535,7 @@ class FixtureDriver(NativeDriver):
         self.video_impl = qi.multiThreaded()(FixtureVideo)()
         self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
         self.lights_impl = qi.multiThreaded()(FixtureLights)(self.memory_impl)
+        self.behaviors_impl = qi.multiThreaded()(FixtureBehaviors)(self.memory_impl)
         self.face_sequence = 0
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
@@ -539,6 +550,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALVideoDevice", self.video_impl)
         self.server.registerService("ALFaceDetection", self.faces_impl)
         self.server.registerService("ALLeds", self.lights_impl)
+        self.server.registerService("ALBehaviorManager", self.behaviors_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 

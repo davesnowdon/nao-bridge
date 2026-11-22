@@ -41,6 +41,8 @@ MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change", "motion.move"}
 PLAIN_SPEECH = "speech.utterance"
 ANIMATED_SPEECH = "speech.animated_utterance"
 SPEECH_KINDS = {PLAIN_SPEECH, ANIMATED_SPEECH}
+BEHAVIOR_RUN = "behavior.run"
+OUTPUT_KINDS = SPEECH_KINDS | {BEHAVIOR_RUN}
 SPEECH_RANGES = {
     name: {
         key: SCHEMAS["$defs"]["SpeechCreate"]["properties"][name][key]
@@ -53,6 +55,7 @@ ORDINARY_KINDS = (
         "motion.joint_move",
         "motion.trajectory_run",
         "autonomy.transition",
+        BEHAVIOR_RUN,
         LIGHT_KIND,
     }
     | MOTION_ACTIONS
@@ -72,6 +75,7 @@ EVENT_TYPES = {
     "touch.changed": "TouchChanged",
     "motion.posture_changed": "MotionPostureChanged",
     "motion.fall_changed": "MotionFallChanged",
+    "behavior.changed": "BehaviorChanged",
     "speech.recognized": "SpeechRecognized",
     "speech.listener_changed": "Listener",
     "sensor.observer_changed": "SensorObserver",
@@ -320,7 +324,13 @@ class Core:
                         )
                     )
         elif (
-            kind in {"touch.changed", "motion.posture_changed", "motion.fall_changed"}
+            kind
+            in {
+                "touch.changed",
+                "motion.posture_changed",
+                "motion.fall_changed",
+                "behavior.changed",
+            }
             and self.connection == "connected"
         ):
             self.emit(kind, data)
@@ -371,6 +381,13 @@ class Core:
                     available and self.info.get("speech", {}).get("available", False)
                 ),
                 "speech.animated_utterances": self.speech_options()["animated"],
+                "behaviors": feature(
+                    available and bool(self.info.get("behaviors", {}).get("discovered"))
+                ),
+                "behaviors.runs": self.behavior_support(),
+                "behavior.changed": feature(
+                    available and bool(self.info.get("behaviors", {}).get("events"))
+                ),
                 "speech.listeners": feature(
                     available and self.info.get("recognition", {}).get("available", False)
                 ),
@@ -1004,7 +1021,7 @@ class Core:
             finished_at=utc(),
         )
         op.done.set()
-        if op.public["kind"] in SPEECH_KINDS and status != "unknown":
+        if op.public["kind"] in OUTPUT_KINDS and status != "unknown":
             self.listeners.end_output(op.public["id"])
 
     def speech_options(self) -> dict[str, Any]:
@@ -1072,12 +1089,7 @@ class Core:
                 raise BridgeError(
                     "unsupported", "Animated speech uses the current native language", 422
                 )
-            joints = ["joint." + item["name"] for item in self.info.get("joints", [])]
-            self.require_joint_motion(joints)
-            lights = {
-                resource for group in self.info.get("lights", []) for resource in group["resources"]
-            }
-            resources.extend(["locomotion", *joints, *sorted(lights)])
+            resources.extend(self.expression_resources())
         op = self.new_operation(
             session,
             ANIMATED_SPEECH if animated else PLAIN_SPEECH,
@@ -1085,6 +1097,65 @@ class Core:
             speech.get("cancellable", False),
         )
         op.task = self.spawn(self.run_native(op, payload))
+        return copy.deepcopy(op.public)
+
+    def expression_resources(self) -> list[str]:
+        joints = ["joint." + item["name"] for item in self.info.get("joints", [])]
+        self.require_joint_motion(joints)
+        lights = {
+            resource for group in self.info.get("lights", []) for resource in group["resources"]
+        }
+        return ["locomotion", *joints, *sorted(lights)]
+
+    def behavior_support(self) -> dict[str, Any]:
+        metadata = self.info.get("behaviors", {}) if self.connection == "connected" else {}
+        if metadata.get("available"):
+            return {"status": "available", "reason": None}
+        return {
+            "status": "unavailable",
+            "reason": metadata.get("reason") or "not_connected_or_discovered",
+        }
+
+    async def behavior_page(self, cursor: str | None, limit: int) -> dict[str, Any]:
+        generation = self.generation
+        metadata = self.info.get("behaviors", {}) if self.connection == "connected" else {}
+        page: dict[str, Any] = {"items": [], "next_cursor": None, "running": None}
+        if metadata.get("discovered"):
+            try:
+                page = await self.backend.behavior_page(cursor, limit)
+            except BridgeError as exc:
+                if exc.code == "invalid_request":
+                    raise BridgeError("invalid_request", str(exc)) from exc
+                raise
+            except BackendUnknown as exc:
+                raise BridgeError(
+                    "robot_unavailable", "Behavior discovery unavailable", 503
+                ) from exc
+        elif cursor is not None:
+            raise BridgeError("invalid_request", "Behavior cursor is invalid or expired")
+        if generation != self.generation:
+            raise BridgeError("robot_unavailable", "Behavior discovery generation changed", 503)
+        return {
+            **page,
+            "connection_generation": generation,
+            "support": self.behavior_support(),
+            "truncated": metadata.get("truncated", False),
+        }
+
+    def behavior_run(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        support = self.behavior_support()
+        if support["status"] != "available":
+            raise BridgeError(
+                "unsupported", "Installed behavior execution unavailable", 422, support
+            )
+        name = body["name"]
+        if len(name.encode("utf-8")) > 256 or not name.strip():
+            raise BridgeError("invalid_request", "Invalid behavior name")
+        resources = ["behaviors.execution", "speech.output", *self.expression_resources()]
+        op = self.new_operation(session, BEHAVIOR_RUN, resources)
+        op.task = self.spawn(self.run_native(op, body))
         return copy.deepcopy(op.public)
 
     def trajectory(
@@ -1337,7 +1408,7 @@ class Core:
         generation = self.generation
         self.update(op, status="running", started_at=utc())
         try:
-            if op.public["kind"] in SPEECH_KINDS:
+            if op.public["kind"] in OUTPUT_KINDS:
                 await self.listeners.begin_output(op.public["id"])
                 if (
                     op.public["status"] != "running"
@@ -1348,6 +1419,8 @@ class Core:
             dispatch = (
                 self.backend.speak
                 if op.public["kind"] in SPEECH_KINDS
+                else self.backend.behavior_run
+                if op.public["kind"] == BEHAVIOR_RUN
                 else self.backend.configure_autonomy
                 if op.public["kind"] == "autonomy.transition"
                 else self.backend.light_transition
@@ -1502,7 +1575,7 @@ class Core:
             return
         result = stopped.get("results", {}).get(op.public["id"])
         if op.public["kind"] == LIGHT_KIND or (
-            op.public["kind"] == ANIMATED_SPEECH and isinstance(result, dict)
+            op.public["kind"] in {ANIMATED_SPEECH, BEHAVIOR_RUN} and isinstance(result, dict)
         ):
             result = (
                 result if isinstance(result, dict) else {"cancelled": True, "dispatched": False}
@@ -1595,7 +1668,7 @@ class Core:
                 )
                 if force and fenced and op.public["kind"] not in unreleased_controls:
                     op.released = True
-                    if op.public["kind"] in SPEECH_KINDS:
+                    if op.public["kind"] in OUTPUT_KINDS:
                         self.listeners.end_output(op.public["id"])
                     op.retained_until = self.clock() + self.settings.history_seconds
                     for resource in op.public["resources"]:

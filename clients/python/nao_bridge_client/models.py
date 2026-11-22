@@ -61,6 +61,23 @@ class SpeechOptions(WireModel):
     connection_generation: int
 
 
+class InstalledBehavior(WireModel):
+    name: str
+
+
+class BehaviorPage(WireModel):
+    items: list[InstalledBehavior]
+    next_cursor: str | None
+    running: list[str] | None
+    support: Capability
+    truncated: bool
+    connection_generation: int
+
+
+class BehaviorChangedData(WireModel):
+    running: list[str] | None
+
+
 class Capabilities(WireModel):
     contract_version: str
     connection_generation: int

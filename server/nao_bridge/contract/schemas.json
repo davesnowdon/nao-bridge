@@ -4342,6 +4342,117 @@
         "connection_generation"
       ],
       "additionalProperties": true
+    },
+    "BehaviorName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "not": {
+        "pattern": "[\\x00-\\x1f\\x7f]"
+      }
+    },
+    "InstalledBehavior": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/BehaviorName"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "BehaviorPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/InstalledBehavior"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BehaviorName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "running": {
+          "anyOf": [
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/BehaviorName"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "support": {
+          "$ref": "#/$defs/Feature"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "running",
+        "support",
+        "truncated",
+        "connection_generation"
+      ],
+      "additionalProperties": true
+    },
+    "BehaviorRunCreate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/BehaviorName"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "BehaviorChanged": {
+      "type": "object",
+      "properties": {
+        "running": {
+          "anyOf": [
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/BehaviorName"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "additionalProperties": true
     }
   }
 }

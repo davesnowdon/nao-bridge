@@ -32,6 +32,7 @@ from .errors import (
 from .json_wire import loads
 from .listeners import AsyncListener
 from .models import (
+    BehaviorPage,
     CamerasData,
     Capabilities,
     ErrorDetail,
@@ -123,6 +124,7 @@ class AsyncNao:
         self.motion = AsyncMotion(self)
         self.autonomy = AsyncAutonomy(self)
         self.lights = AsyncLights(self)
+        self.behaviors = AsyncBehaviors(self)
         self.speech = AsyncSpeech(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
@@ -945,6 +947,38 @@ class AsyncSensors:
             wait_for_fresh_ms=wait_for_fresh_ms,
             require_fresh=require_fresh,
         )
+
+
+class AsyncBehaviors:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def list(self, *, cursor: str | None = None, limit: int = 12) -> BehaviorPage:
+        fields = {"limit": str(limit)}
+        if cursor is not None:
+            fields["cursor"] = cursor
+        return decode(
+            BehaviorPage,
+            await self._nao._request("GET", "/api/behaviors?" + str(httpx.QueryParams(fields))),
+        )
+
+    async def run(
+        self,
+        name: str,
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        result = await self._nao._request(
+            "POST",
+            "/api/behaviors/runs",
+            body={"name": name},
+            key=idempotency_key or uuid.uuid4().hex,
+        )
+        operation = AsyncOperation(self._nao, decode(OperationData, result))
+        return await operation.wait(timeout=timeout) if wait else operation
 
 
 class AsyncLights:

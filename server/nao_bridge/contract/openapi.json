@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.11.0",
-    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots. Increment 4 begins with discovered light groups and state. Speech options are discoverable and animated speech is available in fixtures."
+    "version": "1.12.0",
+    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots. Increment 4 begins with discovered light groups and state. Speech options are discoverable and animated speech is available in fixtures. Installed behavior discovery and observed running sets are available."
   },
   "servers": [
     {
@@ -3212,6 +3212,123 @@
           }
         }
       }
+    },
+    "/behaviors": {
+      "get": {
+        "operationId": "listBehaviors",
+        "summary": "Discover installed behaviors and the last observed running set",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BehaviorPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BehaviorName"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "default": 12
+            }
+          }
+        ]
+      }
+    },
+    "/behaviors/runs": {
+      "post": {
+        "operationId": "runBehavior",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BehaviorRunCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Run an installed behavior under the session's command ownership",
+        "description": "Completion confirms that the named native run ended. Check discovery for run availability."
+      }
     }
   },
   "components": {
@@ -3512,6 +3629,21 @@
       },
       "SpeechOptions": {
         "$ref": "schemas.json#/$defs/SpeechOptions"
+      },
+      "BehaviorName": {
+        "$ref": "schemas.json#/$defs/BehaviorName"
+      },
+      "InstalledBehavior": {
+        "$ref": "schemas.json#/$defs/InstalledBehavior"
+      },
+      "BehaviorPage": {
+        "$ref": "schemas.json#/$defs/BehaviorPage"
+      },
+      "BehaviorRunCreate": {
+        "$ref": "schemas.json#/$defs/BehaviorRunCreate"
+      },
+      "BehaviorChanged": {
+        "$ref": "schemas.json#/$defs/BehaviorChanged"
       }
     }
   }

@@ -36,6 +36,10 @@ class Backend(Protocol):
     async def light_transition(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def behavior_page(self, cursor: str | None, limit: int) -> dict[str, Any]: ...
+    async def behavior_run(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -78,6 +82,8 @@ class FakeBackend:
         self.calls: list[dict[str, Any]] = []
         self.autonomy_results: dict[str, dict[str, Any]] = {}
         self.light_results: dict[str, dict[str, Any]] = {}
+        self.behavior_names = ["fixture/greet", "fixture/long"]
+        self.running_behaviors: set[str] = set()
         self.controls = FakeControls(self)
         self.velocity_controls = FakeVelocityControls(self)
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
@@ -261,6 +267,12 @@ class FakeBackend:
                     "postures": ["StandInit", "Sit", "Crouch"],
                     "autonomy": self.autonomy_catalog,
                     "lights": self.light_catalog,
+                    "behaviors": {
+                        "discovered": True,
+                        "available": connected,
+                        "events": connected,
+                        "truncated": False,
+                    },
                     "motion_events": {
                         "posture_fields": ["family", "posture"],
                         "fall_phases": ["fallen", "falling"],
@@ -630,6 +642,34 @@ class FakeBackend:
         self.light_results[operation_id] = result
         return result
 
+    async def behavior_page(self, cursor: str | None, limit: int) -> dict[str, Any]:
+        if cursor is not None and cursor not in self.behavior_names:
+            raise BridgeError("invalid_request", "Behavior cursor is invalid or expired")
+        start = self.behavior_names.index(cursor) + 1 if cursor is not None else 0
+        names = self.behavior_names[start : start + limit]
+        return {
+            "items": [{"name": name} for name in names],
+            "next_cursor": names[-1] if start + limit < len(self.behavior_names) else None,
+            "running": sorted(self.running_behaviors),
+        }
+
+    async def behavior_run(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        name = payload["name"]
+        if name not in self.behavior_names:
+            raise BridgeError("unsupported", "Installed behavior unavailable", 422)
+        if name in self.running_behaviors:
+            raise BridgeError("resource_busy", "The native behavior is already running", 409)
+        result = await self._execute(
+            operation_id,
+            session_id,
+            payload,
+            "behavior_run",
+            delay=30.0 if name == "fixture/long" else 0,
+        )
+        return {**result, "name": name}
+
     async def _execute(
         self,
         operation_id: str,
@@ -661,7 +701,12 @@ class FakeBackend:
             raise BridgeError("unsupported", "Injected native rejection", 422)
         cancel = asyncio.Event()
         self.active[operation_id] = (session_id, cancel)
+        behavior = payload["name"] if action == "behavior_run" else None
         try:
+            if behavior is not None:
+                self.running_behaviors.add(behavior)
+                if self.sink:
+                    await self.sink("behavior.changed", {"running": sorted(self.running_behaviors)})
             try:
                 await asyncio.wait_for(cancel.wait(), timeout=max(self.duration, delay))
                 return {"cancelled": True}
@@ -671,6 +716,10 @@ class FakeBackend:
                 return {"backend": "fake", **({"spoken": True} if action == "speech" else {})}
         finally:
             self.active.pop(operation_id, None)
+            if behavior is not None:
+                self.running_behaviors.discard(behavior)
+                if self.sink:
+                    await self.sink("behavior.changed", {"running": sorted(self.running_behaviors)})
 
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
@@ -774,7 +823,17 @@ class FakeBackend:
         for key in matched:
             if key not in deferred:
                 self.active[key][1].set()
-        outcomes = {**self.autonomy_results, **self.light_results}
+        behavior_stops = {
+            call["id"]: {
+                "name": call["payload"]["name"],
+                "cancelled": True,
+                "stop_confirmed": True,
+                "backend": "fake",
+            }
+            for call in self.calls
+            if call["id"] in matched and call["action"] == "behavior_run"
+        }
+        outcomes = {**self.autonomy_results, **self.light_results, **behavior_stops}
         completed = [
             key
             for key in outcomes

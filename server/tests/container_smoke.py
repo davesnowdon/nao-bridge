@@ -811,7 +811,11 @@ try:
     probe.schemas = probe.request("GET", "/api/schemas.json")
     recovery_probe.schemas = probe.schemas
     summary = conformance.run("http://127.0.0.1:3000")
-    assert {"light_transitions_and_readback", "animated_speech"} <= set(summary["checks"]), summary
+    assert {
+        "light_transitions_and_readback",
+        "animated_speech",
+        "installed_behavior_run_and_stop",
+    } <= set(summary["checks"]), summary
     print(json.dumps(summary))
     speech_session = probe.request("POST", "/api/sessions", {"name": "animated-stop"}, status=201)
     probe.session = speech_session["id"]

@@ -12,6 +12,7 @@ from .listeners import AsyncListener
 from .models import (
     AssetData,
     AssetsPage,
+    BehaviorPage,
     CamerasData,
     Capabilities,
     Event,
@@ -55,6 +56,7 @@ class Nao:
         self.motion = Motion(self)
         self.autonomy = Autonomy(self)
         self.lights = Lights(self)
+        self.behaviors = Behaviors(self)
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
@@ -531,6 +533,29 @@ class Vision:
                 wait=wait,
                 timeout=timeout,
                 idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
+
+
+class Behaviors:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def list(self, *, cursor: str | None = None, limit: int = 12) -> BehaviorPage:
+        return self._nao._run(self._nao._async.behaviors.list(cursor=cursor, limit=limit))
+
+    def run(
+        self,
+        name: str,
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.behaviors.run(
+                name, wait=wait, timeout=timeout, idempotency_key=idempotency_key
             )
         )
         return Operation(self._nao, operation)

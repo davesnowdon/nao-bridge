@@ -324,6 +324,16 @@ class AgentBackend:
             "command", "light_transition", payload, session_id, operation_id, timeout=None
         )
 
+    async def behavior_page(self, cursor: str | None, limit: int) -> dict[str, Any]:
+        return await self._rpc("command", "list_behaviors", {"cursor": cursor, "limit": limit})
+
+    async def behavior_run(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "behavior_run", payload, session_id, operation_id, timeout=None
+        )
+
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._rpc("controls", "joint_setpoint", payload, session_id)
 
