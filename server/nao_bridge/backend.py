@@ -33,6 +33,9 @@ class Backend(Protocol):
     async def configure_autonomy(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def restore_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
     async def light_transition(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
@@ -653,6 +656,44 @@ class FakeBackend:
         self.autonomy_results[operation_id] = result
         return result
 
+    async def restore_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._execute(operation_id, session_id, payload, "restore_autonomy")
+        cancelled = result.get("cancelled", False)
+        settings = []
+        for name, entry in payload["settings"].items():
+            current = self.autonomy_state[name]
+            reason = (
+                "restoration_stopped"
+                if cancelled
+                else "native_safeguard_active"
+                if self.autonomy_state["life_state"] == "safeguard"
+                else "unsupported"
+                if self.autonomy_catalog[name]["status"] != "available"
+                else "external_change"
+                if current != entry["applied"]
+                else None
+            )
+            if reason is None:
+                self.autonomy_state[name] = entry["before"]
+            settings.append(
+                {
+                    **entry,
+                    "setting": name,
+                    "observed": self.autonomy_state[name],
+                    "status": "skipped" if reason else "restored",
+                    "reason": reason,
+                }
+            )
+        result = {
+            **result,
+            "outcome": "cancelled" if cancelled else "succeeded",
+            "settings": settings,
+        }
+        self.autonomy_results[operation_id] = result
+        return result
+
     async def light_transition(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
@@ -704,7 +745,12 @@ class FakeBackend:
     ) -> dict[str, Any]:
         if not self.connected:
             raise BackendUnknown("Robot disconnected before dispatch could be established")
-        if session_id in self.revoked:
+        if action == "restore_autonomy":
+            if session_id not in self.revoked:
+                raise BridgeError(
+                    "session_invalid", "Session must be fenced before restoration", 409
+                )
+        elif session_id in self.revoked:
             raise BridgeError("session_invalid", "Agent rejected fenced session", 409)
         if operation_id in self.motion_stop_ids:
             return {"cancelled": True, "dispatched": False}
@@ -836,7 +882,7 @@ class FakeBackend:
                 "velocity_controls": velocity,
                 **scope_result,
             }
-        if motion_scope:
+        if operation_ids:
             self.motion_stop_ids.extend(operation_ids or [])
         deferred = {
             call["id"]

@@ -16,7 +16,7 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.15.0 replaces the old API without compatibility
+remain available. Contract 1.16.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 

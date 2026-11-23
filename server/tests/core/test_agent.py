@@ -54,6 +54,7 @@ def bare_agent(module):
     agent.priority = queue.Queue(8)
     agent.emergency_stop = threading.Event()
     agent.driver = types.SimpleNamespace(
+        connected=lambda: True,
         speak=lambda payload: pytest.fail("Cancelled queued work reached native dispatch"),
         stop=lambda: pytest.fail("Queued-only scoped stop invoked unrelated native output"),
     )
@@ -105,6 +106,24 @@ def test_priority_stop_keeps_joint_stop_behind_unconfirmed_velocity(agent_module
         assert not result["locomotion_confirmed"] and result["joint_stop_confirmed"] is None
 
 
+def test_autonomy_restoration_requires_a_fence_in_the_same_epoch(agent_module):
+    agent = bare_agent(agent_module)
+    request = {
+        "agent": agent.instance,
+        "api": agent.api,
+        "epoch": agent.epoch,
+        "action": "restore_autonomy",
+        "session_id": "session",
+        "deadline": agent_module.monotonic() + 1,
+    }
+    assert agent.valid(request) == "session_not_fenced"
+    agent.revoked["session"] = (agent_module.monotonic(), agent.epoch)
+    assert agent.valid(request) is None
+    agent.epoch += 1
+    request["epoch"] = agent.epoch
+    assert agent.valid(request) == "session_not_fenced"
+
+
 def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
     import autonomy
 
@@ -125,7 +144,7 @@ def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
             def complete(timeout):
                 values["life_state"] = value
                 writes.append("life_state")
-                agent.revoked["session"] = agent_module.monotonic()
+                agent.revoked["session"] = (agent_module.monotonic(), agent.epoch)
 
             return types.SimpleNamespace(value=complete)
 
@@ -377,7 +396,7 @@ def test_epoch_deadline_and_session_fences_reject_stale_dispatch(agent_module):
         "deadline": module.monotonic() + 1,
     }
     assert agent.valid(request) is None
-    agent.revoked["session"] = module.monotonic()
+    agent.revoked["session"] = (module.monotonic(), agent.epoch)
     assert agent.valid(request) == "fenced_session"
     agent.revoked.clear()
     assert agent.valid(dict(request, deadline=module.monotonic() - 1)) == "expired_deadline"

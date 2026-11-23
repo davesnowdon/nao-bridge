@@ -57,9 +57,17 @@ def behavior(name: str) -> dict[str, Any]:
 
 
 def autonomy(
-    settings: dict[str, bool | str], *, allow_partial: bool | None = None
+    settings: dict[str, bool | str],
+    *,
+    allow_partial: bool | None = None,
+    restore_on_close: bool | None = None,
 ) -> dict[str, Any]:
-    return _action("autonomy", settings=dict(settings), allow_partial=allow_partial)
+    return _action(
+        "autonomy",
+        settings=dict(settings),
+        allow_partial=allow_partial,
+        restore_on_close=restore_on_close,
+    )
 
 
 def wake() -> dict[str, Any]:

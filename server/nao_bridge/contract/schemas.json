@@ -1976,7 +1976,7 @@
         "restore_on_close": {
           "type": "boolean",
           "default": false,
-          "description": "True is currently unsupported; settings remain applied on session close."
+          "description": "Opt into guarded restoration on orderly session close or lease expiry."
         }
       },
       "required": [
@@ -5161,12 +5161,94 @@
         "allow_partial": {
           "type": "boolean",
           "default": false
+        },
+        "restore_on_close": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt into guarded restoration on orderly session close or lease expiry."
         }
       },
       "required": [
         "profile"
       ],
       "additionalProperties": false
+    },
+    "AutonomyRestoration": {
+      "type": "object",
+      "required": [
+        "status",
+        "settings",
+        "operation_id"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "restored",
+            "partial",
+            "skipped",
+            "unknown"
+          ]
+        },
+        "operation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "settings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "setting",
+              "before",
+              "applied",
+              "observed",
+              "status",
+              "reason"
+            ],
+            "properties": {
+              "setting": {
+                "type": "string"
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "applied": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "observed": {
+                "type": [
+                  "string",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "restored",
+                  "skipped",
+                  "unknown"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
     }
   }
 }

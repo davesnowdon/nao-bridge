@@ -251,7 +251,7 @@ authority between setters, refuses observed native safeguard-state overrides, an
 retains uncertainty rather than dispatching later settings after an unconfirmed
 write. Persistent configuration ownership is separate from temporary actuator
 reservations. Cleanup leaves settings applied. Named profiles and explicit guarded
-`restore_on_close` remain increment-4 work; true is rejected until implemented.
+`restore_on_close` were delivered in [increment 4](increment-4-status.md#autonomy-profiles-and-observations).
 Legacy awareness-running state is not represented as a modern ability preference.
 
 Autonomy validation: `make check` passed 165 server/integration and 30 client tests

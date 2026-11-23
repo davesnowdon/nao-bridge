@@ -158,5 +158,14 @@ over SSE. The HTTP tests exercised strict rejection, the legacy fallback,
 partial reporting, and idempotency. Both clients exercised discovery and
 application against the HTTP service.
 
-Guarded restoration on session close and physical verification of profile
-effects are still pending. See [autonomy profiles](http-api.md#autonomy-profiles).
+Contract 1.16.0 adds guarded opt-in restoration on orderly close and lease
+expiry. Restoration uses fresh agent read-back, same-generation authority,
+and the usual reservations. The cleanup operation records restored, skipped,
+and unknown settings. Both Python clients retain the cleanup operation for
+inspection after the context ends. Explicit revocation skips restoration.
+The combined-container fixture applied a profile and restored life to its
+previous value on close. Focused tests cover lease expiry, external change,
+an old fence epoch, reconnect, and priority stop before a restore dispatch.
+Physical verification of profile and restoration effects remains pending.
+See [autonomy profiles](http-api.md#autonomy-profiles) and
+[guarded restoration](http-api.md#guarded-restoration).

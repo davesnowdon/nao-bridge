@@ -17,7 +17,7 @@ except ImportError:
 
 from native import FixtureDriver, NativeDriver
 from motion import valid_trajectory, valid_motion_action
-from autonomy import valid_autonomy, TransitionStopped
+from autonomy import valid_autonomy, valid_restoration, TransitionStopped
 from controls import JointControls, ControlError
 from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
@@ -30,8 +30,10 @@ from velocity import VelocityControls
 from wire import VERSION, encode, frames, monotonic
 
 PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
+AUTONOMY_ACTIONS = ("autonomy", "restore_autonomy")
 COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
-                autonomy=valid_autonomy, camera_capture=valid_capture, light_transition=valid_light,
+                autonomy=valid_autonomy, restore_autonomy=valid_restoration,
+                camera_capture=valid_capture, light_transition=valid_light,
                 behavior_run=valid_behavior)
 GUARDED_MOTION = ("walk", "animated_speech", "behavior", "gesture")
 
@@ -42,9 +44,9 @@ def valid_stop(request):
         return False
     scope = payload.get("motion_scope")
     ids = payload.get("operation_ids", [])
-    if scope is None:
-        return not ids
-    return (scope in ("all", "locomotion")
+    if scope is None and not ids:
+        return True
+    return (scope in (None, "all", "locomotion")
             and not payload.get("operation_id") and not request.get("session_id")
             and isinstance(ids, list) and len(ids) <= 32
             and all(isinstance(key, type(u"")) and 0 < len(key) <= 128 for key in ids)
@@ -148,6 +150,10 @@ class Agent(object):
             return "expired_deadline"
         if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "camera_capture", "light_transition", "behavior_run") and request.get("session_id") in self.revoked:
             return "fenced_session"
+        if request.get("action") == "restore_autonomy":
+            fence = self.revoked.get(request.get("session_id"))
+            if fence is None or fence[1] != self.epoch:
+                return "session_not_fenced"
         return None
 
     def validate_speech(self, request):
@@ -203,7 +209,7 @@ class Agent(object):
                 if request["action"] in PRODUCERS:
                     self.run_producer(request, record, replies)
                     continue
-                if request["action"] == "autonomy":
+                if request["action"] in AUTONOMY_ACTIONS:
                     self.run_autonomy(request, record, replies)
                     continue
                 if request["action"] == "camera_capture":
@@ -323,18 +329,26 @@ class Agent(object):
         self.reply(replies, request, result=result)
 
     def run_autonomy(self, request, record, replies):
-        before = self.driver.autonomy.prepare(request["payload"])
+        adapter = self.driver.autonomy
+        if adapter is None:
+            raise ValueError("Autonomy controls unavailable")
 
         def dispatch(service, method, args):
             with self.lock:
-                if record.get("stop_requested") or self.valid(request, initial=record["phase"] == "queued"):
+                if (record.get("stop_requested") or self.driver.autonomy is not adapter
+                        or not self.driver.connected()
+                        or self.valid(request, initial=record["phase"] == "queued")):
                     raise TransitionStopped()
                 record["phase"] = "dispatch_started"
                 future = getattr(service, method)(*args, **{"_async": True})
                 record["future"] = future
             future.value(1000)
 
-        result = self.driver.autonomy.transition(request["payload"], before, dispatch)
+        payload = request["payload"]
+        if request["action"] == "restore_autonomy":
+            result = adapter.restore(payload, dispatch)
+        else:
+            result = adapter.transition(payload, adapter.prepare(payload), dispatch)
         with self.lock:
             if record.get("stop_requested") and result["outcome"] != "unknown":
                 result["outcome"] = "cancelled"
@@ -404,7 +418,7 @@ class Agent(object):
             velocity_deadline = monotonic() + 1.1
             already_ended, missing = [], []
             # The priority lane can overtake a command that has not arrived yet.
-            for key in requested_ids if scope else [oid] if oid else []:
+            for key in [oid] if oid else requested_ids:
                 if key in control_ids or key in velocity_ids:
                     continue
                 if key not in self.records:
@@ -426,7 +440,7 @@ class Agent(object):
                         and (not scope
                              or scope == "locomotion" and record.get("motion_kind") == "walk"
                              or scope == "all" and (
-                                 record.get("action") in ("trajectory", "motion_action", "autonomy")
+                                 record.get("action") in ("trajectory", "motion_action") + AUTONOMY_ACTIONS
                                  or record.get("motion_kind") in ("animated_speech", "behavior")))
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
@@ -504,7 +518,7 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if (record.get("action") in PRODUCERS or record.get("action") in ("autonomy", "camera_capture", "light_transition")) and record["phase"] != "queued":
+            if (record.get("action") in PRODUCERS or record.get("action") in AUTONOMY_ACTIONS + ("camera_capture", "light_transition")) and record["phase"] != "queued":
                 # These operations require their own completion record. A light fade has
                 # no confirmed native interruption and may settle after this stop request.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
@@ -581,7 +595,7 @@ class Agent(object):
                 joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
                         if key in self.records and "result" in self.records[key]
-                        and (self.records[key].get("action") in ("autonomy", "light_transition")
+                        and (self.records[key].get("action") in AUTONOMY_ACTIONS + ("light_transition",)
                              or self.records[key].get("motion_kind") in ("animated_speech", "behavior", "gesture")))
         if outcomes:
             result["results"] = outcomes
@@ -711,7 +725,7 @@ class Agent(object):
                             if not isinstance(sid, type(u"")) or not sid or (sid not in self.revoked and len(self.revoked) >= 4096):
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Invalid session or fencing capacity exhausted")
                             else:
-                                self.revoked[sid] = monotonic()
+                                self.revoked[sid] = (monotonic(), self.epoch)
                                 self.reply(replies, request, result={"fenced": True, "epoch": self.epoch})
                         elif lane == "priority" and action in ("release_controls", "release_velocity_controls"):
                             try:
@@ -844,7 +858,7 @@ class Agent(object):
                 for rid, record in list(self.records.items()):
                     if record["status"] in ("completed", "rejected") and now - record.get("finished", now) > 900:
                         del self.records[rid]
-                for sid, revoked_at in list(self.revoked.items()):
+                for sid, (revoked_at, _) in list(self.revoked.items()):
                     if (now - revoked_at > 900 and not any(r["session_id"] == sid for r in self.records.values())
                             and not any(r["identity"][0] == sid for manager in (self.controls, self.velocity_controls)
                                         for r in manager.records.values())):

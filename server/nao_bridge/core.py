@@ -56,6 +56,10 @@ STOP_KINDS = {"robot.stop", "motion.stop"}
 STOP_ROUTES = {"POST /robot/stop", "POST /motion/stop"}
 RECOVERY_KINDS = {"session.close", "session.revoke"} | STOP_KINDS
 CONFIGURATION_KINDS = {"motion.stiffness_change", "motion.wake", "motion.rest"}
+AUTONOMY_TRANSITION = "autonomy.transition"
+AUTONOMY_RESTORE = "autonomy.restore"
+AUTONOMY_RESOURCE = "autonomy.configuration"
+AUTONOMY_KINDS = {AUTONOMY_TRANSITION, AUTONOMY_RESTORE}
 MOTION_ACTIONS = CONFIGURATION_KINDS | {"motion.posture_change", "motion.move"}
 PLAIN_SPEECH = "speech.utterance"
 ANIMATED_SPEECH = "speech.animated_utterance"
@@ -74,7 +78,7 @@ ORDINARY_KINDS = (
         "motion.joint_move",
         "motion.trajectory_run",
         GESTURE_KIND,
-        "autonomy.transition",
+        *AUTONOMY_KINDS,
         BEHAVIOR_RUN,
         LIGHT_KIND,
     }
@@ -147,6 +151,9 @@ class Session:
     deadline: float
     retained_until: float | None = None
     stop_operation_ids: dict[str, str] = field(default_factory=dict)
+    cleanup_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    autonomy_restore: dict[str, dict[str, str | bool]] = field(default_factory=dict)
+    accepting_autonomy_results: bool = True
 
 
 @dataclass
@@ -160,6 +167,7 @@ class Operation:
     cancel_task: asyncio.Task | None = None
     stop_scope: str | None = None
     native_slots: int = 0
+    restore_on_close: bool = False
 
 
 @dataclass
@@ -202,6 +210,7 @@ class Core:
         self.streams: dict[str, tuple[Subscription, EventBuffer]] = {}
         self.resources: dict[str, str] = {}
         self.configuration_owners: dict[str, str] = {}
+        self.autonomy_stop_generation = 0
         self.pending_replacements: dict[str, str] = {}
         self.joint_controls = JointControls(self)
         self.velocity_controls = VelocityControls(self)
@@ -1106,8 +1115,9 @@ class Core:
         predecessor = op.public.get("replaces_operation_id")
         if predecessor and self.pending_replacements.get(predecessor) == op.public["id"]:
             del self.pending_replacements[predecessor]
+        owner = self.sessions.get(op.public["session_id"])
         configured = (
-            op.public["kind"] == "autonomy.transition"
+            op.public["kind"] == AUTONOMY_TRANSITION
             and bool(result)
             and any(
                 item["status"] in {"applied", "unchanged", "failed"}
@@ -1118,11 +1128,19 @@ class Core:
             (status in {"succeeded", "cancelled"} or status == "failed" and configured)
             and op.public["started_at"] is not None
             and ((result or {}).get("dispatched") is not False or configured)
-            and (owner := self.sessions.get(op.public["session_id"])) is not None
-            and owner.public["status"] == "active"
+            and owner is not None
+            and (
+                owner.public["status"] == "active"
+                or configured
+                and owner.accepting_autonomy_results
+                and owner.public["status"] in {"closing", "expired"}
+            )
+            and op.public["connection_generation"] == self.generation
         ):
             for resource in op.retained_resources:
                 self.configuration_owners[resource] = op.public["session_id"]
+            if configured and result:
+                self.record_autonomy_restoration(owner, op.restore_on_close, result["settings"])
         if status != "unknown" or not op.public["resources"]:
             self.release_operation(op)
         self.update(
@@ -1239,10 +1257,12 @@ class Core:
     def expression_resources(self, *, ready: bool = True) -> list[str]:
         joints = ["joint." + item["name"] for item in self.info.get("joints", [])]
         self.require_joint_motion(joints, ready=ready)
-        lights = {
-            resource for group in self.info.get("lights", []) for resource in group["resources"]
-        }
-        return ["locomotion", *joints, *sorted(lights)]
+        return ["locomotion", *joints, *self.light_resources()]
+
+    def light_resources(self) -> list[str]:
+        return sorted(
+            {resource for group in self.info.get("lights", []) for resource in group["resources"]}
+        )
 
     def behavior_support(self) -> dict[str, Any]:
         metadata = self.info.get("behaviors", {}) if self.connection == "connected" else {}
@@ -1557,6 +1577,32 @@ class Core:
             if item["status"] == "available"
         }
 
+    @staticmethod
+    def record_autonomy_restoration(
+        session: Session, restore: bool, results: list[dict[str, Any]]
+    ) -> None:
+        for item in results:
+            name = item["setting"]
+            if item["status"] not in {"applied", "unchanged"} or item.get("rollback"):
+                continue
+            if not restore:
+                session.autonomy_restore.pop(name, None)
+            elif item["status"] == "unchanged":
+                previous = session.autonomy_restore.get(name)
+                if previous and previous["applied"] != item["observed"]:
+                    session.autonomy_restore.pop(name, None)
+            elif item["status"] == "applied" and item["observed"] == item["requested"]:
+                previous = session.autonomy_restore.get(name)
+                before = (
+                    previous["before"]
+                    if previous and previous["applied"] == item["before"]
+                    else item["before"]
+                )
+                if before == item["observed"]:
+                    session.autonomy_restore.pop(name, None)
+                else:
+                    session.autonomy_restore[name] = {"before": before, "applied": item["observed"]}
+
     def profile_settings(self, name: str) -> dict[str, str | bool]:
         settings = dict(AUTONOMY_PROFILES[name][1])
         available = self.available_autonomy_settings()
@@ -1588,8 +1634,6 @@ class Core:
     def prepare_autonomy(self, body: dict[str, Any]) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
-        if body.get("restore_on_close", False):
-            raise BridgeError("unsupported", "Autonomy restoration is not implemented yet", 422)
         supported = self.available_autonomy_settings()
         requested = set(body["settings"])
         if (
@@ -1601,19 +1645,26 @@ class Core:
                 422,
                 {"settings": sorted(requested - supported)},
             )
-        resources = [
-            "autonomy.configuration",
+        return FiniteCommand(
+            AUTONOMY_TRANSITION,
+            self.autonomy_resources(requested & supported),
+            {
+                "settings": body["settings"],
+                "allow_partial": body.get("allow_partial", False),
+                "restore_on_close": body.get("restore_on_close", False),
+            },
+            retained_resources=[AUTONOMY_RESOURCE],
+        )
+
+    def autonomy_resources(self, settings: set[str]) -> list[str]:
+        return [
+            AUTONOMY_RESOURCE,
             "speech.recognition",
             "locomotion",
             "speech.output",
             *["joint." + joint["name"] for joint in self.info.get("joints", [])],
+            *(self.light_resources() if settings & {"autonomous_blinking", "life_state"} else []),
         ]
-        return FiniteCommand(
-            "autonomy.transition",
-            resources,
-            {"settings": body["settings"], "allow_partial": body.get("allow_partial", False)},
-            retained_resources=["autonomy.configuration"],
-        )
 
     async def refresh_motion_after(
         self, completed: float, groups: tuple[str, ...] = ("joints", "motion")
@@ -1668,6 +1719,9 @@ class Core:
             return
         agent_instance = self.backend.instance
         generation = self.generation
+        if op.public["kind"] == AUTONOMY_TRANSITION:
+            payload = dict(payload)
+            op.restore_on_close = payload.pop("restore_on_close", False)
         self.start_operation(op)
         try:
             if op.public["kind"] in OUTPUT_KINDS:
@@ -1684,7 +1738,7 @@ class Core:
                 else self.backend.behavior_run
                 if op.public["kind"] == BEHAVIOR_RUN
                 else self.backend.configure_autonomy
-                if op.public["kind"] == "autonomy.transition"
+                if op.public["kind"] == AUTONOMY_TRANSITION
                 else self.backend.light_transition
                 if op.public["kind"] == LIGHT_KIND
                 else self.backend.motion_action
@@ -1696,13 +1750,13 @@ class Core:
                 result["state_refreshed"] = await self.refresh_motion_after(self.clock())
             if op.public["kind"] == GESTURE_KIND and not result.get("cancelled"):
                 result["planned_duration_seconds"] = max(times[-1] for times in payload["times"])
-            if op.public["kind"] == "autonomy.transition":
+            if op.public["kind"] == AUTONOMY_TRANSITION:
                 result["state_refreshed"] = await self.refresh_motion_after(
                     self.clock(), ("autonomy",)
                 )
             if generation != self.generation or agent_instance != self.backend.instance:
                 return
-            if op.public["kind"] == "autonomy.transition":
+            if op.public["kind"] == AUTONOMY_TRANSITION:
                 outcome = result["outcome"]
                 if outcome not in TERMINAL:
                     raise BackendUnknown("Invalid autonomy outcome")
@@ -1852,7 +1906,13 @@ class Core:
             )
             self.finish(op, "cancelled" if result.get("cancelled") else "succeeded", result)
             return
-        if op.public["kind"] == "autonomy.transition" and isinstance(result, dict):
+        if op.public["kind"] in AUTONOMY_KINDS and isinstance(result, dict):
+            if result.get("dispatched") is False and "outcome" not in result:
+                self.finish(op, "cancelled", result)
+                return
+            if op.public["kind"] == AUTONOMY_RESTORE:
+                self.finish_autonomy_restore(op, result)
+                return
             outcome = result.get("outcome", "unknown")
             self.finish(
                 op,
@@ -1889,10 +1949,117 @@ class Core:
 
     async def cleanup_expired(self, session: Session) -> None:
         # Expiry must still stop work when operation-history admission is full.
-        await self.cleanup_native(session)
+        async with session.cleanup_lock:
+            await self.cleanup_native(session)
+
+    async def restore_autonomy(
+        self, session: Session, fenced: bool, stop_generation: int
+    ) -> dict[str, Any] | None:
+        sid = session.public["id"]
+        session.accepting_autonomy_results = False
+        entries = session.autonomy_restore
+        if not entries:
+            return None
+        session.autonomy_restore = {}
+        reason = None
+        if session.public["status"] not in {"closing", "expired"}:
+            reason = "session_revoked"
+        elif (
+            self.connection != "connected"
+            or self.generation != session.public["connection_generation"]
+        ):
+            reason = "connection_changed"
+        elif not fenced:
+            reason = "fencing_unconfirmed"
+        elif stop_generation != self.autonomy_stop_generation:
+            reason = "priority_stop"
+        elif self.configuration_owners.get(AUTONOMY_RESOURCE) != sid:
+            reason = "ownership_lost"
+        skipped = {
+            name: "prior_value_not_writable"
+            for name, entry in entries.items()
+            if name == "life_state" and entry["before"] not in {"disabled", "solitary"}
+        }
+        eligible = {name: entry for name, entry in entries.items() if name not in skipped}
+        op = None
+        if eligible and reason is None:
+            try:
+                op = self.new_operation(
+                    session, AUTONOMY_RESTORE, self.autonomy_resources(set(eligible))
+                )
+            except BridgeError as exc:
+                reason = exc.code
+        results = []
+        if op is not None:
+            self.start_operation(op)
+            try:
+                async with asyncio.timeout(self.settings.backend_timeout_seconds):
+                    restored = await self.backend.restore_autonomy(
+                        op.public["id"], sid, {"settings": eligible}
+                    )
+                if op.public["connection_generation"] == self.generation:
+                    self.finish_autonomy_restore(op, restored)
+            except TimeoutError:
+                await self.cancel_native(op)
+            except BridgeError as exc:
+                self.finish(op, "failed", error=exc)
+            except Exception:
+                self.finish(
+                    op,
+                    "unknown",
+                    error=BridgeError(
+                        "autonomy_restore_unknown", "Native restoration is unconfirmed", 503
+                    ),
+                )
+            results = list((op.public["result"] or {}).get("settings", []))
+            error = op.public["error"] or {}
+            reason = error.get("code") or "restoration_stopped"
+
+        unknown = (
+            op is not None and op.public["status"] == "unknown"
+        ) or reason == "fencing_unconfirmed"
+        observed = {item["setting"] for item in results}
+        for name, entry in entries.items():
+            if name in observed:
+                continue
+            results.append(
+                {
+                    **entry,
+                    "setting": name,
+                    "observed": None,
+                    "status": "unknown" if unknown and name not in skipped else "skipped",
+                    "reason": skipped.get(name, reason),
+                }
+            )
+        count = sum(item["status"] == "restored" for item in results)
+        return {
+            "status": "unknown"
+            if unknown
+            else "restored"
+            if count == len(results)
+            else "partial"
+            if count
+            else "skipped",
+            "operation_id": op.public["id"] if op is not None else None,
+            "settings": results,
+        }
+
+    def finish_autonomy_restore(self, op: Operation, result: dict[str, Any]) -> None:
+        outcome = result.get("outcome")
+        if outcome not in {"succeeded", "cancelled", "unknown"}:
+            raise BackendUnknown("Invalid autonomy restoration outcome")
+        self.finish(
+            op,
+            outcome,
+            result,
+            BridgeError("autonomy_restore_unknown", "Native restoration is unconfirmed", 503)
+            if outcome == "unknown"
+            else None,
+        )
 
     async def cleanup_native(self, session: Session, force: bool = False) -> dict[str, Any]:
         sid = session.public["id"]
+        stop_generation = self.autonomy_stop_generation
         sequences = self.sequences.interrupt("session_ended", session_id=sid)
         capture = self.vision.stop(sid)
         affected = [
@@ -1943,9 +2110,10 @@ class Core:
                         self.listeners.end_output(op.public["id"])
         if fenced:
             self.configuration_owners = {
-                r: owner for r, owner in self.configuration_owners.items() if owner != sid
+                r: owner
+                for r, owner in self.configuration_owners.items()
+                if owner != sid or (r == AUTONOMY_RESOURCE and session.autonomy_restore)
             }
-        unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
         unresolved_listeners = await self.listeners.cleanup(sid, force, fenced)
         unresolved_observers = await self.sensor_observers.cleanup(sid, force, fenced)
         unresolved_vision = await self.face_observers.cleanup(sid, force, fenced)
@@ -1956,6 +2124,12 @@ class Core:
         unresolved.extend(
             await self.sequences.finish_interruption(sequences, force=force and fenced)
         )
+        restoration = await self.restore_autonomy(session, fenced, stop_generation)
+        if restoration and restoration["status"] == "unknown" and restoration["operation_id"]:
+            unresolved.append(restoration["operation_id"])
+        if fenced and self.configuration_owners.get(AUTONOMY_RESOURCE) == sid:
+            del self.configuration_owners[AUTONOMY_RESOURCE]
+        unresolved_resources = [r for r, owner in self.configuration_owners.items() if owner == sid]
         listeners_released = not self.listeners.owns(sid)
         if not listeners_released:
             unresolved_resources.append("speech.recognition")
@@ -1972,6 +2146,7 @@ class Core:
             "unresolved_listener_ids": unresolved_listeners,
             "unresolved_sensor_observer_ids": unresolved_observers,
             "unresolved_vision_observer_ids": unresolved_vision,
+            **({"autonomy_restoration": restoration} if restoration else {}),
             "force_release": force
             and fenced
             and not unreleased_controls
@@ -2001,7 +2176,8 @@ class Core:
     ) -> None:
         self.update(op, status="running", started_at=utc())
         force = bool(revoke and revoke.get("force_release"))
-        result = await self.cleanup_native(session, force)
+        async with session.cleanup_lock:
+            result = await self.cleanup_native(session, force)
         if revoke:
             LOG.warning(
                 "Explicit revoke session=%s reason=%r force_release=%s fenced=%s unresolved=%s",
@@ -2052,6 +2228,7 @@ class Core:
         )
 
     async def stop_all(self) -> dict[str, Any]:
+        self.autonomy_stop_generation += 1
         sequences = self.sequences.interrupt("robot_stop")
         self.listeners.stop_all()
         self.sensor_observers.stop_all()
@@ -2066,7 +2243,18 @@ class Core:
         stop_error = None
         try:
             async with asyncio.timeout(self.settings.backend_timeout_seconds):
-                stopped = await self.backend.stop()
+                restoring = [
+                    op.public["id"]
+                    for op in self.operations.values()
+                    if op.public["kind"] == AUTONOMY_RESTORE
+                    and not op.released
+                    and op.public["connection_generation"] == self.generation
+                ]
+                stopped = (
+                    await self.backend.stop(operation_ids=restoring)
+                    if restoring
+                    else await self.backend.stop()
+                )
                 stopped = await self.settle_control_stops(stopped, list(self.operations.values()))
         except Exception as exc:
             stop_error = exc
@@ -2127,6 +2315,8 @@ class Core:
         return copy.deepcopy(op.public)
 
     async def stop_motion(self, scope: str) -> dict[str, Any]:
+        if scope == "all":
+            self.autonomy_stop_generation += 1
         sequences = self.sequences.interrupt("motion_stop", scope=scope)
         affected = [
             op

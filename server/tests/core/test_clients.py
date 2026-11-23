@@ -131,10 +131,14 @@ async def test_async_autonomy_capabilities_observed_state_and_configuration(sock
             assert nao.session_id is None
             op = await nao.autonomy.configure({"life_state": "disabled", "basic_awareness": False})
             assert op.status == "succeeded"
-            assert (await nao.autonomy.apply("presentation")).status == "succeeded"
+            assert (
+                await nao.autonomy.apply("presentation", restore_on_close=True)
+            ).status == "succeeded"
             state = await nao.autonomy.state(require_fresh=True)
             assert state.groups["autonomy"].value["settings"]["life_state"] == "disabled"
         assert backend.autonomy_state["life_state"] == "disabled"
+        assert backend.autonomy_state["background_movement"] is True
+        assert nao.cleanup_result.result["autonomy_restoration"]["status"] == "restored"
         assert not core.configuration_owners
 
 
@@ -144,7 +148,7 @@ async def test_sync_autonomy_partial_configuration_reports_skipped_settings(sock
         def work():
             with Nao(url) as nao:
                 assert any(profile.name == "manual" for profile in nao.autonomy.profiles().items)
-                assert nao.autonomy.apply("manual").status == "succeeded"
+                assert nao.autonomy.apply("manual", restore_on_close=True).status == "succeeded"
                 op = nao.autonomy.configure(
                     {"breathing": False, "awareness_running": False}, allow_partial=True
                 )
@@ -157,8 +161,10 @@ async def test_sync_autonomy_partial_configuration_reports_skipped_settings(sock
                     .value["settings"]["breathing"]
                     is False
                 )
+            assert nao.cleanup_result.result["autonomy_restoration"]["status"] == "restored"
 
         await asyncio.to_thread(work)
+        assert backend.autonomy_state["life_state"] == "solitary"
 
 
 async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):

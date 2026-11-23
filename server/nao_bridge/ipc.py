@@ -317,6 +317,13 @@ class AgentBackend:
             "command", "autonomy", payload, session_id, operation_id, timeout=None
         )
 
+    async def restore_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "restore_autonomy", payload, session_id, operation_id, timeout=None
+        )
+
     async def light_transition(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
@@ -402,6 +409,8 @@ class AgentBackend:
         payload: dict[str, Any] = {"operation_id": operation_id}
         if motion_scope is not None:
             payload.update(motion_scope=motion_scope, operation_ids=operation_ids or [])
+        elif operation_ids:
+            payload["operation_ids"] = operation_ids
         return await self._rpc("priority", "stop", payload, session_id)
 
     async def fence(self, session_id: str) -> bool:

@@ -122,6 +122,7 @@ class AsyncNao:
         self._controls: set[AsyncControlScope] = set()
         self.last_pending_request: PendingRequest | None = None
         self.cleanup_error: Exception | None = None
+        self.cleanup_result: OperationData | None = None
         self.robot = AsyncRobot(self)
         self.sensors = AsyncSensors(self)
         self.vision = AsyncVision(self)
@@ -143,6 +144,7 @@ class AsyncNao:
         self._session_lock = asyncio.Lock()
         self._pending_session = None
         self.cleanup_error = None
+        self.cleanup_result = None
         self._http = httpx.AsyncClient(
             base_url=self.url,
             timeout=self.timeout,
@@ -438,7 +440,10 @@ class AsyncNao:
                         ),
                     )
                     op = AsyncOperation(self, data)
-                    await op.wait(timeout=self.cleanup_timeout, observe=False)
+                    try:
+                        await op.wait(timeout=self.cleanup_timeout, observe=False)
+                    finally:
+                        self.cleanup_result = op.data
                 except (OperationUnknown, OperationFailed, OperationCancelled) as exc:
                     failure = CleanupError(exc.operation)
                 except Exception as exc:
@@ -1110,6 +1115,7 @@ class AsyncAutonomy:
         profile: str,
         *,
         allow_partial: bool = False,
+        restore_on_close: bool = False,
         wait: bool = True,
         timeout: float | None = None,
         idempotency_key: str | None = None,
@@ -1118,7 +1124,11 @@ class AsyncAutonomy:
         data = await self._nao._request(
             "POST",
             "/api/autonomy/profile_runs",
-            body={"profile": profile, "allow_partial": allow_partial},
+            body={
+                "profile": profile,
+                "allow_partial": allow_partial,
+                **({"restore_on_close": True} if restore_on_close else {}),
+            },
             key=idempotency_key or uuid.uuid4().hex,
         )
         op = AsyncOperation(self._nao, decode(OperationData, data))

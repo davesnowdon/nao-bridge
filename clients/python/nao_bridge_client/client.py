@@ -116,6 +116,10 @@ class Nao:
         return self._async.cleanup_error
 
     @property
+    def cleanup_result(self) -> OperationData | None:
+        return self._async.cleanup_result
+
+    @property
     def last_pending_request(self):
         return self._async.last_pending_request
 
@@ -673,6 +677,7 @@ class Autonomy:
         profile: str,
         *,
         allow_partial: bool = False,
+        restore_on_close: bool = False,
         wait: bool = True,
         timeout: float | None = None,
         idempotency_key: str | None = None,
@@ -681,6 +686,7 @@ class Autonomy:
             self._nao._async.autonomy.apply(
                 profile,
                 allow_partial=allow_partial,
+                restore_on_close=restore_on_close,
                 wait=wait,
                 timeout=timeout,
                 idempotency_key=idempotency_key,

@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.15.0",
+  "contract_version": "1.16.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -20,17 +20,21 @@
         "GET /api/autonomy/profiles without a session",
         "Apply an explicit disabled life transition and read observed state",
         "Subscribe to autonomy.changed and wait for stream.ready",
-        "Apply the interactive profile, then the presentation profile"
+        "Apply the interactive profile, then the presentation profile",
+        "Apply the interactive profile with restore_on_close true",
+        "Close the session and inspect the per-setting restoration report"
       ],
       "expected": [
         "Inspect the manual, presentation and interactive bundles and unavailable settings",
         "Profile operations give a result for each requested setting",
         "The interactive change appears as observed life and awareness state",
-        "The presentation profile reduces spontaneous activity again"
+        "The presentation profile reduces spontaneous activity again",
+        "The cleanup operation reports life restored to disabled after fenced read-back"
       ],
       "client_decisions": [
         "Use the catalog to decide whether to proceed strictly or opt into partial application.",
-        "Refresh autonomy state after stream reset or a connection generation change."
+        "Refresh autonomy state after stream reset or a connection generation change.",
+        "Inspect the close operation's autonomy_restoration result to distinguish restored, skipped and unknown settings."
       ]
     },
     {

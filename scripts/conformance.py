@@ -882,6 +882,14 @@ def run(url):
         probe.request("DELETE", "/api/events/subscriptions/" + subscription["id"], status=204)
         if gestures:
             probe.presentation_sequence()
+        restore_probe = probe.request(
+            "POST",
+            "/api/autonomy/profile_runs",
+            {"profile": "interactive", "restore_on_close": True},
+            status=202,
+            schema="Operation",
+        )
+        assert probe.wait(restore_probe)["status"] == "succeeded"
     finally:
         cleanup = probe.request(
             "POST",
@@ -890,11 +898,19 @@ def run(url):
             status=202,
             schema="Operation",
         )
-        assert probe.wait(cleanup)["status"] == "succeeded"
+        cleanup_result = probe.wait(cleanup)
+        assert cleanup_result["status"] == "succeeded", cleanup_result
         assert (
             session["id"]
             not in probe.request("GET", "/api/robot/diagnostics")["configuration_owners"].values()
         )
+    restored = cleanup_result["result"]["autonomy_restoration"]
+    probe.validate("AutonomyRestoration", restored)
+    assert restored["status"] == "restored", restored
+    assert any(
+        item["setting"] == "life_state" and item["observed"] == "disabled"
+        for item in restored["settings"]
+    )
     return {
         "backend": robot["backend"],
         "contract_version": robot["contract_version"],
@@ -911,6 +927,7 @@ def run(url):
             "joint_discovery_and_trajectory",
             "motion_configuration_and_ownership",
             "autonomy_profiles_and_observed_changes",
+            "guarded_autonomy_restoration_on_close",
             "validation",
             "sse",
             "reconnect_without_replay",

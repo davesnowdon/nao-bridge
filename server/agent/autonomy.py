@@ -10,6 +10,7 @@ ABILITIES = {
     "autonomous_blinking": "AutonomousBlinking",
 }
 SETTINGS = set(ABILITIES) | set(["life_state", "breathing", "idle_posture", "awareness_running"])
+WRITABLE_LIFE_STATES = ("disabled", "solitary")
 
 
 def valid_autonomy(payload):
@@ -18,8 +19,22 @@ def valid_autonomy(payload):
     settings = payload["settings"]
     return (isinstance(payload["allow_partial"], bool) and isinstance(settings, dict)
             and bool(settings) and not set(settings) - SETTINGS
-            and all(value in ("disabled", "solitary") if name == "life_state"
+            and all(value in WRITABLE_LIFE_STATES if name == "life_state"
                     else isinstance(value, bool) for name, value in settings.items()))
+
+
+def valid_restoration(payload):
+    if not isinstance(payload, dict) or set(payload) != {"settings"}:
+        return False
+    settings = payload["settings"]
+    if not isinstance(settings, dict) or not settings:
+        return False
+    if any(not isinstance(item, dict) or set(item) != {"before", "applied"}
+           or item["before"] == item["applied"] for item in settings.values()):
+        return False
+    return all(valid_autonomy({"allow_partial": True,
+                               "settings": dict((name, item[key]) for name, item in settings.items())})
+               for key in ("before", "applied"))
 
 
 class TransitionStopped(Exception):
@@ -148,6 +163,7 @@ class Autonomy(object):
                 if current == target:
                     item.update(status="unchanged", observed=current)
                     continue
+                item["before"] = current
                 self.write(name, target, dispatch)
                 item.update(status="applied")
                 current = self.read(name)
@@ -169,7 +185,7 @@ class Autonomy(object):
         if outcome == "failed":
             for item in reversed(changed):
                 try:
-                    if item["setting"] == "life_state" and item["before"] not in ("disabled", "solitary"):
+                    if item["setting"] == "life_state" and item["before"] not in WRITABLE_LIFE_STATES:
                         item["rollback"] = "skipped_not_restorable"
                         continue
                     if self.read(item["setting"]) != item["requested"]:
@@ -187,6 +203,49 @@ class Autonomy(object):
                 except Exception:
                     item["rollback"] = "unknown"
                     outcome = "unknown"
+        return {"outcome": outcome, "settings": results, "backend": "naoqi"}
+
+    def restore(self, payload, dispatch):
+        results = []
+        outcome = "succeeded"
+        # Restore life last. A life change can itself start native activity.
+        for name in sorted(payload["settings"], key=lambda name: (name == "life_state", name)):
+            entry = payload["settings"][name]
+            item = dict(entry, setting=name, observed=None, status="skipped", reason=None)
+            results.append(item)
+            if outcome != "succeeded":
+                item["reason"] = "restoration_stopped"
+                continue
+            if name not in self.controls:
+                item["reason"] = "unsupported"
+                continue
+            try:
+                if "life_state" in self.controls and self.read("life_state") == "safeguard":
+                    item["reason"] = "native_safeguard_active"
+                    continue
+                item["observed"] = self.read(name)
+            except Exception:
+                item["reason"] = "fresh_value_unavailable"
+                continue
+            if item["observed"] != entry["applied"]:
+                item["reason"] = "external_change"
+                continue
+            try:
+                self.write(name, entry["before"], dispatch)
+                item["observed"] = self.read(name)
+                if item["observed"] == entry["before"]:
+                    item["status"] = "restored"
+                else:
+                    item.update(status="unknown", reason="readback_mismatch")
+                    outcome = "unknown"
+            except TransitionStopped:
+                item["reason"] = "authority_lost_or_stop_requested"
+                outcome = "cancelled"
+            except SafeguardActive:
+                item["reason"] = "native_safeguard_active"
+            except Exception:
+                item.update(observed=None, status="unknown", reason="native_result_unconfirmed")
+                outcome = "unknown"
         return {"outcome": outcome, "settings": results, "backend": "naoqi"}
 
 

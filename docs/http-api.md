@@ -472,8 +472,9 @@ each setting's requested, before and observed values, status and reason. Life st
 is applied first, followed by the other settings in name order. `result.state_refreshed`
 reports whether a subsequent shared autonomy sample arrived.
 
-Transitions temporarily reserve all discovered joints, locomotion and speech output,
-as well as autonomy configuration. Completed settings keep autonomy configuration
+Transitions temporarily reserve all discovered joints, locomotion, speech output,
+and recognition, as well as autonomy configuration. A change to life or autonomous
+blinking also reserves lights. Completed settings keep autonomy configuration
 owned by the session. Other commands can then use released actuator resources;
 another session cannot change autonomy until ownership ends. Native external
 activities are outside bridge ownership. Life transitions can stop those activities
@@ -489,12 +490,36 @@ unknown outcomes retain resource quarantine. This is not an atomic transaction.
 Cancellation prevents later setters, but cannot undo a setting already applied or
 guarantee interruption of a native life transition.
 
-Session close releases confirmed ownership and leaves the settings in place.
-`restore_on_close` defaults to false; true currently returns `unsupported`.
-Guarded automatic restoration and named profiles belong to increment 4.
 Python provides `nao.autonomy.state(...)` and
 `nao.autonomy.configure({"life_state":"disabled","basic_awareness":False})`, with
 matching sync/async methods and the usual `wait`, timeout and operation handles.
+
+### Guarded restoration
+
+`restore_on_close` defaults to false on transitions and profile runs. Set it
+to true to request restoration on session close or lease expiry. The bridge
+fences the session's commands, settles its work, and reserves the resources
+needed for restoration. On the same connection generation, the agent reads each
+setting again and writes its saved value only while the current value matches
+the last confirmed write by the session. For consecutive opted-in changes, the
+bridge keeps the original before-value as long as the settings match across
+writes. An explicitly applied setting with restoration disabled clears its
+previous request to restore.
+
+The cleanup operation's `result.autonomy_restoration` reports `restored`,
+`partial`, `skipped`, or `unknown`, including each setting's observed outcome.
+The report links to the `autonomy.restore` operation when the bridge created one.
+Both Python clients expose the close operation through
+`nao.cleanup_result` after leaving the context. An unknown native write retains
+resource quarantine. External changes, unavailable read-back, competing
+ownership, or a native safeguard can cause a setting to be skipped.
+
+Restoring a life state can start autonomous activity. The bridge restores
+`disabled` and `solitary` through the usual life setter. Recreating an interactive
+activity needs the activity's original context. Explicit revoke uses recovery
+without restoring settings. An API restart drops pending restoration requests.
+[NAOqi 2.1 life API](https://doc.aldebaran.com/2-1/naoqi/core/autonomouslife-api.html)
+and [NAOqi 2.8 life states](https://doc.aldebaran.com/2-8/ref/life/state_machine_management.html).
 
 ## Lights
 
