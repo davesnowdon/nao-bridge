@@ -169,3 +169,16 @@ an old fence epoch, reconnect, and priority stop before a restore dispatch.
 Physical verification of profile and restoration effects remains pending.
 See [autonomy profiles](http-api.md#autonomy-profiles) and
 [guarded restoration](http-api.md#guarded-restoration).
+
+## Presentation example
+
+The [runnable presentation](../examples/presentation/README.md) inspects the
+profile and validates its choreography before changing robot state. Execution
+applies the profile, wakes, stands, speaks with the wave and eye light running
+in parallel, then sits and rests. The child operation IDs and outcomes are
+printed on completion or failure. The optional animated utterance runs as a
+separate step while standing. Profile fallback and restoration are opt-in.
+
+The executable test exercises a session-free dry run, then an animated prelude
+and plain parallel choreography through the public SDK, including the result
+from autonomy cleanup. Physical presentation effects remain pending.

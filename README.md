@@ -38,6 +38,8 @@ Software fixtures support animated speech, installed behavior runs, and gestures
 Server-side sequences coordinate finite actions, with child operations and
 fail-fast cancellation. The contract bundle includes a
 [portable presentation sequence](contracts/fixtures/presentation-sequence.json).
+The [presentation example](examples/presentation/README.md) preflights and runs
+the choreography using the public Python API.
 
 Robot-free tests cover real SDK loopback services and injected process failures.
 Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the
@@ -60,6 +62,7 @@ invent user touches. Browse `http://127.0.0.1:3000/` for interactive Swagger UI.
 uv run --project clients/python python clients/python/example_usage.py
 uv run --project clients/python python clients/python/examples/events.py
 uv run --project examples/recorder nao-bridge-recorder
+uv run --project clients/python python examples/presentation/present.py
 ```
 
 The Recorder example opens a local UI at `http://127.0.0.1:8123`; its assets are
