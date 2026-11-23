@@ -95,6 +95,7 @@ EVENT_TYPES = {
     "touch.changed": "TouchChanged",
     "motion.posture_changed": "MotionPostureChanged",
     "motion.fall_changed": "MotionFallChanged",
+    "autonomy.changed": "AutonomyStateValue",
     "behavior.changed": "BehaviorChanged",
     "speech.recognized": "SpeechRecognized",
     "speech.listener_changed": "Listener",
@@ -106,6 +107,30 @@ EVENT_TYPES = {
     "asset.created": "Asset",
 }
 GROUPS = {"sensors", "joints", "motion", "autonomy", "lights"}
+QUIET_AUTONOMY = {
+    "life_state": "disabled",
+    "basic_awareness": False,
+    "background_movement": False,
+    "listening_movement": False,
+    "speaking_movement": False,
+}
+AUTONOMY_PROFILES = {
+    "manual": ("Reduce spontaneous behaviour during manual capture.", QUIET_AUTONOMY),
+    "presentation": (
+        "Reduce spontaneous behaviour during scripted expression.",
+        QUIET_AUTONOMY,
+    ),
+    "interactive": (
+        "Enable awareness and conversational movement.",
+        {
+            **QUIET_AUTONOMY,
+            "life_state": "solitary",
+            "basic_awareness": True,
+            "listening_movement": True,
+            "speaking_movement": True,
+        },
+    ),
+}
 
 
 def utc() -> str:
@@ -326,6 +351,7 @@ class Core:
             for group, value in data["groups"].items():
                 if group not in GROUPS:
                     continue
+                previous = self.samples.get(group)
                 start, end = data.get("windows", {}).get(
                     group, [data.get("started", self.clock()), data.get("finished", self.clock())]
                 )
@@ -341,6 +367,14 @@ class Core:
                     "finished": end,
                     "error": data.get("errors", {}).get(group),
                 }
+                if (
+                    group == "autonomy"
+                    and previous
+                    and previous["value"] is not None
+                    and previous["value"] != value
+                    and value is not None
+                ):
+                    self.emit("autonomy.changed", value)
             self.sample_changed.set()
             self.recordings.sample(set(data["groups"]))
             if "sensors" in data["groups"]:
@@ -393,6 +427,7 @@ class Core:
 
     def capabilities(self) -> dict[str, Any]:
         available = self.connection == "connected"
+        autonomy = self.available_autonomy_settings() if available else set()
 
         def feature(enabled: bool, implemented: bool = True) -> dict[str, Any]:
             return {
@@ -481,13 +516,11 @@ class Core:
                 ),
                 "motion.wake_rest": feature(available and bool(self.info.get("joints"))),
                 "motion.posture_changes": feature(available and bool(self.info.get("postures"))),
-                "autonomy.transitions": feature(
-                    available
-                    and any(
-                        item["status"] == "available"
-                        for item in self.info.get("autonomy", {}).values()
-                    )
+                "autonomy.transitions": feature(bool(autonomy)),
+                "autonomy.profiles": feature(
+                    bool(autonomy & (QUIET_AUTONOMY.keys() | {"awareness_running"}))
                 ),
+                "autonomy.changed": feature(bool(autonomy)),
                 "lights.groups": feature(available and bool(self.info.get("lights"))),
                 "lights.transitions": feature(available and bool(self.info.get("lights"))),
                 "recordings": feature(available and self.recordings.available()),
@@ -1517,13 +1550,47 @@ class Core:
     def configure_autonomy(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         return self.submit_command(session, self.prepare_autonomy(body))
 
+    def available_autonomy_settings(self) -> set[str]:
+        return {
+            name
+            for name, item in self.info.get("autonomy", {}).items()
+            if item["status"] == "available"
+        }
+
+    def profile_settings(self, name: str) -> dict[str, str | bool]:
+        settings = dict(AUTONOMY_PROFILES[name][1])
+        available = self.available_autonomy_settings()
+        if "basic_awareness" not in available and "awareness_running" in available:
+            settings["awareness_running"] = settings.pop("basic_awareness")
+        return settings
+
+    def autonomy_profiles(self) -> dict[str, Any]:
+        available = self.available_autonomy_settings() if self.connection == "connected" else set()
+        items = []
+        for name, (description, _) in AUTONOMY_PROFILES.items():
+            settings = self.profile_settings(name)
+            items.append(
+                {
+                    "name": name,
+                    "description": description,
+                    "settings": settings,
+                    "unavailable_settings": sorted(settings.keys() - available),
+                }
+            )
+        return {"items": items, "connection_generation": self.generation}
+
+    def apply_autonomy_profile(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        name = body["profile"]
+        if name not in AUTONOMY_PROFILES:
+            raise BridgeError("unsupported", "Autonomy profile is unavailable", 422)
+        return self.configure_autonomy(session, {**body, "settings": self.profile_settings(name)})
+
     def prepare_autonomy(self, body: dict[str, Any]) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         if body.get("restore_on_close", False):
             raise BridgeError("unsupported", "Autonomy restoration is not implemented yet", 422)
-        catalog = self.info.get("autonomy", {})
-        supported = {name for name, item in catalog.items() if item["status"] == "available"}
+        supported = self.available_autonomy_settings()
         requested = set(body["settings"])
         if (
             requested - supported and not body.get("allow_partial", False)

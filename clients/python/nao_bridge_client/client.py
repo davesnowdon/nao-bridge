@@ -12,6 +12,7 @@ from .listeners import AsyncListener
 from .models import (
     AssetData,
     AssetsPage,
+    AutonomyProfileCatalog,
     BehaviorPage,
     CamerasData,
     Capabilities,
@@ -663,6 +664,29 @@ class Lights:
 class Autonomy:
     def __init__(self, nao: Nao):
         self._nao = nao
+
+    def profiles(self) -> AutonomyProfileCatalog:
+        return self._nao._run(self._nao._async.autonomy.profiles())
+
+    def apply(
+        self,
+        profile: str,
+        *,
+        allow_partial: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.autonomy.apply(
+                profile,
+                allow_partial=allow_partial,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
 
     def state(
         self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False

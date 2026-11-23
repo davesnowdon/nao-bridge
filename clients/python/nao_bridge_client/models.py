@@ -46,6 +46,23 @@ class AutonomySetting(Capability):
     mechanism: str | None
 
 
+class AutonomyProfile(WireModel):
+    name: str
+    description: str
+    settings: dict[str, str | bool]
+    unavailable_settings: list[str]
+
+
+class AutonomyProfileCatalog(WireModel):
+    items: list[AutonomyProfile]
+    connection_generation: int
+
+
+class AutonomyStateValue(WireModel):
+    settings: dict[str, str | bool | None]
+    unavailable: dict[str, str]
+
+
 class SpeechRange(WireModel):
     minimum: float
     maximum: float

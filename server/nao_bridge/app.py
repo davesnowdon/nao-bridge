@@ -661,6 +661,25 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/autonomy/profiles")
+    async def autonomy_profiles(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.autonomy_profiles()
+
+    @app.post("/api/autonomy/profile_runs")
+    async def run_autonomy_profile(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "AutonomyProfileRunCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /autonomy/profile_runs",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.apply_autonomy_profile(owner, value),
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/sequences/schema")
     async def get_sequence_schema(request: Request) -> dict[str, Any]:
         query(request, set())
@@ -780,7 +799,13 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     "support": core.capabilities()["features"]["touch.changed"]
                     if name == "touch.changed"
                     else core.capabilities()["features"][name]
-                    if name in {"motion.posture_changed", "motion.fall_changed", "behavior.changed"}
+                    if name
+                    in {
+                        "motion.posture_changed",
+                        "motion.fall_changed",
+                        "behavior.changed",
+                        "autonomy.changed",
+                    }
                     else core.capabilities()["features"]["speech.listeners"]
                     if name in {"speech.recognized", "speech.listener_changed"}
                     else core.capabilities()["features"]["sensors.observers"]

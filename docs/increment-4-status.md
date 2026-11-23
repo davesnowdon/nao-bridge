@@ -137,3 +137,26 @@ together. The native-container and contract checks passed.
 
 See [sequence API and Python usage](http-api.md#sequences) and the
 [portable presentation document](../contracts/fixtures/presentation-sequence.json).
+
+## Autonomy profiles and observations
+
+Contract 1.15.0 adds `manual`, `presentation` and `interactive` profiles,
+with session-free discovery and application in both Python clients. Discovery
+shows desired settings and unsupported entries for the current connection.
+Strict application preflights the entire bundle. Partial application uses
+the same per-setting results and ownership as explicit autonomy transitions.
+Where available, the legacy awareness start/stop adapter supplies the
+profile's awareness setting.
+
+`autonomy.changed` reports changes in shared state observed by the bridge,
+including settings changed through other software. The first observation
+establishes a baseline after each connection generation change.
+
+The native-container conformance scenario applied the interactive and
+presentation profiles and received the observed life and awareness changes
+over SSE. The HTTP tests exercised strict rejection, the legacy fallback,
+partial reporting, and idempotency. Both clients exercised discovery and
+application against the HTTP service.
+
+Guarded restoration on session close and physical verification of profile
+effects are still pending. See [autonomy profiles](http-api.md#autonomy-profiles).

@@ -32,6 +32,7 @@ from .errors import (
 from .json_wire import loads
 from .listeners import AsyncListener
 from .models import (
+    AutonomyProfileCatalog,
     BehaviorPage,
     CamerasData,
     Capabilities,
@@ -1098,6 +1099,30 @@ class AsyncLights:
 class AsyncAutonomy:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def profiles(self) -> AutonomyProfileCatalog:
+        return decode(
+            AutonomyProfileCatalog, await self._nao._request("GET", "/api/autonomy/profiles")
+        )
+
+    async def apply(
+        self,
+        profile: str,
+        *,
+        allow_partial: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST",
+            "/api/autonomy/profile_runs",
+            body={"profile": profile, "allow_partial": allow_partial},
+            key=idempotency_key or uuid.uuid4().hex,
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, data))
+        return await op.wait(timeout=timeout) if wait else op
 
     async def state(
         self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False

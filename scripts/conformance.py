@@ -403,6 +403,57 @@ class Probe:
         finally:
             self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
 
+    def autonomy_profiles(self):
+        catalog = self.request("GET", "/api/autonomy/profiles", schema="AutonomyProfileCatalog")
+        assert {item["name"] for item in catalog["items"]} == {
+            "manual",
+            "presentation",
+            "interactive",
+        }
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"events": ["autonomy.changed"]},
+            status=201,
+            schema="Subscription",
+        )
+
+        def apply_profile(name):
+            request = self.request(
+                "POST",
+                "/api/autonomy/profile_runs",
+                {"profile": name},
+                status=202,
+                schema="Operation",
+            )
+            outcome = self.wait(request)
+            assert outcome["kind"] == "autonomy.transition"
+            assert outcome["status"] == "succeeded", outcome
+            profile = next(item for item in catalog["items"] if item["name"] == name)
+            assert not profile["unavailable_settings"], profile
+            assert {
+                item["setting"]: item["observed"] for item in outcome["result"]["settings"]
+            } == profile["settings"]
+
+        try:
+            self.stream(
+                sub,
+                on_ready=lambda: apply_profile("interactive"),
+                observations=[
+                    (
+                        "autonomy.changed",
+                        "AutonomyStateValue",
+                        lambda data: (
+                            data["settings"]["life_state"] == "solitary"
+                            and data["settings"]["basic_awareness"] is True
+                        ),
+                    ),
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+        apply_profile("presentation")
+
     def gestures(self):
         catalog = self.request("GET", "/api/motion/gestures", schema="GestureCatalog")
         wave = next(item for item in catalog["items"] if item["name"] == "wave")
@@ -748,6 +799,7 @@ def run(url):
         )
         probe.validate("AutonomyStateValue", state["groups"]["autonomy"]["value"])
         assert state["groups"]["autonomy"]["value"]["settings"]["life_state"] == "disabled"
+        probe.autonomy_profiles()
         previous = probe.request(
             "POST",
             "/api/motion/joint_moves",
@@ -858,6 +910,7 @@ def run(url):
             "speech_options",
             "joint_discovery_and_trajectory",
             "motion_configuration_and_ownership",
+            "autonomy_profiles_and_observed_changes",
             "validation",
             "sse",
             "reconnect_without_replay",

@@ -9,6 +9,7 @@ from .errors import ProtocolError
 from .json_wire import loads
 from .models import (
     AssetData,
+    AutonomyStateValue,
     BehaviorChangedData,
     Capabilities,
     ConnectionChangedData,
@@ -45,6 +46,7 @@ PAYLOADS = {
     "motion.posture_changed": MotionPostureChangedData,
     "motion.fall_changed": MotionFallChangedData,
     "behavior.changed": BehaviorChangedData,
+    "autonomy.changed": AutonomyStateValue,
     "state.sample": StateSampleData,
     "operation.changed": OperationData,
     "session.changed": SessionData,

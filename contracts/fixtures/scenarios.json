@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.14.0",
+  "contract_version": "1.15.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -14,6 +14,25 @@
     "control_id"
   ],
   "scenarios": [
+    {
+      "name": "autonomy profile discovery, application and observed changes",
+      "steps": [
+        "GET /api/autonomy/profiles without a session",
+        "Apply an explicit disabled life transition and read observed state",
+        "Subscribe to autonomy.changed and wait for stream.ready",
+        "Apply the interactive profile, then the presentation profile"
+      ],
+      "expected": [
+        "Inspect the manual, presentation and interactive bundles and unavailable settings",
+        "Profile operations give a result for each requested setting",
+        "The interactive change appears as observed life and awareness state",
+        "The presentation profile reduces spontaneous activity again"
+      ],
+      "client_decisions": [
+        "Use the catalog to decide whether to proceed strictly or opt into partial application.",
+        "Refresh autonomy state after stream reset or a connection generation change."
+      ]
+    },
     {
       "name": "speech lifecycle",
       "steps": [

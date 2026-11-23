@@ -208,6 +208,43 @@ async def test_http_autonomy_rejects_unknown_settings_conflicts_and_unimplemente
         assert response.status_code == 409
 
 
+async def test_profiles_show_legacy_fallback_and_validate_strict_before_dispatch(rig):
+    async with rig() as (client, core, backend):
+        _, owner = await new_session(client)
+        catalog = backend.autonomy_catalog
+        catalog["basic_awareness"]["status"] = "unavailable"
+        catalog["awareness_running"]["status"] = "available"
+        catalog["background_movement"]["status"] = "unavailable"
+        backend.autonomy_state["awareness_running"] = True
+        await backend.connection(True)
+
+        discovery = (await client.get("/api/autonomy/profiles")).json()
+        VALIDATORS["AutonomyProfileCatalog"].validate(discovery)
+        profile = next(item for item in discovery["items"] if item["name"] == "manual")
+        assert profile["settings"]["awareness_running"] is False
+        assert "basic_awareness" not in profile["settings"]
+        assert profile["unavailable_settings"] == ["background_movement"]
+
+        path = "/api/autonomy/profile_runs"
+        strict = await client.post(path, json={"profile": "manual"}, headers=owner)
+        assert strict.status_code == 422
+        assert not backend.calls
+
+        payload = {"profile": "manual", "allow_partial": True}
+        headers = {**owner, "Idempotency-Key": "profile-run"}
+        accepted = await client.post(path, json=payload, headers=headers)
+        retry = await client.post(path, json=payload, headers=headers)
+        assert accepted.status_code == retry.status_code == 202
+        assert accepted.json()["id"] == retry.json()["id"]
+        result = await wait_operation(client, accepted.json()["id"], owner)
+        assert result["status"] == "succeeded"
+        assert {item["setting"]: item["status"] for item in result["result"]["settings"]}[
+            "background_movement"
+        ] == "skipped"
+        assert backend.autonomy_state["awareness_running"] is False
+        assert discovery["connection_generation"] == core.generation
+
+
 async def test_unknown_autonomy_result_quarantines_affected_resources(rig):
     async with rig() as (client, core, backend):
         _, owner = await new_session(client)

@@ -566,6 +566,36 @@ unknown outcome and retains resources if confirmation is missing. The
 animated mode is enabled in the fixtures and remains gated on physical
 robots pending acceptance.
 
+## Autonomy profiles
+
+`GET /autonomy/profiles` is session-free. It returns each profile's desired
+settings and the settings unavailable on the current connection. Read it again
+after a connection generation change. When discovery exposes the older
+awareness start/stop control, profiles use `awareness_running` in place of
+`basic_awareness`.
+
+| Profile | Settings |
+| --- | --- |
+| `manual` | Disable life, awareness, background movement, listening movement and speaking movement for manual capture. |
+| `presentation` | Apply the same settings before scripted speech, gestures and lights. |
+| `interactive` | Set life to solitary, enable awareness and listening/speaking movement, and disable background movement. |
+
+Send `{"profile": "manual"}` to `POST /autonomy/profile_runs` with an active
+session, or call `nao.autonomy.apply("manual")` in either Python client. The
+default validates every setting before dispatch. Set `allow_partial: true`
+to apply the available settings and include skipped entries in the returned
+`autonomy.transition` operation's per-setting results. At least one setting
+must be available. A profile run can use an idempotency key.
+
+Life transitions can themselves change the robot's physical state. Verify
+observations before starting a pose or trajectory. The bridge issues no
+additional wake, posture or stiffness commands when applying a profile.
+
+Subscribe to `autonomy.changed` for changes to the shared observation, including
+changes made outside the bridge. Event data has the same shape as the autonomy
+state value, including unavailability reasons. Read
+`GET /state?include=autonomy` for initial state and after a stream reset.
+
 ## Installed behaviors
 
 `GET /behaviors` is session-free. It returns installed names sorted by name,

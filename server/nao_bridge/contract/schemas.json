@@ -5102,6 +5102,71 @@
         "children"
       ],
       "additionalProperties": true
+    },
+    "AutonomyProfile": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/AutonomySettings"
+        },
+        "unavailable_settings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "settings",
+        "unavailable_settings"
+      ],
+      "additionalProperties": true
+    },
+    "AutonomyProfileCatalog": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AutonomyProfile"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation"
+      ],
+      "additionalProperties": true
+    },
+    "AutonomyProfileRunCreate": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "allow_partial": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "additionalProperties": false
     }
   }
 }
