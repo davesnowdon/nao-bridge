@@ -155,7 +155,8 @@ async def test_sync_autonomy_partial_configuration_reports_skipped_settings(sock
 
 
 async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
-    async with socket_rig(lease_seconds=0.3) as (url, core, backend):
+    lease_seconds = 1.0
+    async with socket_rig(lease_seconds=lease_seconds) as (url, core, backend):
 
         def work():
             import time
@@ -173,7 +174,7 @@ async def test_sync_client_keeps_lease_alive_during_user_work(socket_rig):
                 )
                 first = nao.speech.say("first", timeout=2)
                 sid = nao.session_id
-                time.sleep(0.65)
+                time.sleep(2.2 * lease_seconds)
                 assert nao.speech.say("second", timeout=2).status == "succeeded"
                 assert nao.session_id == sid
                 assert first.status == "succeeded"

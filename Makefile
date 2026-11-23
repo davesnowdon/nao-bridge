@@ -25,4 +25,5 @@ test-container: image
 	docker run --rm --network none --entrypoint /opt/modern/bin/python3 \
 		-v "$(CURDIR)/server/tests/container_smoke.py:/tests/container_smoke.py:ro" \
 		-v "$(CURDIR)/scripts/conformance.py:/tests/conformance.py:ro" \
+		-v "$(CURDIR)/contracts/fixtures/presentation-sequence.json:/tests/presentation-sequence.json:ro" \
 		nao-bridge-core /tests/container_smoke.py

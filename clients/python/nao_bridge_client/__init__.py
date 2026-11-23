@@ -1,5 +1,6 @@
 """NAO Bridge HTTP/SSE client. The replacement contract intentionally removes the v1 API."""
 
+from . import actions
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
 from .client import (
     JointControl,
@@ -67,6 +68,11 @@ from .models import (
     SensorObserverConfiguration,
     SensorObserverData,
     SensorThresholdChangedData,
+    SequenceChildResult,
+    SequenceDiagnostic,
+    SequenceResult,
+    SequenceTimelineStep,
+    SequenceValidation,
     SessionData,
     SpeechHypothesis,
     SpeechOptions,
@@ -80,10 +86,21 @@ from .models import (
 )
 from .recordings import AsyncRecording
 from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
+from .sequences import delay, parallel, sequence, sequence_document
 from .trajectory import Keyframe, Trajectory
 
 __version__ = "0.2.0"
 __all__ = [
+    "actions",
+    "delay",
+    "parallel",
+    "sequence",
+    "sequence_document",
+    "SequenceDiagnostic",
+    "SequenceChildResult",
+    "SequenceResult",
+    "SequenceTimelineStep",
+    "SequenceValidation",
     "AsyncVelocityControl",
     "VelocityControl",
     "AsyncVisionObserver",

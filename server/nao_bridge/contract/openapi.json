@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.13.0",
-    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots. Increment 4 begins with discovered light groups and state. Speech options are discoverable and animated speech is available in fixtures. Installed behavior discovery and observed running sets are available. Built-in nod, shake and wave gestures are fixture-gated."
+    "version": "1.14.0",
+    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots. Increment 4 begins with discovered light groups and state. Speech options are discoverable and animated speech is available in fixtures. Installed behavior discovery and observed running sets are available. Built-in nod, shake and wave gestures are fixture-gated. Portable sequence documents can be validated without executing actions. Validated sequences reserve resources and expose each child operation."
   },
   "servers": [
     {
@@ -3427,6 +3427,144 @@
         "summary": "Compile and run a bounded built-in joint gesture",
         "description": "Gestures require fresh joint state and use the shared trajectory lifecycle."
       }
+    },
+    "/sequences/schema": {
+      "get": {
+        "operationId": "getSequenceSchema",
+        "summary": "Download the self-contained portable sequence schema",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sequences/validate": {
+      "post": {
+        "operationId": "validateSequence",
+        "responses": {
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequenceValidation"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SequenceDocument"
+              }
+            }
+          }
+        },
+        "summary": "Plan a finite sequence and diagnose resource conflicts without dispatching",
+        "description": "Pure structural and capability checks with a resource timeline. Commands recheck live readiness at execution."
+      }
+    },
+    "/sequences/runs": {
+      "post": {
+        "operationId": "runSequence",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SequenceDocument"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Reserve resources and execute a finite sequence",
+        "description": "The returned SequenceResult records child statuses, the failing path and the termination reason."
+      }
     }
   },
   "components": {
@@ -3754,6 +3892,24 @@
       },
       "GestureRunCreate": {
         "$ref": "schemas.json#/$defs/GestureRunCreate"
+      },
+      "SequenceDocument": {
+        "$ref": "schemas.json#/$defs/SequenceDocument"
+      },
+      "SequenceNode": {
+        "$ref": "schemas.json#/$defs/SequenceNode"
+      },
+      "SequenceTimelineStep": {
+        "$ref": "schemas.json#/$defs/SequenceTimelineStep"
+      },
+      "SequenceDiagnostic": {
+        "$ref": "schemas.json#/$defs/SequenceDiagnostic"
+      },
+      "SequenceValidation": {
+        "$ref": "schemas.json#/$defs/SequenceValidation"
+      },
+      "SequenceResult": {
+        "$ref": "schemas.json#/$defs/SequenceResult"
       }
     }
   }

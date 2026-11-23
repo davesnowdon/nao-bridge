@@ -110,3 +110,30 @@ be assessed on actual robots before enabling execution.
 See [gesture discovery and execution](http-api.md#built-in-gestures) and
 the NAO joint references for [2.1](https://doc.aldebaran.com/2-1/family/robots/bodyparts.html)
 and [2.8](https://doc.aldebaran.com/2-8/family/nao_technical/bodyparts_naov6.html).
+
+## Server-side sequences
+
+Contract 1.14.0 adds the portable schema, dry validation, the pure Python
+builder, and sync/async execution. Validation checks each action and the
+whole resource graph, with an estimated timeline and explicit unknowns.
+Sequence admission reserves history and the peak native command count
+alongside resources. Children recheck live prerequisites, and each child
+is individually observable through the operation API and SSE.
+
+The executor stops pending actions and cancels running siblings on failure
+or parent cancellation. Unconfirmed children keep the parent quarantined.
+All-motion stop also stops the other running children of an affected
+sequence. Fenced session recovery follows the existing unknown-outcome rules.
+Completed actions retain any effects and session-owned configuration.
+
+The raw fixture runs a hand-authored wake, stand, parallel speech/wave/lights,
+sit and rest sequence, reads all seven child results and checks that the
+parallel children overlapped. Hardware-dependent actions retain their
+individual capability gates.
+
+`make check` passed 647 server/integration tests and 47 SDK tests.
+The updated sync-client renewal test and nine sequence cases passed
+together. The native-container and contract checks passed.
+
+See [sequence API and Python usage](http-api.md#sequences) and the
+[portable presentation document](../contracts/fixtures/presentation-sequence.json).

@@ -49,6 +49,7 @@ from .models import (
     Sensor,
     SensorObserverData,
     SensorsData,
+    SequenceValidation,
     SessionData,
     SpeechOptions,
     State,
@@ -59,6 +60,7 @@ from .models import (
 )
 from .recordings import AsyncRecordings
 from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
+from .sequences import sequence_document
 from .sse import SSEParser
 from .trajectory import Trajectory
 
@@ -126,6 +128,7 @@ class AsyncNao:
         self.autonomy = AsyncAutonomy(self)
         self.lights = AsyncLights(self)
         self.behaviors = AsyncBehaviors(self)
+        self.sequences = AsyncSequences(self)
         self.speech = AsyncSpeech(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
@@ -972,6 +975,38 @@ class AsyncSensors:
             wait_for_fresh_ms=wait_for_fresh_ms,
             require_fresh=require_fresh,
         )
+
+
+class AsyncSequences:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def schema(self) -> dict[str, Any]:
+        return await self._nao._request("GET", "/api/sequences/schema")
+
+    async def validate(self, script: dict[str, Any]) -> SequenceValidation:
+        result = await self._nao._request(
+            "POST", "/api/sequences/validate", body=sequence_document(script)
+        )
+        return decode(SequenceValidation, result)
+
+    async def run(
+        self,
+        script: dict[str, Any],
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST",
+            "/api/sequences/runs",
+            body=sequence_document(script),
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        operation = AsyncOperation(self._nao, decode(OperationData, data))
+        return await operation.wait(timeout=timeout) if wait else operation
 
 
 class AsyncBehaviors:

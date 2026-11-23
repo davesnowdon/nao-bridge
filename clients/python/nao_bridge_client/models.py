@@ -4,6 +4,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+OperationStatus = Literal[
+    "accepted", "running", "cancelling", "succeeded", "failed", "cancelled", "unknown"
+]
+
 
 class WireModel(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True, allow_inf_nan=False)
@@ -93,6 +97,44 @@ class GestureDefinition(WireModel):
 class GestureCatalog(WireModel):
     items: list[GestureDefinition]
     connection_generation: int
+
+
+class SequenceTimelineStep(WireModel):
+    path: list[int]
+    type: str
+    kind: str | None
+    resources: list[str]
+    start_seconds: float | None
+    duration_seconds: float | None
+    required_feature: str | None
+
+
+class SequenceDiagnostic(ErrorDetail):
+    path: list[int]
+
+
+class SequenceValidation(WireModel):
+    valid: bool
+    normalized: dict[str, Any]
+    connection_generation: int
+    resources: list[str]
+    required_features: list[str]
+    estimated_duration_seconds: float | None
+    maximum_parallel_commands: int
+    timeline: list[SequenceTimelineStep]
+    diagnostics: list[SequenceDiagnostic]
+
+
+class SequenceChildResult(WireModel):
+    path: list[int]
+    operation_id: str
+    status: OperationStatus
+
+
+class SequenceResult(WireModel):
+    reason: str | None
+    failed_path: list[int] | None
+    children: list[SequenceChildResult]
 
 
 class Capabilities(WireModel):
@@ -201,9 +243,7 @@ class OperationData(WireModel):
     id: str
     kind: str
     session_id: str
-    status: Literal[
-        "accepted", "running", "cancelling", "succeeded", "failed", "cancelled", "unknown"
-    ]
+    status: OperationStatus
     resources: list[str]
     created_at: str
     started_at: str | None
@@ -214,6 +254,8 @@ class OperationData(WireModel):
     result: dict[str, Any] | None
     error: ErrorDetail | None
     child_operation_ids: list[str]
+    parent_id: str | None = None
+    sequence_path: list[int] | None = None
     replaces_operation_id: str | None = None
     control: JointControlData | None = None
 

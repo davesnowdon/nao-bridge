@@ -26,6 +26,7 @@ from .contract import OPENAPI, SCHEMAS, parse_json, validate
 from .core import EVENT_TYPES, Core
 from .errors import BridgeError
 from .events import StreamWriteTimeout
+from .sequences import plan_sequence, sequence_schema
 
 LOG = logging.getLogger(__name__)
 DOC_ASSETS = Path(__file__).parent / "static" / "swagger-ui"
@@ -102,7 +103,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             ),
         )
 
-    async def body(request: Request, name: str) -> dict[str, Any]:
+    async def body(request: Request, name: str | None) -> dict[str, Any]:
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             != "application/json"
@@ -114,7 +115,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                 raise BridgeError("payload_too_large", "Request body exceeds advertised limit", 413)
             raw.extend(part)
         value = parse_json(bytes(raw))
-        validate(name, value)
+        if name is not None:
+            validate(name, value)
         return value
 
     def query(request: Request, allowed: set[str]) -> None:
@@ -656,6 +658,35 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             request.headers.get("idempotency-key"),
             value,
             lambda: core.configure_autonomy(item, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.get("/api/sequences/schema")
+    async def get_sequence_schema(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return sequence_schema()
+
+    @app.post("/api/sequences/validate")
+    async def validate_sequence(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return (await plan_sequence(core, await body(request, None))).wire()
+
+    @app.post("/api/sequences/runs")
+    async def run_sequence(request: Request) -> Response:
+        query(request, set())
+        document = await body(request, None)
+        owner = session(request)
+        sid, route = owner.public["id"], "POST /sequences/runs"
+        key = request.headers.get("idempotency-key")
+        if previous := core.replay_before_preflight(sid, route, key, document):
+            return created(previous, "operations", 202)
+        plan = await plan_sequence(core, document)
+        result = await core.idempotent(
+            sid,
+            route,
+            key,
+            document,
+            lambda: core.sequences.submit(owner, plan),
         )
         return created(result, "operations", 202)
 

@@ -698,7 +698,7 @@ attaching and after every reset; polling also works. Terminal outcomes are
 and does not cancel. Cancellation is idempotent but may be unconfirmable. Resource
 conflicts return `resource_busy`, including while an uncertain outcome quarantines
 `speech.output`. Listing is session-scoped with `status`, `parent_id`, `limit` and
-`cursor` parameters; child operations arrive in a later increment.
+`cursor` parameters.
 
 For a lost creation response, retain the same key, route, body, bridge instance and
 session. An identical retry within advertised retention returns the original ID;
@@ -707,6 +707,45 @@ defaults. Never retry after instance/session loss or retention expiry. Recovery
 routes have separate bounded history/key budgets. Finished cleanup records can be
 evicted early; priority stop uses a dedicated per-session slot. See the
 [retention rules](../contracts/README.md#request-fingerprints). Limits are returned by capabilities.
+
+## Sequences
+
+`GET /sequences/schema` returns a self-contained JSON Schema for sequence
+documents. A document has `schema_version: "1.0"` and a `root` node. Use
+`sequence` for ordered children, `parallel` for concurrent branches, and
+`delay` for a bounded wait in seconds. Supported actions include speech,
+lights, gestures, installed behaviors, autonomy transitions, wake/rest,
+stiffness, postures, displacement, joint moves and trajectories.
+See the [hand-authored presentation](../contracts/fixtures/presentation-sequence.json).
+
+`POST /sequences/validate` needs no session. It checks the complete script
+without dispatching any actions. The result includes normalized arguments,
+required features, reserved resources, and a timeline keyed by zero-based
+paths through the tree. An unknown start or duration is null. Parallel
+branches must have disjoint resources. Runtime checks still apply when a
+child starts, so an earlier wake or posture can prepare a later action.
+The bridge accepts up to 32 actions or delays, eight levels, and four
+concurrent native actions. It rejects estimated minimum duration above
+600 seconds and requests cancellation at a 600-second run deadline.
+
+`POST /sequences/runs` requires a session and returns a `sequence.run`
+Operation. Admission reserves the required resources, command capacity and
+child history for the run. Every child has an Operation with `parent_id`
+and `sequence_path`, including accepted children waiting to start. Read
+children with `GET /operations?parent_id=...` and subscribe to
+`operation.changed` for updates.
+
+Cancel the parent to stop the sequence. Failure stops pending actions and
+requests cancellation of running siblings. The parent result carries the
+failing path and each child’s status. Completed actions keep their effects.
+If a stop is unconfirmed, the parent reports `unknown` and holds its
+reservation until reconciliation or explicit fenced recovery. Session
+cleanup and priority stop also stop or quarantine affected runs.
+
+Python clients can build JSON with `actions`, `sequence`, `parallel` and
+`delay`, then call `sequences.validate()` and `sequences.run()`. Both clients
+also accept a hand-authored document. Read the completed parent result with
+`SequenceResult.model_validate(operation.data.result)`.
 
 ## Events and reconnect
 

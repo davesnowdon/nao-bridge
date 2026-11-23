@@ -28,6 +28,7 @@ from .models import (
     RobotInfo,
     Sensor,
     SensorObserverData,
+    SequenceValidation,
     SpeechOptions,
     State,
     StreamNotice,
@@ -58,6 +59,7 @@ class Nao:
         self.autonomy = Autonomy(self)
         self.lights = Lights(self)
         self.behaviors = Behaviors(self)
+        self.sequences = Sequences(self)
         self.speech = Speech(self)
         self.operations = Operations(self)
         self.events = Events(self)
@@ -561,6 +563,32 @@ class Vision:
                 wait=wait,
                 timeout=timeout,
                 idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
+
+
+class Sequences:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def schema(self) -> dict[str, Any]:
+        return self._nao._run(self._nao._async.sequences.schema())
+
+    def validate(self, script: dict[str, Any]) -> SequenceValidation:
+        return self._nao._run(self._nao._async.sequences.validate(script))
+
+    def run(
+        self,
+        script: dict[str, Any],
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.sequences.run(
+                script, wait=wait, timeout=timeout, idempotency_key=idempotency_key
             )
         )
         return Operation(self._nao, operation)

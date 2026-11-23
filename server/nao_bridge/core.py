@@ -34,6 +34,16 @@ from .motion import compile_trajectory, stiffness_targets
 from .recordings import KIND as RECORDING_KIND
 from .recordings import Recordings
 from .sensor_observers import SONAR_IDS, SensorObservers
+from .sequences import (
+    DELAY_KIND,
+    MAX_ACTIONS,
+    MAX_DEPTH,
+    MAX_DURATION_SECONDS,
+    MAX_PARALLEL_COMMANDS,
+    SEQUENCE_KIND,
+    Sequences,
+    Step,
+)
 from .thresholds import EVENT as THRESHOLD_EVENT
 from .thresholds import MAX_RULES, Threshold
 from .vision import KIND as CAPTURE_KIND
@@ -124,6 +134,17 @@ class Operation:
     done: asyncio.Event = field(default_factory=asyncio.Event)
     cancel_task: asyncio.Task | None = None
     stop_scope: str | None = None
+    native_slots: int = 0
+
+
+@dataclass
+class FiniteCommand:
+    kind: str
+    resources: list[str]
+    payload: dict[str, Any]
+    duration_seconds: float | None = None
+    cancellable: bool = True
+    retained_resources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -151,6 +172,7 @@ class Core:
         self.info: dict[str, Any] = {}
         self.sessions: dict[str, Session] = {}
         self.operations: dict[str, Operation] = {}
+        self.sequences = Sequences(self)
         self.subscriptions: dict[str, Subscription] = {}
         self.streams: dict[str, tuple[Subscription, EventBuffer]] = {}
         self.resources: dict[str, str] = {}
@@ -263,6 +285,7 @@ class Core:
             for session in list(self.sessions.values()):
                 if session.public["status"] == "active":
                     self.invalidate(session, "invalidated")
+            self.sequences.interrupt("connection_lost")
             for op in list(self.operations.values()):
                 if op.public["status"] == "accepted" and op.public.get("replaces_operation_id"):
                     self.finish(
@@ -277,6 +300,8 @@ class Core:
                 if op.public["status"] not in TERMINAL and op.public["kind"] not in {
                     RECORDING_KIND,
                     CAPTURE_KIND,
+                    SEQUENCE_KIND,
+                    DELAY_KIND,
                 }:
                     self.finish(
                         op,
@@ -472,7 +497,8 @@ class Core:
                 "vision.captures": feature(
                     available and bool(self.info.get("cameras")) and self.recordings.available()
                 ),
-                "sequences": feature(False, False),
+                "sequences": feature(True),
+                "sequences.validation": feature(True),
             },
             "limits": {
                 k: getattr(self.settings, k)
@@ -510,6 +536,10 @@ class Core:
             | {
                 "session_lease_seconds": self.settings.lease_seconds,
                 "max_native_operations": 4,
+                "max_sequence_actions": MAX_ACTIONS,
+                "max_sequence_depth": MAX_DEPTH,
+                "max_sequence_duration_seconds": MAX_DURATION_SECONDS,
+                "max_sequence_parallel_commands": MAX_PARALLEL_COMMANDS,
                 "max_camera_captures": 1,
                 "max_vision_observers": MAX_OBSERVERS,
                 "max_vision_observer_history": MAX_HISTORY,
@@ -804,6 +834,30 @@ class Core:
         )
         return copy.deepcopy(session.public)
 
+    def replay_request(
+        self, scope: str, route: str, key: str, fingerprint: str
+    ) -> dict[str, Any] | None:
+        if len(key) > 128 or not key.isascii() or not key.isprintable():
+            raise BridgeError("invalid_request", "Invalid Idempotency-Key")
+        retained = self.keys.get((scope, key))
+        if retained is None:
+            return None
+        if retained.fingerprint != route + "\n" + fingerprint:
+            raise BridgeError(
+                "idempotency_conflict", "Key already used for a different request", 409
+            )
+        return copy.deepcopy(retained.response)
+
+    def replay_before_preflight(
+        self, scope: str, route: str, key: str | None, body: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        if self.closing:
+            raise BridgeError("dependency_unavailable", "Bridge is shutting down", 503)
+        if not key:
+            return None
+        self.sweep_keys()
+        return self.replay_request(scope, route, key, canonical(body))
+
     async def idempotent(
         self,
         scope: str,
@@ -821,15 +875,8 @@ class Core:
             fingerprint = canonical(body)
             identity = (scope, key or "")
             if key:
-                if len(key) > 128 or not key.isascii() or not key.isprintable():
-                    raise BridgeError("invalid_request", "Invalid Idempotency-Key")
-                retained = self.keys.get(identity)
-                if retained:
-                    if retained.fingerprint != route + "\n" + fingerprint:
-                        raise BridgeError(
-                            "idempotency_conflict", "Key already used for a different request", 409
-                        )
-                    return copy.deepcopy(retained.response)
+                if replayed := self.replay_request(scope, route, key, fingerprint):
+                    return replayed
                 if recovery and not stop:
                     self.trim_recovery_history(self.settings.max_recovery_operations - 1)
                 capacity = (
@@ -887,6 +934,9 @@ class Core:
         resources: list[str],
         cancellable: bool = True,
         replacing: Operation | None = None,
+        *,
+        history_slots: int = 1,
+        native_slots: int = 0,
     ) -> Operation:
         if "speech.recognition" in resources and self.listeners.busy():
             raise BridgeError("resource_busy", "Vocabulary listeners own recognition", 409)
@@ -908,7 +958,8 @@ class Core:
                 for o in self.operations.values()
                 if o.public["kind"] not in STOP_KINDS
             )
-            >= capacity
+            + history_slots
+            > capacity
         ):
             raise BridgeError(
                 "limit_exceeded", "Operation history capacity exhausted", 429, retryable=True
@@ -941,20 +992,37 @@ class Core:
             for old_id, new_id in self.pending_replacements.items()
             if (old := self.operations.get(old_id)) is not None and not old.released
         }
-        if (
-            kind in ORDINARY_KINDS
-            and sum(
-                op.public["kind"] in ORDINARY_KINDS
-                and not op.released
-                and op.public["id"] not in waiting
+        requested = int(kind in ORDINARY_KINDS) + native_slots
+        if requested:
+            used = sum(
+                op.native_slots
+                + int(
+                    op.public["kind"] in ORDINARY_KINDS
+                    and op.public.get("parent_id") is None
+                    and op.public["id"] not in waiting
+                )
                 for op in self.operations.values()
+                if not op.released
             )
-            - int(replacing is not None and not replacing.released)
-            >= 4
-        ):
-            raise BridgeError(
-                "limit_exceeded", "Native command capacity exhausted", 429, retryable=True
-            )
+            replaced_slot = int(replacing is not None and not replacing.released)
+            if used + requested - replaced_slot > MAX_PARALLEL_COMMANDS:
+                raise BridgeError(
+                    "limit_exceeded", "Native command capacity exhausted", 429, retryable=True
+                )
+        op = self.record_operation(session, kind, resources, cancellable)
+        op.native_slots = native_slots
+        if previous_id:
+            op.public["replaces_operation_id"] = previous_id
+            self.pending_replacements[previous_id] = op.public["id"]
+        for resource in resources:
+            if resource not in self.resources:
+                self.resources[resource] = op.public["id"]
+        self.emit("operation.changed", op.public, op.public["session_id"])
+        return op
+
+    def record_operation(
+        self, session: Session, kind: str, resources: list[str], cancellable: bool
+    ) -> Operation:
         value = {
             "id": identifier(),
             "kind": kind,
@@ -972,15 +1040,22 @@ class Core:
             "child_operation_ids": [],
         }
         op = Operation(value)
-        if previous_id:
-            value["replaces_operation_id"] = previous_id
-            self.pending_replacements[previous_id] = value["id"]
         self.operations[value["id"]] = op
-        for r in resources:
-            if r not in self.resources:
-                self.resources[r] = value["id"]
-        self.emit("operation.changed", value, value["session_id"])
         return op
+
+    def sequence_child(self, session: Session, parent: Operation, step: Step) -> Operation:
+        command = step.command
+        op = self.record_operation(
+            session,
+            command.kind if command else DELAY_KIND,
+            command.resources if command else [],
+            command.cancellable if command else True,
+        )
+        self.update(op, parent_id=parent.public["id"], sequence_path=list(step.path))
+        return op
+
+    def start_operation(self, op: Operation) -> None:
+        self.update(op, status="running", started_at=utc())
 
     def update(self, op: Operation, **changes: Any) -> None:
         op.public.update(changes)
@@ -1016,21 +1091,7 @@ class Core:
             for resource in op.retained_resources:
                 self.configuration_owners[resource] = op.public["session_id"]
         if status != "unknown" or not op.public["resources"]:
-            op.released = True
-            for resource in op.public["resources"]:
-                if self.resources.get(resource) == op.public["id"]:
-                    successor = self.operations.get(
-                        self.pending_replacements.get(op.public["id"], "")
-                    )
-                    if (
-                        successor is not None
-                        and successor.public["status"] == "accepted"
-                        and resource in successor.public["resources"]
-                    ):
-                        self.resources[resource] = successor.public["id"]
-                    else:
-                        del self.resources[resource]
-            op.retained_until = self.clock() + self.settings.history_seconds
+            self.release_operation(op)
         self.update(
             op,
             status=status,
@@ -1041,6 +1102,24 @@ class Core:
         op.done.set()
         if op.public["kind"] in OUTPUT_KINDS and status != "unknown":
             self.listeners.end_output(op.public["id"])
+        if parent_id := op.public.get("parent_id"):
+            self.sequences.reconcile(parent_id)
+
+    def release_operation(self, op: Operation) -> None:
+        op.released = True
+        successor = self.operations.get(self.pending_replacements.get(op.public["id"], ""))
+        for resource in op.public["resources"]:
+            if self.resources.get(resource) != op.public["id"]:
+                continue
+            if (
+                successor is not None
+                and successor.public["status"] == "accepted"
+                and resource in successor.public["resources"]
+            ):
+                self.resources[resource] = successor.public["id"]
+            else:
+                del self.resources[resource]
+        op.retained_until = self.clock() + self.settings.history_seconds
 
     def speech_options(self) -> dict[str, Any]:
         connected = self.connection == "connected"
@@ -1068,7 +1147,16 @@ class Core:
             **copy.deepcopy(SPEECH_RANGES),
         }
 
+    def submit_command(self, session: Session, command: FiniteCommand) -> dict[str, Any]:
+        op = self.new_operation(session, command.kind, command.resources, command.cancellable)
+        op.retained_resources = command.retained_resources
+        op.task = self.spawn(self.run_native(op, command.payload))
+        return copy.deepcopy(op.public)
+
     def utterance(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        return self.submit_command(session, self.prepare_utterance(body))
+
+    def prepare_utterance(self, body: dict[str, Any], *, ready: bool = True) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         speech = self.info.get("speech", {})
@@ -1107,19 +1195,17 @@ class Core:
                 raise BridgeError(
                     "unsupported", "Animated speech uses the current native language", 422
                 )
-            resources.extend(self.expression_resources())
-        op = self.new_operation(
-            session,
+            resources.extend(self.expression_resources(ready=ready))
+        return FiniteCommand(
             ANIMATED_SPEECH if animated else PLAIN_SPEECH,
             resources,
-            speech.get("cancellable", False),
+            payload,
+            cancellable=speech.get("cancellable", False),
         )
-        op.task = self.spawn(self.run_native(op, payload))
-        return copy.deepcopy(op.public)
 
-    def expression_resources(self) -> list[str]:
+    def expression_resources(self, *, ready: bool = True) -> list[str]:
         joints = ["joint." + item["name"] for item in self.info.get("joints", [])]
-        self.require_joint_motion(joints)
+        self.require_joint_motion(joints, ready=ready)
         lights = {
             resource for group in self.info.get("lights", []) for resource in group["resources"]
         }
@@ -1161,6 +1247,9 @@ class Core:
         }
 
     def behavior_run(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        return self.submit_command(session, self.prepare_behavior(body))
+
+    def prepare_behavior(self, body: dict[str, Any], *, ready: bool = True) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         support = self.behavior_support()
@@ -1171,10 +1260,12 @@ class Core:
         name = body["name"]
         if len(name.encode("utf-8")) > 256 or not name.strip():
             raise BridgeError("invalid_request", "Invalid behavior name")
-        resources = ["behaviors.execution", "speech.output", *self.expression_resources()]
-        op = self.new_operation(session, BEHAVIOR_RUN, resources)
-        op.task = self.spawn(self.run_native(op, body))
-        return copy.deepcopy(op.public)
+        resources = [
+            "behaviors.execution",
+            "speech.output",
+            *self.expression_resources(ready=ready),
+        ]
+        return FiniteCommand(BEHAVIOR_RUN, resources, body)
 
     def gestures(self) -> dict[str, Any]:
         return {
@@ -1187,6 +1278,9 @@ class Core:
         }
 
     def gesture(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        return self.submit_command(session, self.prepare_gesture(body))
+
+    def prepare_gesture(self, body: dict[str, Any], *, ready: bool = True) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         name = body["name"]
@@ -1202,7 +1296,10 @@ class Core:
         support = gesture_support(names, catalog, self.info.get("gestures_verified", False), True)
         if support["status"] != "available":
             raise BridgeError("unsupported", "Gesture unavailable", 422, support)
-        self.require_joint_motion(gesture_resources(names, catalog))
+        resources = gesture_resources(names, catalog)
+        if not ready:
+            return FiniteCommand(GESTURE_KIND, resources, {})
+        self.require_joint_motion(resources)
         state = self.state(["joints", "motion"])["groups"]
         motion = state["motion"]["value"]
         required = REQUIRED_POSTURE[name]
@@ -1236,17 +1333,22 @@ class Core:
                 "required_posture": required,
             },
         }
-        op = self.new_operation(session, GESTURE_KIND, plan.resources)
-        op.task = self.spawn(self.run_native(op, payload))
-        return copy.deepcopy(op.public)
+        return FiniteCommand(GESTURE_KIND, plan.resources, payload, plan.duration)
+
+    def prepare_trajectory(
+        self, trajectory: dict[str, Any], kind: str = "motion.trajectory_run", *, ready: bool = True
+    ) -> FiniteCommand:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        plan = compile_trajectory(trajectory, self.info.get("joints", []))
+        self.require_joint_motion(plan.resources, ready=ready)
+        payload = {"names": plan.names, "angles": plan.angles, "times": plan.times}
+        return FiniteCommand(kind, plan.resources, payload, plan.duration)
 
     def trajectory(
         self, session: Session, body: dict[str, Any], kind: str = "motion.trajectory_run"
     ) -> dict[str, Any]:
-        if self.connection != "connected":
-            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
-        plan = compile_trajectory(body["trajectory"], self.info.get("joints", []))
-        self.require_joint_motion(plan.resources)
+        command = self.prepare_trajectory(body["trajectory"], kind)
         replacing = None
         if previous_id := body.get("replace_operation_id"):
             replacing = self.operation(previous_id, session.public["id"])
@@ -1259,16 +1361,15 @@ class Core:
                 or previous_id in self.pending_replacements.values()
             ):
                 raise BridgeError("resource_busy", "A replacement is already pending", 409)
-        op = self.new_operation(session, kind, plan.resources, replacing=replacing)
-        payload = {"names": plan.names, "angles": plan.angles, "times": plan.times}
+        op = self.new_operation(session, kind, command.resources, replacing=replacing)
         op.task = self.spawn(
-            self.run_replacement(op, replacing, payload)
+            self.run_replacement(op, replacing, command.payload)
             if replacing
-            else self.run_native(op, payload)
+            else self.run_native(op, command.payload)
         )
         return copy.deepcopy(op.public)
 
-    def require_joint_motion(self, resources: list[str]) -> None:
+    def require_joint_motion(self, resources: list[str], *, ready: bool = True) -> None:
         targets = {resource.removeprefix("joint.") for resource in resources}
         if any(
             not joint["writable"]
@@ -1276,6 +1377,8 @@ class Core:
             if joint["name"] in targets
         ):
             raise BridgeError("unsupported", "Joint control unavailable", 422)
+        if not ready:
+            return
         state = self.state(["joints", "motion"])["groups"]
         if any(group["quality"] != "fresh" for group in state.values()):
             raise BridgeError("precondition_failed", "Fresh joint and motion state required", 409)
@@ -1286,21 +1389,19 @@ class Core:
                 "precondition_failed", "Motion requires an awake robot and stiff target joints", 409
             )
 
+    @staticmethod
+    def joint_trajectory(body: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": "1.0",
+            "interpolation": "native",
+            "keyframes": [{"time": body.get("duration", 1.0), "positions": body["positions"]}],
+        }
+
     def move_joints(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
-        return self.trajectory(
-            session,
-            {
-                "trajectory": {
-                    "schema_version": "1.0",
-                    "interpolation": "native",
-                    "keyframes": [
-                        {"time": body.get("duration", 1.0), "positions": body["positions"]}
-                    ],
-                },
-                "replace_operation_id": body.get("replace_operation_id"),
-            },
-            "motion.joint_move",
-        )
+        payload = {"trajectory": self.joint_trajectory(body)}
+        if "replace_operation_id" in body:
+            payload["replace_operation_id"] = body["replace_operation_id"]
+        return self.trajectory(session, payload, "motion.joint_move")
 
     async def run_replacement(
         self, op: Operation, previous: Operation, payload: dict[str, Any]
@@ -1337,6 +1438,11 @@ class Core:
         await self.run_native(op, payload)
 
     def motion_action(self, session: Session, kind: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self.submit_command(session, self.prepare_motion_action(kind, body))
+
+    def prepare_motion_action(
+        self, kind: str, body: dict[str, Any], *, ready: bool = True
+    ) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         joints = self.info.get("joints", [])
@@ -1362,19 +1468,20 @@ class Core:
             if kind == "posture":
                 if body["name"] not in self.info.get("postures", []):
                     raise BridgeError("unsupported", "Unknown or unavailable posture", 422)
-                state = self.state(["joints", "motion"])["groups"]
-                if any(group["quality"] != "fresh" for group in state.values()):
-                    raise BridgeError(
-                        "precondition_failed", "Fresh joint and motion state required", 409
-                    )
-                if not state["motion"]["value"]["awake"] or any(
-                    state["joints"]["value"]["stiffness"].get(name, 0) <= 0 for name in names
-                ):
-                    raise BridgeError(
-                        "precondition_failed",
-                        "Posture requires an awake robot and stiff joints",
-                        409,
-                    )
+                if ready:
+                    state = self.state(["joints", "motion"])["groups"]
+                    if any(group["quality"] != "fresh" for group in state.values()):
+                        raise BridgeError(
+                            "precondition_failed", "Fresh joint and motion state required", 409
+                        )
+                    if not state["motion"]["value"]["awake"] or any(
+                        state["joints"]["value"]["stiffness"].get(name, 0) <= 0 for name in names
+                    ):
+                        raise BridgeError(
+                            "precondition_failed",
+                            "Posture requires an awake robot and stiff joints",
+                            409,
+                        )
                 payload.update(name=body["name"], speed=body.get("speed", 0.4))
                 operation_kind = "motion.posture_change"
             elif kind == "walk":
@@ -1392,18 +1499,25 @@ class Core:
                 move["speed"] = body.get("speed", catalog["default_speed"])
                 if move["speed"] < catalog["minimum_speed"]:
                     raise BridgeError("unsupported", "Speed below native frequency range", 422)
-                self.require_joint_motion(resources[:-1])
-                if self.samples["motion"]["value"]["locomotion_active"]:
-                    raise BridgeError("resource_busy", "Native locomotion already active", 409)
+                if ready:
+                    self.require_joint_motion(resources[:-1])
+                    if self.samples["motion"]["value"]["locomotion_active"]:
+                        raise BridgeError("resource_busy", "Native locomotion already active", 409)
                 payload["move"] = move
                 operation_kind = "motion.move"
-        op = self.new_operation(session, operation_kind, resources)
-        if operation_kind in CONFIGURATION_KINDS:
-            op.retained_resources = [r for r in resources if r.startswith("joint.")]
-        op.task = self.spawn(self.run_native(op, payload))
-        return copy.deepcopy(op.public)
+        retained = (
+            [r for r in resources if r.startswith("joint.")]
+            if operation_kind in CONFIGURATION_KINDS
+            else []
+        )
+        return FiniteCommand(
+            operation_kind, resources, payload, payload.get("duration"), retained_resources=retained
+        )
 
     def configure_autonomy(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        return self.submit_command(session, self.prepare_autonomy(body))
+
+    def prepare_autonomy(self, body: dict[str, Any]) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         if body.get("restore_on_close", False):
@@ -1427,15 +1541,12 @@ class Core:
             "speech.output",
             *["joint." + joint["name"] for joint in self.info.get("joints", [])],
         ]
-        op = self.new_operation(session, "autonomy.transition", resources)
-        op.retained_resources = ["autonomy.configuration"]
-        op.task = self.spawn(
-            self.run_native(
-                op,
-                {"settings": body["settings"], "allow_partial": body.get("allow_partial", False)},
-            )
+        return FiniteCommand(
+            "autonomy.transition",
+            resources,
+            {"settings": body["settings"], "allow_partial": body.get("allow_partial", False)},
+            retained_resources=["autonomy.configuration"],
         )
-        return copy.deepcopy(op.public)
 
     async def refresh_motion_after(
         self, completed: float, groups: tuple[str, ...] = ("joints", "motion")
@@ -1460,6 +1571,9 @@ class Core:
                 return False
 
     def light_transition(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        return self.submit_command(session, self.prepare_light_transition(body))
+
+    def prepare_light_transition(self, body: dict[str, Any]) -> FiniteCommand:
         if self.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         group = next(
@@ -1470,10 +1584,9 @@ class Core:
             raise BridgeError("unsupported", "Light group is unavailable", 422)
         payload = transition_payload(group["mode"], body)
         resources = list(group["resources"])
-        op = self.new_operation(session, LIGHT_KIND, resources)
-        op.retained_resources = resources
-        op.task = self.spawn(self.run_native(op, payload))
-        return copy.deepcopy(op.public)
+        return FiniteCommand(
+            LIGHT_KIND, resources, payload, payload["duration"], retained_resources=resources
+        )
 
     async def run_native(self, op: Operation, payload: dict[str, Any]) -> None:
         if op.public["status"] != "accepted":
@@ -1488,7 +1601,7 @@ class Core:
             return
         agent_instance = self.backend.instance
         generation = self.generation
-        self.update(op, status="running", started_at=utc())
+        self.start_operation(op)
         try:
             if op.public["kind"] in OUTPUT_KINDS:
                 await self.listeners.begin_output(op.public["id"])
@@ -1581,9 +1694,14 @@ class Core:
             raise BridgeError("forbidden", "Operation belongs to another session", 403)
         return op
 
-    async def cancel(self, op: Operation) -> dict[str, Any]:
+    async def cancel(self, op: Operation, *, from_sequence: bool = False) -> dict[str, Any]:
         if op.public["status"] in TERMINAL:
             return copy.deepcopy(op.public)
+        if op.public["kind"] == SEQUENCE_KIND:
+            self.sequences.stop(self.sequences.runs[op.public["id"]], "cancelled")
+            return copy.deepcopy(op.public)
+        if op.public.get("parent_id") and not from_sequence:
+            raise BridgeError("sequence_parent_required", "Cancel the parent sequence", 409)
         if op.public["kind"] == CAPTURE_KIND:
             self.vision.cancel(op)
             return copy.deepcopy(op.public)
@@ -1708,6 +1826,7 @@ class Core:
 
     async def cleanup_native(self, session: Session, force: bool = False) -> dict[str, Any]:
         sid = session.public["id"]
+        sequences = self.sequences.interrupt("session_ended", session_id=sid)
         capture = self.vision.stop(sid)
         affected = [
             op
@@ -1752,13 +1871,9 @@ class Core:
                     error=BridgeError("cleanup_unconfirmed", "Native work may continue", 503),
                 )
                 if force and fenced and op.public["kind"] not in unreleased_controls:
-                    op.released = True
+                    self.release_operation(op)
                     if op.public["kind"] in OUTPUT_KINDS:
                         self.listeners.end_output(op.public["id"])
-                    op.retained_until = self.clock() + self.settings.history_seconds
-                    for resource in op.public["resources"]:
-                        if self.resources.get(resource) == op.public["id"]:
-                            del self.resources[resource]
         if fenced:
             self.configuration_owners = {
                 r: owner for r, owner in self.configuration_owners.items() if owner != sid
@@ -1771,6 +1886,9 @@ class Core:
         unresolved.extend(unresolved_recordings)
         unresolved_captures = await self.vision.settle(capture)
         unresolved.extend(unresolved_captures)
+        unresolved.extend(
+            await self.sequences.finish_interruption(sequences, force=force and fenced)
+        )
         listeners_released = not self.listeners.owns(sid)
         if not listeners_released:
             unresolved_resources.append("speech.recognition")
@@ -1867,6 +1985,7 @@ class Core:
         )
 
     async def stop_all(self) -> dict[str, Any]:
+        sequences = self.sequences.interrupt("robot_stop")
         self.listeners.stop_all()
         self.sensor_observers.stop_all()
         self.face_observers.stop_session()
@@ -1877,9 +1996,14 @@ class Core:
                 self.finish(op, "cancelled", {"dispatched": False})
             elif op.public["kind"] in CONTROL_KINDS and op.public["status"] == "running":
                 self.update(op, status="cancelling")
-        async with asyncio.timeout(self.settings.backend_timeout_seconds):
-            stopped = await self.backend.stop()
-            stopped = await self.settle_control_stops(stopped, list(self.operations.values()))
+        stop_error = None
+        try:
+            async with asyncio.timeout(self.settings.backend_timeout_seconds):
+                stopped = await self.backend.stop()
+                stopped = await self.settle_control_stops(stopped, list(self.operations.values()))
+        except Exception as exc:
+            stop_error = exc
+            stopped = {"confirmed_ids": [], "unresolved_ids": []}
         for op in list(self.operations.values()):
             if op.public["kind"] not in NATIVE_KINDS or op.released:
                 continue
@@ -1910,6 +2034,7 @@ class Core:
         ]
         stopped["unresolved_vision_observer_ids"] = self.face_observers.unresolved()
         stopped["unresolved_ids"].extend(await self.recordings.settle())
+        stopped["unresolved_ids"].extend(await self.sequences.finish_interruption(sequences))
         if capture is not None:
             oid = capture.operation.public["id"]
             unresolved_capture = await self.vision.settle(capture)
@@ -1917,6 +2042,8 @@ class Core:
                 stopped["unresolved_ids"].remove(oid)
             if unresolved_capture and oid not in stopped["unresolved_ids"]:
                 stopped["unresolved_ids"].append(oid)
+        if stop_error is not None:
+            raise stop_error
         return stopped
 
     def priority_stop(self, session: Session, scope: str | None = None) -> dict[str, Any]:
@@ -1933,6 +2060,7 @@ class Core:
         return copy.deepcopy(op.public)
 
     async def stop_motion(self, scope: str) -> dict[str, Any]:
+        sequences = self.sequences.interrupt("motion_stop", scope=scope)
         affected = [
             op
             for op in self.operations.values()
@@ -1965,6 +2093,7 @@ class Core:
                     "unknown",
                     error=BridgeError("stop_unconfirmed", "Native motion may continue", 503),
                 )
+        sequence_unresolved = await self.sequences.finish_interruption(sequences)
         return {
             "scope": scope,
             "confirmed_ids": sorted(set(result["confirmed_ids"])),
@@ -1975,6 +2104,7 @@ class Core:
             "unresolved_ids": sorted(
                 set(result["unresolved_ids"])
                 | {op.public["id"] for op in affected if not op.released}
+                | set(sequence_unresolved)
             ),
         }
 
@@ -2338,8 +2468,13 @@ class Core:
             ):
                 self.forget_session(session.public["id"])
         for oid, op in list(self.operations.items()):
+            parent_id = op.public.get("parent_id")
+            parent = self.operations.get(parent_id) if parent_id else None
+            if parent and not parent.released:
+                continue
             if op.retained_until and op.retained_until <= now and op.released:
                 del self.operations[oid]
+        self.sequences.prune()
         self.trim_session_history(self.settings.max_session_history)
         self.sweep_keys()
 

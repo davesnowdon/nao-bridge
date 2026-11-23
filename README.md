@@ -16,7 +16,7 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.13.0 replaces the old API without compatibility
+remain available. Contract 1.14.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
@@ -35,6 +35,9 @@ camera and sensor acceptance remain pending.
 light groups, session-owned fades, and actuator read-back via shared state and SSE.
 Speech options, installed behaviors, and built-in gestures are discoverable.
 Software fixtures support animated speech, installed behavior runs, and gestures.
+Server-side sequences coordinate finite actions, with child operations and
+fail-fast cancellation. The contract bundle includes a
+[portable presentation sequence](contracts/fixtures/presentation-sequence.json).
 
 Robot-free tests cover real SDK loopback services and injected process failures.
 Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the

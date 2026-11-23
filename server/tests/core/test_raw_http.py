@@ -19,4 +19,5 @@ async def test_sdk_independent_http_conformance(socket_rig, tmp_path):
         assert "animated_speech" in result["checks"]
         assert "installed_behavior_run_and_stop" in result["checks"]
         assert "parallel_wave_speech_and_lights" in result["checks"]
+        assert "server_side_presentation_sequence" in result["checks"]
         assert not core.resources

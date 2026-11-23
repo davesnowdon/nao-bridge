@@ -5,6 +5,7 @@ import hashlib
 import http.client
 import json
 import time
+from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -177,8 +178,8 @@ class Probe:
             conn.close()
         return asset["id"]
 
-    def wait(self, operation):
-        deadline = time.monotonic() + 5
+    def wait(self, operation, timeout=5):
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             value = self.request("GET", "/api/operations/" + operation["id"], schema="Operation")
             if value["status"] in {"succeeded", "failed", "cancelled", "unknown"}:
@@ -446,6 +447,58 @@ class Probe:
         self.request("POST", path + "/cancel", {}, status=202)
         cancelled = self.wait(action)
         assert cancelled["status"] == "cancelled" and cancelled["result"]["stop_confirmed"]
+
+    def presentation_sequence(self):
+        script_file = Path(__file__).with_name("presentation-sequence.json")
+        if not script_file.is_file():
+            script_file = (
+                script_file.parent.parent / "contracts/fixtures/presentation-sequence.json"
+            )
+        script = json.loads(script_file.read_text())
+        schema = self.request("GET", "/api/sequences/schema")
+        Draft202012Validator(schema).validate(script)
+        validated = self.request(
+            "POST", "/api/sequences/validate", script, schema="SequenceValidation"
+        )
+        assert validated["valid"] and validated["maximum_parallel_commands"] == 3
+        assert validated["estimated_duration_seconds"] is None
+        assert len(validated["timeline"]) == 7
+        start = self.request("POST", "/api/sequences/runs", script, status=202, schema="Operation")
+        assert start["kind"] == "sequence.run" and len(start["child_operation_ids"]) == 7
+        end = self.wait(start, timeout=10)
+        assert end["status"] == "succeeded", end
+        self.validate("SequenceResult", end["result"])
+        children = self.request(
+            "GET",
+            "/api/operations?" + urlencode({"parent_id": start["id"], "limit": 100}),
+            schema="OperationPage",
+        )
+        assert {child["id"] for child in children["items"]} == set(start["child_operation_ids"])
+        assert all(child["status"] == "succeeded" for child in children["items"])
+        assert [child["sequence_path"] for child in children["items"]] == [
+            [0],
+            [1],
+            [2, 0],
+            [2, 1],
+            [2, 2],
+            [3],
+            [4],
+        ]
+        parallel_children = [
+            child for child in children["items"] if child["sequence_path"][:1] == [2]
+        ]
+        assert max(child["started_at"] for child in parallel_children) < min(
+            child["finished_at"] for child in parallel_children
+        )
+        motion = self.request("GET", "/api/state?include=motion&wait_for_fresh_ms=1000")
+        assert motion["groups"]["motion"]["value"]["awake"] is False
+        for route, body in (
+            ("wake", {}),
+            ("posture_changes", {"name": "StandInit"}),
+            ("stiffness_changes", {"targets": {"Body": 0.5}, "duration": 0.1}),
+        ):
+            ready = self.request("POST", "/api/motion/" + route, body, status=202)
+            assert self.wait(ready)["status"] == "succeeded"
 
     def velocity_control(self):
         path = "/api/motion/velocity"
@@ -775,6 +828,8 @@ def run(url):
             time.sleep(0.05)
         probe.stream(subscription, reconnect=True)
         probe.request("DELETE", "/api/events/subscriptions/" + subscription["id"], status=204)
+        if gestures:
+            probe.presentation_sequence()
     finally:
         cleanup = probe.request(
             "POST",
@@ -814,7 +869,11 @@ def run(url):
         + (["light_transitions_and_readback"] if lights == "available" else [])
         + (["animated_speech"] if animated else [])
         + (["installed_behavior_run_and_stop"] if behaviors else [])
-        + (["parallel_wave_speech_and_lights"] if gestures else []),
+        + (
+            ["parallel_wave_speech_and_lights", "server_side_presentation_sequence"]
+            if gestures
+            else []
+        ),
     }
 
 

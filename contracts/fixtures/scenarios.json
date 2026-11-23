@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.13.0",
+  "contract_version": "1.14.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -96,6 +96,27 @@
       "client_decisions": [
         "Use the catalog to choose a supported gesture and posture.",
         "Check measured joint state after cancellation. Cancellation can leave an intermediate pose."
+      ]
+    },
+    {
+      "name": "server-side presentation sequence",
+      "steps": [
+        "GET /api/sequences/schema and validate presentation-sequence.json",
+        "POST /api/sequences/validate without a session",
+        "POST /api/sequences/runs with an active session",
+        "await the parent and list children by parent_id",
+        "read current motion state"
+      ],
+      "expected": [
+        "a self-contained portable schema",
+        "seven leaves, three concurrent native actions, and unknown overall duration",
+        "202 sequence.run with seven child operation IDs and reserved resources",
+        "seven succeeded children with paths and overlapping speech, wave and lights",
+        "awake is false after the explicit rest child"
+      ],
+      "client_decisions": [
+        "Dry-check the sequence and inspect all diagnostic paths before running.",
+        "Use the parent result and child status to determine which effects completed."
       ]
     },
     {
