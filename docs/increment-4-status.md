@@ -182,3 +182,23 @@ separate step while standing. Profile fallback and restoration are opt-in.
 The executable test exercises a session-free dry run, then an animated prelude
 and plain parallel choreography through the public SDK, including the result
 from autonomy cleanup. Physical presentation effects remain pending.
+
+## Camera acquisition
+
+The Python 2 agent can now keep one named video-device subscription open and
+acquire at 1–5 frames per second on its dedicated camera worker. It suppresses
+duplicate native timestamps when available. Still capture uses the same
+subscription, read-back, and cleanup code. The bridge transfers RGB pixels and
+frame metadata together through a single atomic latest-frame slot. Each frame
+is tagged with the feed ID and a sequence number, so a reader can detect gaps
+and reject data from an old feed.
+
+The pinned SDK fixture delivered successive VGA frames while all four ordinary
+command workers were occupied. Scoped cancellation ended the feed and a
+new still capture succeeded. These checks cover acquisition and handoff in
+the container. Managed JPEG preview and durable video recording still need
+their public lifecycles. Both supported robot generations still need camera
+rate, timestamp, and concurrent-use measurements.
+
+[NAOqi 2.1 video API](https://doc.aldebaran.com/2-1/naoqi/vision/alvideodevice-api.html)
+and [NAOqi 2.8 image acquisition](https://doc.aldebaran.com/2-8/dev/python/examples/vision/get_image.html).

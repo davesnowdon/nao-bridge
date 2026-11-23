@@ -3,11 +3,38 @@ import time
 from pathlib import Path
 
 import pytest
+from nao_bridge.errors import BridgeError
+from nao_bridge.ipc import read_camera_feed_slot
 
 PATH = Path(__file__).resolve().parents[2] / "agent" / "camera.py"
 SPEC = importlib.util.spec_from_file_location("test_agent_camera", PATH)
 camera = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(camera)
+
+
+def test_latest_feed_slot_rejects_incomplete_frames_and_ignores_previous_identity(tmp_path):
+    feed_id = "a" * 32
+    instance = "b" * 32
+    size = (640, 480)
+    frame = {
+        "camera": "top",
+        "frame": "camera.top",
+        "width": size[0],
+        "height": size[1],
+        "pixel_format": "rgb8",
+        "sequence": 4,
+        "acquisition_started": 10.1,
+        "acquisition_finished": 10.2,
+    }
+    pixels = b"\x00\x01\x02" * (size[0] * size[1])
+    camera.handoff_feed(tmp_path, instance, feed_id, frame, pixels)
+    slot = tmp_path / f"camera-feed-{instance}.rgb"
+    assert read_camera_feed_slot(slot, "c" * 32, "bottom", (320, 240), 0) is None
+    assert read_camera_feed_slot(slot, feed_id, "top", size, 4) is None
+    assert read_camera_feed_slot(slot, feed_id, "top", size, 3) == (frame, pixels)
+    slot.write_bytes(slot.read_bytes()[:-1])
+    with pytest.raises(BridgeError, match="Private camera feed frame invalid"):
+        read_camera_feed_slot(slot, feed_id, "top", size, 3)
 
 
 class Future:

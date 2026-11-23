@@ -637,6 +637,41 @@ async def check_native_controls():
         print(
             "Native camera IPC: full frames with blocked workers and fenced IDs passed", flush=True
         )
+        feed_id = uuid.uuid4().hex
+        streaming = {"camera": "bottom", "resolution": "640x480", "frame_rate": 5}
+        feed = asyncio.create_task(backend.run_camera_feed(feed_id, streaming))
+        sequence = 0
+        frames = []
+        try:
+            async with asyncio.timeout(4):
+                while len(frames) < 3:
+                    result = await backend.latest_camera_frame(feed_id, streaming, sequence)
+                    if result:
+                        metadata, rgb = result
+                        sequence = metadata["sequence"]
+                        frames.append(metadata)
+                        assert rgb == b"\xff\x10\x00" * (640 * 480)
+                    else:
+                        assert not feed.done()
+                        await asyncio.sleep(0.02)
+            assert all(not task.done() for task in blocked)
+            sequences = [frame["sequence"] for frame in frames]
+            assert sequences == sorted(set(sequences))
+            assert len({frame["source_time"]["microseconds"] for frame in frames}) == 3
+        finally:
+            await backend.stop(operation_id=feed_id)
+            assert (await asyncio.wait_for(feed, 3))["cancelled"]
+        # An older, larger frame remains in the slot until the new producer publishes.
+        smaller = {"camera": "top", "resolution": "320x240", "frame_rate": 5}
+        assert await backend.latest_camera_frame(uuid.uuid4().hex, smaller, 0) is None
+        frame, rgb = await backend.capture_image(
+            uuid.uuid4().hex, "fixture-camera", {"camera": "top", "resolution": "320x240"}
+        )
+        assert frame["camera"] == "top" and rgb == b"\x00\x80\xff" * (320 * 240)
+        print(
+            "Native camera feed: paced frame transfer, scoped stop and reacquisition passed",
+            flush=True,
+        )
         async with asyncio.timeout(3):
             while state["faces.detections"]["observed"] <= first_face["observed"]:
                 await asyncio.sleep(0.01)

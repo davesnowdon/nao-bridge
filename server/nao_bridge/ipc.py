@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import stat
@@ -18,6 +19,7 @@ from .errors import BackendUnknown, BridgeError
 
 LOG = logging.getLogger(__name__)
 MAX_FRAME = 16384
+MAX_CAMERA_HEADER = 2048
 
 
 def read_camera_slot(path: Path, operation_id: str, size: int) -> bytes:
@@ -37,6 +39,55 @@ def read_camera_slot(path: Path, operation_id: str, size: int) -> bytes:
     except (OSError, ValueError) as exc:
         raise BridgeError(
             "capture_transfer_failed", "Private camera frame unavailable", 503
+        ) from exc
+
+
+def read_camera_feed_slot(
+    path: Path, feed_id: str, camera: str, size: tuple[int, int], after: int
+) -> tuple[dict[str, Any], bytes] | None:
+    capacity = size[0] * size[1] * 3
+    try:
+        with open(
+            path,
+            "rb",
+            opener=lambda name, flags: os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK),
+        ) as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError("Invalid camera feed slot")
+            header = source.readline(MAX_CAMERA_HEADER + 1)
+            if not header.startswith(feed_id.encode("ascii") + b" "):
+                return None
+            if len(header) > MAX_CAMERA_HEADER or not header.endswith(b"\n"):
+                raise ValueError("Invalid camera feed header")
+            frame = json.loads(header[33:])
+            if (
+                not isinstance(frame, dict)
+                or frame.get("camera") != camera
+                or frame.get("frame") != "camera." + camera
+                or (frame.get("width"), frame.get("height")) != size
+                or frame.get("pixel_format") != "rgb8"
+                or type(frame.get("sequence")) is not int
+                or frame["sequence"] <= 0
+            ):
+                raise ValueError("Invalid camera feed identity or format")
+            began = frame["acquisition_started"]
+            ended = frame["acquisition_finished"]
+            if not math.isfinite(began) or not math.isfinite(ended) or not 0 <= began <= ended:
+                raise ValueError("Invalid camera feed acquisition time")
+            if frame["sequence"] <= after:
+                return None
+            if info.st_size != len(header) + capacity:
+                raise ValueError("Wrong camera feed payload size")
+            pixels = source.read(capacity + 1)
+            if len(pixels) != capacity:
+                raise ValueError("Incomplete camera feed frame")
+            return frame, pixels
+    except FileNotFoundError:
+        return None
+    except (OSError, KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise BridgeError(
+            "capture_transfer_failed", "Private camera feed frame invalid", 503
         ) from exc
 
 
@@ -378,6 +429,27 @@ class AgentBackend:
         if (instance, epoch) != (self.instance, self.epoch) or not self.connected.is_set():
             raise BackendUnknown("Agent generation changed during image transfer")
         return result, value
+
+    async def run_camera_feed(self, feed_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._rpc("command", "camera_feed", payload, feed_id, feed_id, timeout=None)
+
+    async def latest_camera_frame(
+        self, feed_id: str, payload: dict[str, Any], after: int
+    ) -> tuple[dict[str, Any], bytes] | None:
+        instance, epoch = self.instance, self.epoch
+        if self.root is None or instance is None or re.fullmatch(r"[0-9a-f]{32}", instance) is None:
+            raise BackendUnknown("Agent generation is unavailable")
+        value = await asyncio.to_thread(
+            read_camera_feed_slot,
+            Path(self.root.name) / f"camera-feed-{instance}.rgb",
+            feed_id,
+            payload["camera"],
+            CAMERA_SIZES[payload["resolution"]],
+            after,
+        )
+        if (instance, epoch) != (self.instance, self.epoch) or not self.connected.is_set():
+            raise BackendUnknown("Agent generation changed during image transfer")
+        return value
 
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]:
         return await self._rpc("priority", "release_controls", {}, session_id)

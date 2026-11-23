@@ -49,6 +49,10 @@ class Backend(Protocol):
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]: ...
+    async def run_camera_feed(self, feed_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def latest_camera_frame(
+        self, feed_id: str, payload: dict[str, Any], after: int
+    ) -> tuple[dict[str, Any], bytes] | None: ...
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
@@ -90,6 +94,8 @@ class FakeBackend:
         self.controls = FakeControls(self)
         self.velocity_controls = FakeVelocityControls(self)
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
+        self.camera_feed_frame: tuple[dict[str, Any], bytes] | None = None
+        self.camera_feed_id: str | None = None
         self.motion_stop_ids: deque[str] = deque(maxlen=4096)
         self.revoked: set[str] = set()
         self.sink: EventSink | None = None
@@ -223,6 +229,8 @@ class FakeBackend:
         if not connected:
             self.velocity_controls.invalidate()
             self.motion_state["locomotion_active"] = False
+            if self.camera_feed_id is not None:
+                self.active[self.camera_feed_id][1].set()
         self.connected = connected
         self.faces = None
         self.motion_state["odometry"] = {
@@ -797,6 +805,9 @@ class FakeBackend:
         outcome = await self._execute(operation_id, session_id, payload, "camera_capture")
         if outcome.get("cancelled"):
             return outcome, b""
+        return self.camera_image(payload, started)
+
+    def camera_image(self, payload: dict[str, Any], started: float) -> tuple[dict[str, Any], bytes]:
         width, height = CAMERA_SIZES[payload["resolution"]]
         camera = payload["camera"]
         pixels = b"\x00\x80\xff" if camera == "top" else b"\xff\x10\x00"
@@ -811,6 +822,45 @@ class FakeBackend:
             "acquisition_started": started,
             "acquisition_finished": time.monotonic(),
         }, pixels * (width * height)
+
+    async def run_camera_feed(self, feed_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.connected:
+            raise BackendUnknown("Robot disconnected before camera acquisition")
+        if feed_id in self.motion_stop_ids:
+            return {"cancelled": True, "dispatched": False}
+        if self.camera_feed_id is not None:
+            raise BridgeError("camera_busy", "Camera acquisition already running", 409)
+        cancel = asyncio.Event()
+        self.camera_feed_id = feed_id
+        self.active[feed_id] = (feed_id, cancel)
+        self.calls.append(
+            {"id": feed_id, "session_id": feed_id, "payload": payload, "action": "camera_feed"}
+        )
+        sequence = 0
+        try:
+            while not cancel.is_set():
+                sequence += 1
+                metadata, pixels = self.camera_image(payload, time.monotonic())
+                self.camera_feed_frame = ({**metadata, "sequence": sequence}, pixels)
+                try:
+                    await asyncio.wait_for(cancel.wait(), 1 / payload["frame_rate"])
+                except TimeoutError:
+                    continue
+            return {"cancelled": True, "dispatched": True}
+        finally:
+            self.active.pop(feed_id, None)
+            self.camera_feed_frame = None
+            self.camera_feed_id = None
+
+    async def latest_camera_frame(
+        self, feed_id: str, payload: dict[str, Any], after: int
+    ) -> tuple[dict[str, Any], bytes] | None:
+        if not self.connected:
+            raise BackendUnknown("Camera connection changed during acquisition")
+        latest = self.camera_feed_frame
+        if feed_id != self.camera_feed_id or latest is None or latest[0]["sequence"] <= after:
+            return None
+        return latest
 
     async def stop(
         self,
@@ -842,7 +892,8 @@ class FakeBackend:
                 if (
                     call["action"] == "walk"
                     if motion_scope == "locomotion"
-                    else call["action"] not in {"speech", "camera_capture", "light_transition"}
+                    else call["action"]
+                    not in {"speech", "camera_capture", "camera_feed", "light_transition"}
                 )
             }
             if motion_scope
@@ -884,6 +935,8 @@ class FakeBackend:
             }
         if operation_ids:
             self.motion_stop_ids.extend(operation_ids or [])
+        if operation_id:
+            self.motion_stop_ids.append(operation_id)
         deferred = {
             call["id"]
             for call in self.calls

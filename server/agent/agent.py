@@ -22,7 +22,7 @@ from controls import JointControls, ControlError
 from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
-from camera import CameraError, CameraUnknown, handoff, valid_capture, valid_capture_id
+from camera import CameraError, CameraUnknown, handoff, handoff_feed, valid_capture, valid_capture_id, valid_feed
 from faces import valid_configuration as valid_faces
 from lights import valid_light
 from behaviors import MAX_PAGE as BEHAVIOR_PAGE_SIZE, valid_behavior, valid_name
@@ -31,9 +31,10 @@ from wire import VERSION, encode, frames, monotonic
 
 PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
 AUTONOMY_ACTIONS = ("autonomy", "restore_autonomy")
+CAMERA_ACTIONS = ("camera_capture", "camera_feed")
 COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
                 autonomy=valid_autonomy, restore_autonomy=valid_restoration,
-                camera_capture=valid_capture, light_transition=valid_light,
+                camera_capture=valid_capture, camera_feed=valid_feed, light_transition=valid_light,
                 behavior_run=valid_behavior)
 GUARDED_MOTION = ("walk", "animated_speech", "behavior", "gesture")
 
@@ -148,7 +149,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "camera_capture", "light_transition", "behavior_run") and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "light_transition", "behavior_run") + CAMERA_ACTIONS and request.get("session_id") in self.revoked:
             return "fenced_session"
         if request.get("action") == "restore_autonomy":
             fence = self.revoked.get(request.get("session_id"))
@@ -212,7 +213,7 @@ class Agent(object):
                 if request["action"] in AUTONOMY_ACTIONS:
                     self.run_autonomy(request, record, replies)
                     continue
-                if request["action"] == "camera_capture":
+                if request["action"] in CAMERA_ACTIONS:
                     self.run_camera(request, record, replies)
                     continue
                 if request["action"] == "trajectory":
@@ -373,13 +374,22 @@ class Agent(object):
                 record["phase"] = "dispatch_started"
                 return method(*args, _async=True)
 
+        def publish(writer, *frame):
+            if not authorized():
+                return
+            try:
+                writer(self.root, self.instance, request["id"], *frame)
+            except (IOError, OSError):
+                raise CameraError("capture_transfer_failed", "Could not transfer the camera image")
+
         try:
-            result, pixels = adapter.capture(request["payload"], authorized, dispatch)
-            if authorized():
-                try:
-                    handoff(self.root, self.instance, request["id"], pixels)
-                except (IOError, OSError):
-                    raise CameraError("capture_transfer_failed", "Could not transfer the camera image")
+            if request["action"] == "camera_feed":
+                adapter.feed(request["payload"], lambda frame, pixels: publish(handoff_feed, frame, pixels),
+                             authorized, dispatch)
+                result = {}
+            else:
+                result, pixels = adapter.capture(request["payload"], authorized, dispatch)
+                publish(handoff, pixels)
         except CameraError as error:
             if error.code != "capture_cancelled" and authorized():
                 with self.lock:
@@ -436,7 +446,7 @@ class Agent(object):
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
                         and (record.get("action") not in PRODUCERS or key == oid)
-                        and (record.get("action") != "camera_capture" or record["status"] != "unknown" or key == oid)
+                        and (record.get("action") not in CAMERA_ACTIONS or record["status"] != "unknown" or key == oid)
                         and (not scope
                              or scope == "locomotion" and record.get("motion_kind") == "walk"
                              or scope == "all" and (
@@ -518,7 +528,7 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if (record.get("action") in PRODUCERS or record.get("action") in AUTONOMY_ACTIONS + ("camera_capture", "light_transition")) and record["phase"] != "queued":
+            if (record.get("action") in PRODUCERS or record.get("action") in AUTONOMY_ACTIONS + CAMERA_ACTIONS + ("light_transition",)) and record["phase"] != "queued":
                 # These operations require their own completion record. A light fade has
                 # no confirmed native interruption and may settle after this stop request.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
@@ -788,13 +798,13 @@ class Agent(object):
                                       else COMMANDS[action](request.get("payload"))
                                       and (action in PRODUCERS or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
-                            elif action == "camera_capture" and not valid_capture_id(rid):
+                            elif action in CAMERA_ACTIONS and not valid_capture_id(rid):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid capture operation ID")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
                                 requests = (getattr(self, action + "_work") if action in PRODUCERS
-                                            else self.camera_work if action == "camera_capture" else self.work)
+                                            else self.camera_work if action in CAMERA_ACTIONS else self.work)
                                 try:
                                     requests.put_nowait((request, replies))
                                 except queue.Full:
