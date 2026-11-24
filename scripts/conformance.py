@@ -301,6 +301,56 @@ class Probe:
             time.sleep(0.02)
         raise AssertionError("Operation did not finish within fixture deadline")
 
+    def recorder_trajectory(self):
+        """Capture measured keyframes and submit a portable document through raw HTTP."""
+        catalog = self.request("GET", "/api/motion/joints", schema="Joints")
+        selected = {"HeadYaw", "LHand"}
+        assert selected <= {joint["name"] for joint in catalog["items"]}
+        poses = []
+        for index, (yaw, openness) in enumerate(((0.2, 0.3), (-0.2, 0.6), (0, 0.5)), start=1):
+            target = {"HeadYaw": yaw, "LHand": openness}
+            command = self.request(
+                "POST",
+                "/api/motion/joint_moves",
+                {"positions": target, "duration": 0.1},
+                status=202,
+                schema="Operation",
+            )
+            assert self.wait(command)["status"] == "succeeded"
+            deadline = time.monotonic() + 2
+            while True:
+                state = self.request(
+                    "GET", "/api/state?include=joints&wait_for_fresh_ms=500", schema="State"
+                )
+                group = state["groups"]["joints"]
+                measured = group["value"]["measured"] if group["quality"] == "fresh" else {}
+                if all(
+                    name in measured and abs(measured[name] - goal) < 0.001
+                    for name, goal in target.items()
+                ):
+                    poses.append(
+                        {
+                            "time": index * 0.3,
+                            "positions": {name: measured[name] for name in target},
+                        }
+                    )
+                    break
+                assert time.monotonic() < deadline, (target, group)
+                time.sleep(0.025)
+        document = {"schema_version": "1.0", "interpolation": "native", "keyframes": poses}
+        self.validate("Trajectory", document)
+        saved = json.dumps(document)
+        playback = self.request(
+            "POST",
+            "/api/motion/trajectory_runs",
+            {"trajectory": json.loads(saved)},
+            status=202,
+            schema="Operation",
+        )
+        assert set(playback["resources"]) == {"joint." + name for name in selected}
+        outcome = self.wait(playback)
+        assert outcome["status"] == "succeeded", outcome
+
     def camera_capture(self):
         catalog = self.request("GET", "/api/vision/cameras", schema="Cameras")
         assert [camera["id"] for camera in catalog["items"]] == ["top", "bottom"]
@@ -1045,24 +1095,7 @@ def run(url):
         assert replacement["replaces_operation_id"] == previous["id"]
         assert probe.wait(replacement)["status"] == "succeeded"
         assert probe.wait(previous)["status"] in {"cancelled", "succeeded"}
-        trajectory_run = probe.request(
-            "POST",
-            "/api/motion/trajectory_runs",
-            {
-                "trajectory": {
-                    "schema_version": "1.0",
-                    "interpolation": "native",
-                    "keyframes": [
-                        {"time": 0.1, "positions": {"HeadYaw": 0.2}},
-                        {"time": 0.2, "positions": {"HeadYaw": -0.2}},
-                        {"time": 0.3, "positions": {"HeadYaw": 0}},
-                    ],
-                }
-            },
-            status=202,
-            schema="Operation",
-        )
-        assert probe.wait(trajectory_run)["status"] == "succeeded"
+        probe.recorder_trajectory()
         for route, body in [
             ("stiffness_changes", {"targets": {"Head": 0.7}, "duration": 0.1}),
             ("rest", {}),

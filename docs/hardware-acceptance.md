@@ -8,9 +8,9 @@ uv run --project server python scripts/hardware_acceptance.py http://127.0.0.1:3
 
 The script checks the connection first, then asks you to press Enter to start
 speech testing. It runs the API checks, asks whether the speech sounded right and
-stopped, and tells you which head sensor to touch. Allow about five minutes. Use
-an otherwise idle bridge because the priority-stop test stops all speech. No
-motion, posture or stiffness commands are sent.
+stopped, and tells you which head sensor to touch. Allow about five minutes. Start
+with an idle robot and bridge. The priority-stop test can interrupt work owned by
+other sessions.
 
 You do not need to fill in a checklist, copy IDs or collect logs. The script creates
 a new directory under `hardware-results/` and prints the path to **report.md** at

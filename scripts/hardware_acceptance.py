@@ -541,9 +541,8 @@ class Runner:
                 contact_paths[sensor_id] = entry["state_path"]
             self.evidence.summary.pop("active_check", None)
         await self.ask(
-            "This run speaks and cancels speech. No motion, posture or stiffness commands.\n"
-            "Use an otherwise idle bridge: priority stop affects all speech. "
-            "Enter to begin; q quits."
+            "This run exercises speech and the robot-wide priority stop.\n"
+            "Start with the robot and bridge idle. Press Enter to begin or q to quit."
         )
         sent = time.monotonic()
         self.session = await self.request(

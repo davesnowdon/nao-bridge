@@ -10,6 +10,11 @@ Use the guided `--hand-foot` checks to verify each hand-back and foot-bumper
 contact in fresh state and two simultaneous SSE streams on the candidate image.
 [Hardware acceptance runner](hardware-acceptance.md#optional-hand-and-foot-contacts)
 
+The direct HTTP Recorder scenario captures three measured `HeadYaw` and `LHand`
+poses, round-trips the portable JSON, and plays it as one timed operation using
+only the selected joints. It also verifies a checksummed sample asset when storage
+is available. [Direct conformance runner](../scripts/conformance.py)
+
 | Deliverable | Software status | Physical acceptance |
 | --- | --- | --- |
 | Hand/foot state, dedicated events, sensor discovery | Implemented; unit/client/raw-HTTP and native container checks pass | Native hand-back and foot probes recorded; integrated API pending |
