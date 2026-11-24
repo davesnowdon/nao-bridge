@@ -353,3 +353,24 @@ portable trajectory and sequence files, and an SSE reattachment transcript.
 Repeated exports from the same files produce identical bytes. The runner
 completed 33 checks against the fake backend from an extracted archive.
 See the [contract bundle](../contracts/README.md).
+
+### Coverage and release preparation
+
+Contract 1.25.0 adds the `point` gesture for either arm. It uses the same
+guarded trajectory and ownership path as wave. Local tests cover mirroring,
+the held pose, and return to the measured start. Raw HTTP on the production
+SDK fixture verified discovery, resources and native completion. Physical
+gesture dispatch remains gated. Both Python clients also expose read-back
+of a previously created camera preview by ID in the owning session.
+
+Container replacement with a named asset volume retained a 9,749-byte NDJSON
+recording with the same SHA-256. Both old process-local IDs returned 404.
+The optional hardware acceptance run now checks back-of-hand and foot-bumper
+state together with two subscription streams. See the [API coverage map](api-coverage.md),
+[release evidence](release-readiness.md), and [guided contact checks](hardware-acceptance.md#optional-hand-and-foot-contacts).
+
+Run `make soak-container` to start the isolated 30-minute native fixture
+workload. It records API/agent RSS and thread counts, scoped stop and command
+latency, stream cleanup, quota rejection and recovery, and checksum/range
+verification of sample, camera and microphone assets. `SOAK_SECONDS=12` runs
+a short rehearsal for harness changes.
