@@ -38,7 +38,10 @@ workflow runner. The `nao-bridge-python-distributions` CI artifact contains the
 SDK wheel and source distribution, Recorder and Wanderer wheels, and the
 presentation example. The staging step installs the wheels in a clean
 environment and checks the entry points and bundled Recorder browser assets.
-The installed Recorder UI was also exercised in headless Chrome.
+Installed workflows also captured and exported a Recorder pose, saved a Wanderer
+photo with pose metadata, and ran the animated presentation with eight completed
+child operations against a fake bridge. The installed Recorder UI was exercised
+in headless Chrome.
 [Contract bundle](../contracts/README.md) · [Recorder tutorial](../examples/recorder/README.md) ·
 [Wanderer tutorial](../examples/wanderer/README.md) ·
 [Presentation tutorial](../examples/presentation/README.md)

@@ -374,3 +374,26 @@ workload. It records API/agent RSS and thread counts, scoped stop and command
 latency, stream cleanup, quota rejection and recovery, and checksum/range
 verification of sample, camera and microphone assets. `SOAK_SECONDS=12` runs
 a short rehearsal for harness changes.
+
+### Native mixed-load result
+
+The Linux amd64 container ran the workload for 1,800.7 seconds with Docker
+networking disabled. It used contract 1.24.0 from `96a0e65` and local image
+`sha256:2bf6921fd0efa99e63860a692d3c437f7db916758fcc837e9d959af9ebbd3ec4`.
+The contract 1.25.0 changes separately passed `make test-container`, including
+the new point gesture and direct measured-pose playback workflow.
+
+| Measurement | Result |
+| --- | --- |
+| Streams | The unread SSE viewer detached within the first minute. The live viewer received 15,756 state samples and 3,596 touch events. The camera viewer read 8,996 JPEG frames. |
+| Recording and storage | 70 samples, 70 AVI and 70 WAV assets passed size, SHA-256, ETag and byte-range checks. Zero partial assets. The 1 MiB quota rejected 202 reservations, and recording resumed after explicit deletion. Peak retained content was 693,079 bytes. |
+| Finite command admission | 1,327 utterances, 7.54 ms p95 and 12.12 ms maximum. |
+| Scoped motion stop | 266 confirmed stops, 110.10 ms p95 and 124.54 ms maximum from HTTP request to confirmed outcome. |
+| Threads and subprocesses | API 6 at baseline, 10 peak, 7 after cleanup. Agent 70, 71, 70. The API peaked at three child processes and ended with the agent only. |
+| Resident memory | API 63,548 / 70,060 / 70,016 KiB at baseline/peak/after cleanup. Agent 33,208 / 96,708 / 95,176 KiB. |
+| Cleanup | The native callback count returned to the baseline of 15. No stream, recording, or operation remained active. Bridge and connection identity stayed the same during the workload. |
+
+The agent's RSS stayed within the soak's growth threshold and continued rising
+near the end, so this run leaves its longer-duration memory behavior open. The
+times describe the local SDK fixture. Physical stop time, media timing and the
+measured hold remain hardware checks.
