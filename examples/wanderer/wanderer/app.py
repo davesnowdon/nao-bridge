@@ -21,6 +21,7 @@ from nao_bridge_client import (
     StreamNotice,
     VisionDetections,
 )
+from nao_bridge_client.models import AutonomyProfile
 
 from .observations import BUMPER_IDS, STEPS, LocalMap, Observation, choose_step
 
@@ -48,7 +49,7 @@ class Wanderer:
         self.identity: tuple[str, int] | None = None
         self.face_id: str | None = None
         self.ready = False
-        self.can_move = self.can_capture = False
+        self.can_move = self.can_capture = self.can_record_video = False
         self.pressed_bumpers: set[str] = set()
         self.uncertain = False
         self.drive_status = "idle"
@@ -81,6 +82,7 @@ class Wanderer:
                 }
                 self.can_move = "motion.moves" in features
                 self.can_capture = "vision.captures" in features
+                self.can_record_video = "recordings.camera" in features
                 if "sensors.observers" in features:
                     try:
                         await stack.enter_async_context(await client.sensors.observe(["sonar"]))
@@ -115,7 +117,7 @@ class Wanderer:
                 await self.join_drive()
                 self.observation = self.client = self.identity = self.face_id = None
                 self.pressed_bumpers.clear()
-                self.can_move = self.can_capture = False
+                self.can_move = self.can_capture = self.can_record_video = False
                 self.state_changed.set()
 
     async def read_stream(self, subscription: AsyncSubscription) -> None:
@@ -353,6 +355,22 @@ class Wanderer:
         self.drive_status = message
         self.report(message)
 
+    async def manual_profile(self) -> AutonomyProfile:
+        if self.client is None or not self.ready:
+            raise ValueError("Awaiting an observation connection")
+        catalog = await self.client.autonomy.profiles()
+        for profile in catalog.items:
+            if profile.name == "manual":
+                return profile
+        raise ValueError("The manual autonomy profile is unavailable")
+
+    async def prepare(self, *, allow_partial: bool = False) -> AsyncOperation:
+        if self.client is None or not self.ready or self.uncertain:
+            raise ValueError("Wait for a ready connection and resolve any unknown drive outcome")
+        if self.drive is not None:
+            raise ValueError("Stop the drive before applying the manual profile")
+        return await self.client.autonomy.apply("manual", allow_partial=allow_partial, timeout=15)
+
     async def photo(self, camera: str | None = None) -> Path:
         if self.client is None or not self.ready or not self.can_capture:
             raise ValueError("Camera capture is unavailable")
@@ -384,6 +402,23 @@ class Wanderer:
             "pose_offset_ms": round(pose.at_ms - midpoint, 3) if pose else None,
         }
         path.with_suffix(".json").write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return path
+
+    async def video(self, duration: int = 3) -> Path:
+        if not 1 <= duration <= 10:
+            raise ValueError("Choose a whole number of seconds from 1 to 10")
+        if self.client is None or not self.ready or not self.can_record_video:
+            raise ValueError("Camera recording is unavailable")
+        if self.drive is not None:
+            raise ValueError("Stop the drive before recording a clip")
+        client = self.client
+        async with await client.recordings.camera(duration=duration) as recording:
+            await recording.wait(timeout=duration + 5)
+            if not recording.asset_id:
+                raise ValueError("Camera recording returned no finalized asset")
+            self.photos.mkdir(parents=True, exist_ok=True)
+            path = self.photos / f"{uuid4().hex}.avi"
+            await client.assets.download(recording.asset_id, path)
         return path
 
     async def join_drive(self) -> None:

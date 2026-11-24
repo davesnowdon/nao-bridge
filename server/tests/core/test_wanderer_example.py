@@ -89,6 +89,28 @@ async def test_finite_steps_update_map_and_capture_checked_assets(wanderer_rig):
         assert abs(metadata["pose_offset_ms"]) <= 250
 
 
+async def test_manual_profile_requires_explicit_preparation(wanderer_rig):
+    async with wanderer_rig() as (app, _, backend, _, _):
+        profile = await app.manual_profile()
+        assert profile.name == "manual"
+        assert profile.settings["life_state"] == "disabled"
+        assert not backend.calls
+        operation = await app.prepare()
+        assert operation.data.kind == "autonomy.transition" and operation.status == "succeeded"
+        assert backend.autonomy_state["life_state"] == "disabled"
+        assert app.drive is None and not moves(backend)
+
+
+async def test_optional_camera_clip_uses_verified_asset_download(wanderer_rig):
+    async with wanderer_rig() as (app, _, backend, _, _):
+        if not app.can_record_video:
+            pytest.skip("The camera fixture requires the Linux FFmpeg runtime")
+        path = await app.video(1)
+        assert path.suffix == ".avi"
+        assert path.read_bytes()[:12].endswith(b"AVI ")
+        assert [call["action"] for call in backend.calls] == ["camera_feed"]
+
+
 @pytest.mark.parametrize("hazard", ["bumper", "obstacle", "stale", "face", "operator"])
 async def test_drive_hazards_cancel_owned_move_and_do_not_resume(wanderer_rig, hazard):
     async with wanderer_rig(faces=hazard == "face", duration=2) as (

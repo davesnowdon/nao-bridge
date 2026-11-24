@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import sys
 from contextlib import suppress
 from pathlib import Path
@@ -11,10 +12,13 @@ from .app import Wanderer
 COMMANDS = """
 status                         Show drive and observation status
 map                            Show the local map and recent path
+profile                        Show the manual autonomy profile and unavailable settings
+prepare [--allow-partial]      Apply the manual profile while idle
 step [direction]               Take one bounded step (default auto)
 start                          Choose and repeat bounded steps
 stop                           Cancel this app's current move
 photo [top|bottom]              Save a still and its pose metadata
+video [seconds]                Save a camera clip (default 3 seconds, maximum 10)
 acknowledge                    Clear the app's unknown-stop latch after inspection
 reconnect                      Reopen observations after bridge recovery
 quit                           Close the application and its session
@@ -32,6 +36,11 @@ async def command(app: Wanderer, line: str) -> bool:
             print(app.status())
         case ["map"]:
             print(app.map.render())
+        case ["profile"]:
+            print((await app.manual_profile()).model_dump_json(indent=2))
+        case ["prepare"] | ["prepare", "--allow-partial"]:
+            operation = await app.prepare(allow_partial=len(words) == 2)
+            print(json.dumps(operation.data.result, indent=2))
         case ["start"]:
             app.start("auto", repeat=True)
         case ["step"]:
@@ -42,6 +51,8 @@ async def command(app: Wanderer, line: str) -> bool:
             app.stop()
         case ["photo"] | ["photo", "top"] | ["photo", "bottom"]:
             print(f"Saved {await app.photo(words[1] if len(words) == 2 else None)}")
+        case ["video"] | ["video", _]:
+            print(f"Saved {await app.video(int(words[1]) if len(words) == 2 else 3)}")
         case ["acknowledge"]:
             app.acknowledge()
             print(app.status())

@@ -142,6 +142,7 @@ async def test_explicit_manual_and_stiffness_settings_not_restored_on_close(reco
     async with recorder_rig() as (recorder, core, backend):
         await recorder.select(["LHand"])
         await recorder.arm(voice=True)
+        assert recorder.snapshot()["manual_profile"]["name"] == "manual"
         await recorder.manual()
         await until(lambda: not recorder.busy)
         assert recorder.listener is None
@@ -255,6 +256,63 @@ async def test_local_web_routes_capture_save_load_and_serve_assets(recorder_rig)
             ).status_code == 200
             assert (await client.post("/action", json={"name": "unknown"})).status_code == 400
             assert not (await client.get("/state")).json()["robot"]["hardware_verified"]
+
+
+@pytest.mark.parametrize(
+    ("source", "media_type", "extension", "riff_format"),
+    [("microphone", "audio/wav", "wav", b"WAVE"), ("camera", "video/x-msvideo", "avi", b"AVI ")],
+)
+async def test_local_web_record_and_download_media(
+    recorder_rig, source, media_type, extension, riff_format
+):
+    async with recorder_rig() as (recorder, _, backend):
+        if not recorder.supports(f"recordings.{source}"):
+            assert source == "camera"
+            pytest.skip("The camera fixture requires the Linux FFmpeg runtime")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app(recorder)), base_url="http://example"
+        ) as client:
+            await recorder.record(0.6, 5)
+            started = await client.post(
+                "/action",
+                json={"name": "record_media", "params": {"source": source, "duration": 1.5}},
+            )
+            assert started.status_code == 200, started.text
+            recording_id = started.json()["media_recording"]["id"]
+            await until(lambda: recorder.media_recording.status == "recording")
+            if source == "microphone":
+                finished = await client.post(
+                    "/action", json={"name": "media_stop", "params": {"recording_id": recording_id}}
+                )
+                assert finished.status_code == 200, finished.text
+            await until(lambda: recorder.media_recording.status in {"completed", "failed"})
+            clip = await client.get(f"/media/{recording_id}")
+            assert clip.status_code == 200, clip.text if clip.is_error else None
+            assert clip.headers["content-type"] == media_type
+            assert (
+                clip.headers["content-disposition"]
+                == f'attachment; filename="recording.{extension}"'
+            )
+            assert clip.content[:4] == b"RIFF" and clip.content[8:12] == riff_format
+            assert (await client.get("/media/unknown")).status_code == 404
+            await until(lambda: recorder.recording.status == "completed")
+            assert (await client.get("/recording")).headers[
+                "content-type"
+            ] == "application/x-ndjson"
+            played = await client.post(
+                "/action", json={"name": "media_play", "params": {"recording_id": recording_id}}
+            )
+            if source == "microphone":
+                assert played.status_code == 200, played.text
+                await until(lambda: not recorder.busy)
+                assert recorder.operation.status == "succeeded"
+                assert [call["action"] for call in backend.calls] == [
+                    "microphone_feed",
+                    "audio_playback",
+                ]
+            else:
+                assert played.status_code == 400
+                assert [call["action"] for call in backend.calls] == ["camera_feed"]
 
 
 def test_document_preserves_sparse_imported_trajectory():

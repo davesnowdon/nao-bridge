@@ -26,20 +26,12 @@ from nao_bridge_client import (
     StreamNotice,
     Trajectory,
 )
-from nao_bridge_client.models import JointCatalog
+from nao_bridge_client.models import AutonomyProfile, JointCatalog
 
 from .document import Document, Pose, SampleRecording, measured
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
-MANUAL_BOOLEAN_SETTINGS = {
-    "basic_awareness",
-    "background_movement",
-    "listening_movement",
-    "speaking_movement",
-    "breathing",
-    "idle_posture",
-    "awareness_running",
-}
+RECORDING_TERMINAL = {"completed", "failed"}
 
 
 class Recorder:
@@ -50,6 +42,7 @@ class Recorder:
         self.info: RobotInfo | None = None
         self.capabilities: Capabilities | None = None
         self.catalog: JointCatalog | None = None
+        self.manual_profile: AutonomyProfile | None = None
         self.state: State | None = None
         self.state_at = 0.0
         self.document = Document()
@@ -59,6 +52,7 @@ class Recorder:
         self.control: AsyncJointControl | None = None
         self.listener: AsyncListener | None = None
         self.recording: AsyncRecording | None = None
+        self.media_recording: AsyncRecording | None = None
         self.samples: SampleRecording | None = None
         self.armed = False
         self.stream_ready = False
@@ -137,6 +131,12 @@ class Recorder:
                 self.info = await nao.robot.info()
                 self.capabilities = await nao.robot.capabilities()
                 self.catalog = await nao.motion.joints()
+                self.manual_profile = None
+                if self.supports("autonomy.profiles"):
+                    profiles = await nao.autonomy.profiles()
+                    self.manual_profile = next(
+                        (profile for profile in profiles.items if profile.name == "manual"), None
+                    )
                 self.state = await nao.robot.state(["joints", "motion", "autonomy"])
                 self.state_at = time.monotonic()
                 types = [
@@ -152,6 +152,7 @@ class Recorder:
             self.operation = None
             self.listener = None
             self.recording = None
+            self.media_recording = None
             self.samples = None
             self.error = None
             self.uncertain = False
@@ -200,8 +201,9 @@ class Recorder:
                 nao = self.client()
                 self.state = await nao.robot.state(["joints", "motion", "autonomy"])
                 self.state_at = time.monotonic()
-                if self.recording and self.recording.status not in {"completed", "failed"}:
-                    await self.recording.refresh()
+                for recording in (self.recording, self.media_recording):
+                    if recording and recording.status not in RECORDING_TERMINAL:
+                        await recording.refresh()
                 if self.listener:
                     await self.listener.refresh()
             except Exception as error:
@@ -330,18 +332,11 @@ class Recorder:
             self.document = candidate
             self.document_revision += 1
 
-    def manual_settings(self) -> dict[str, str | bool]:
+    def supports(self, feature: str) -> bool:
         if not self.capabilities:
-            return {}
-        settings: dict[str, str | bool] = {}
-        for name, capability in self.capabilities.autonomy.items():
-            if capability.status != "available":
-                continue
-            if name == "life_state" and "disabled" in capability.values:
-                settings[name] = "disabled"
-            elif name in MANUAL_BOOLEAN_SETTINGS and False in capability.values:
-                settings[name] = False
-        return settings
+            return False
+        capability = self.capabilities.features.get(feature)
+        return capability is not None and capability.status == "available"
 
     async def _admit(
         self, submit: Callable[[], Awaitable[AsyncOperation]], *, close_listener: bool = False
@@ -382,12 +377,17 @@ class Recorder:
         finally:
             self.note("Operation " + operation.id + ": " + operation.status)
 
-    async def manual(self) -> None:
-        settings = self.manual_settings()
-        if not settings:
+    async def manual(self, *, allow_partial: bool = False) -> None:
+        profile = self.manual_profile
+        if profile is None or not (profile.settings.keys() - set(profile.unavailable_settings)):
             raise ValueError("No supported manual autonomy settings were discovered")
+        if profile.unavailable_settings and not allow_partial:
+            raise ValueError("Confirm applying only the available manual settings first")
         await self._admit(
-            lambda: self.client().autonomy.configure(settings, wait=False), close_listener=True
+            lambda: self.client().autonomy.apply(
+                profile.name, allow_partial=allow_partial, wait=False
+            ),
+            close_listener=True,
         )
 
     async def wake(self) -> None:
@@ -498,7 +498,7 @@ class Recorder:
 
     async def record(self, duration: float, rate_hz: float) -> None:
         async with self._lock:
-            if self.recording and self.recording.status not in {"completed", "failed"}:
+            if self.recording and self.recording.status not in RECORDING_TERMINAL:
                 raise ValueError("A recording is already active")
             self.samples = None
             self.recording = await self.client().recordings.samples(
@@ -508,6 +508,45 @@ class Recorder:
     async def end_recording(self) -> None:
         if self.recording:
             await self.recording.stop(wait=False)
+
+    async def record_media(self, source: str, duration: float) -> None:
+        if source not in {"camera", "microphone"}:
+            raise ValueError("Choose camera or microphone")
+        async with self._lock:
+            nao = self.client()
+            if self.uncertain:
+                raise ValueError("Resolve the unknown session outcome before starting a recording")
+            if not self.supports(f"recordings.{source}"):
+                raise ValueError(f"{source.capitalize()} recording is unavailable")
+            if self.media_recording and self.media_recording.status not in RECORDING_TERMINAL:
+                raise ValueError("A media recording is already active")
+            start = nao.recordings.camera if source == "camera" else nao.recordings.microphone
+            self.media_recording = await start(duration=duration)
+
+    def current_media(self, recording_id: str) -> AsyncRecording:
+        recording = self.media_recording
+        if recording is None or recording.id != recording_id:
+            raise ValueError("That media recording is no longer selected")
+        return recording
+
+    async def end_media(self, recording_id: str) -> None:
+        async with self._lock:
+            await self.current_media(recording_id).stop(wait=False)
+
+    async def download_media(self, recording_id: str, path: Path):
+        recording = self.current_media(recording_id)
+        if not recording.asset_id:
+            raise ValueError("The recording has no finalized asset yet")
+        return await self.client().assets.download(recording.asset_id, path)
+
+    async def play_media(self, recording_id: str) -> None:
+        if not self.supports("audio.playback"):
+            raise ValueError("Robot audio playback is unavailable")
+        recording = self.current_media(recording_id)
+        asset_id = recording.asset_id
+        if recording.data.source.kind != "microphone" or not asset_id:
+            raise ValueError("Select a finalized microphone recording")
+        await self._admit(lambda: self.client().audio.play(asset_id, wait=False))
 
     async def download(self, path: Path):
         if not self.recording or not self.recording.asset_id:
@@ -557,8 +596,11 @@ class Recorder:
             "operation": self.operation.data.model_dump() if self.operation else None,
             "listener": self.listener.data.model_dump() if self.listener else None,
             "recording": self.recording.data.model_dump() if self.recording else None,
+            "media_recording": self.media_recording.data.model_dump()
+            if self.media_recording
+            else None,
             "samples": self.samples.summary() if self.samples else None,
-            "manual_settings": self.manual_settings(),
+            "manual_profile": self.manual_profile.model_dump() if self.manual_profile else None,
             "error": self.error,
             "notices": list(self.notices),
         }

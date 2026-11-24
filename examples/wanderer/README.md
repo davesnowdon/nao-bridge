@@ -9,7 +9,7 @@ uv run --project examples/wanderer --locked nao-bridge-wanderer
 ```
 
 The default bridge is `http://127.0.0.1:3000`. Use `--bridge` for another
-address and `--photos` to choose the output directory. For a robot-free run,
+address and `--photos` to choose the output directory for photos and clips. For a robot-free run,
 start a separate fake bridge, then use `--no-faces` in the example so the
 fixture's recurring face does not halt each step.
 
@@ -19,18 +19,22 @@ uv run --project examples/wanderer --locked nao-bridge-wanderer --no-faces
 ```
 
 Run those commands in separate terminals. The fake bridge demonstrates the
-workflow. On a robot, explicitly prepare the robot before driving. This example
-reads the robot's existing settings and leaves preparation to the operator.
+workflow. On a robot, prepare it explicitly before driving. Inspect `profile`
+to see which settings `prepare` will apply. Applying the manual profile can
+change the robot's posture. Wake and posture preparation remain operator actions.
 
 | Command | Action |
 | --- | --- |
 | `status`, `map` | Show drive readiness, the latest pose, recent path and local sonar returns |
+| `profile` | Inspect the bridge's manual autonomy profile and any unavailable settings |
+| `prepare`, `prepare --allow-partial` | Apply the manual profile while idle and show the per-setting outcome. The flag applies only supported settings. |
 | `step` | Choose one bounded step from current sonar observations |
 | `step forward`, `step left`, `step right` | Request 0.10 m forward or 0.06 m to either side |
 | `step turn-left`, `step turn-right` | Request a 0.25 rad turn |
 | `start` | Repeat the observe, choose and move cycle until stopped |
 | `stop` | Cancel the app's current move and report its outcome |
 | `photo`, `photo bottom` | Save a verified PNG and adjacent JSON metadata |
+| `video`, `video 5` | While idle, save a verified MJPEG AVI from the default camera. The default duration is three seconds. |
 | `acknowledge` | Clear the app's unknown-stop latch after inspection and a fresh idle observation |
 | `reconnect` | Reopen observation sources after bridge recovery |
 | `quit` | Stop the drive and close the session |
@@ -62,3 +66,7 @@ checksum, and the nearest pose from the same connection and odometry origin
 when it falls within 250 ms of the capture midpoint. The signed offset is
 included. It describes the correspondence between bridge acquisition times.
 The camera's native timestamp uses a separate clock.
+
+Video is available when the bridge advertises `recordings.camera` and uses the
+same retention and checksum rules. Still-image pose metadata applies to PNG
+captures. The terminal waits for a clip to finish before accepting more commands.

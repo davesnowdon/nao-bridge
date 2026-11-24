@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import tempfile
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
+from nao_bridge_client.models import AssetData
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
 
@@ -64,21 +66,39 @@ def create_app(recorder: Recorder) -> FastAPI:
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
 
-    @app.get("/recording")
-    async def recording():
+    async def download_recording(download: Callable[[Path], Awaitable[AssetData]]) -> FileResponse:
         temporary = tempfile.TemporaryDirectory(prefix="nao-recorder-download-")
         try:
-            path = Path(temporary.name) / "recording.ndjson"
-            await recorder.download(path)
+            path = Path(temporary.name) / "recording"
+            asset = await download(path)
+            extension = {
+                "application/x-ndjson": "ndjson",
+                "audio/wav": "wav",
+                "video/x-msvideo": "avi",
+            }[asset.content_type]
             return FileResponse(
                 path,
-                media_type="application/x-ndjson",
-                filename="recording.ndjson",
+                media_type=asset.content_type,
+                filename=f"recording.{extension}",
+                headers={"Cache-Control": "no-store"},
                 background=BackgroundTask(temporary.cleanup),
             )
         except BaseException:
             temporary.cleanup()
             raise
+
+    @app.get("/recording")
+    async def recording():
+        return await download_recording(recorder.download)
+
+    @app.get("/media/{recording_id}")
+    async def media(recording_id: str):
+        try:
+            return await download_recording(
+                lambda path: recorder.download_media(recording_id, path)
+            )
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
 
     @app.post("/action")
     async def action(request: Action):
@@ -102,7 +122,7 @@ def create_app(recorder: Recorder) -> FastAPI:
                 case "disarm":
                     recorder.disarm()
                 case "manual":
-                    await recorder.manual()
+                    await recorder.manual(allow_partial=p.get("allow_partial") is True)
                 case "wake":
                     await recorder.wake()
                 case "stiffness":
@@ -125,6 +145,12 @@ def create_app(recorder: Recorder) -> FastAPI:
                     await recorder.record(p["duration"], p["rate_hz"])
                 case "record_stop":
                     await recorder.end_recording()
+                case "record_media":
+                    await recorder.record_media(p["source"], p["duration"])
+                case "media_stop":
+                    await recorder.end_media(p["recording_id"])
+                case "media_play":
+                    await recorder.play_media(p["recording_id"])
                 case "inspect":
                     await recorder.inspect_recording()
                 case "convert":

@@ -1,9 +1,8 @@
 # Recorder reference example
 
-A small local browser application that exercises NAO Bridge through its public
-Python SDK. It demonstrates the increment-2 workflow; it is not a port of the old
-Recorder application. The browser assets are included—there is no frontend build,
-CDN dependency, extra container, or bridge configuration change.
+A small local browser application that exercises pose capture, trajectory playback,
+and recording through the public Python SDK. The browser assets are included and
+run with the example's Python process.
 
 From the repository root:
 
@@ -16,7 +15,7 @@ to loopback. For a robot-free demonstration, first run a fake bridge in another
 terminal:
 
 ```sh
-uv run --project server nao-bridge --backend fake
+uv run --project server nao-bridge --backend fake --asset-directory /tmp/nao-recorder-assets
 ```
 
 The fake backend demonstrates API behavior, not robot physics. Physical motion,
@@ -31,12 +30,12 @@ motion fallback for slider updates.
    names, units, limits and coupling come from discovery. Head joints are selected
    initially. Selection affects new captures and interactive controls; existing
    keyframes retain their saved joint sets.
-2. Prepare the robot explicitly if needed. **Wake robot**, **Apply these manual
-   settings**, and **Apply stiffness** are separate actions. Inspect the disclosed
-   autonomy changes before applying them. Support the robot before lowering stiffness.
-   Manual preparation stops this example's voice listener first; it never overrides
-   another application's ownership. Disconnecting does not restore settings or
-   remove stiffness.
+2. Prepare the robot explicitly if needed. **Wake robot**, **Apply manual profile**,
+   and **Apply stiffness** are separate actions. Inspect the bridge's `manual` profile
+   before applying it. If settings are unavailable, explicitly choose whether to
+   apply the available settings only. Support the robot before lowering stiffness.
+   Applying the profile stops this example's voice listener first. Disconnecting
+   leaves autonomy settings and stiffness in place.
 3. Capture fresh measured poses with the button. Optionally arm front-head touch
    and the vocabulary command **capture**. The listener's observed status is shown;
    configuration acceptance alone does not establish acoustic readiness. A stream
@@ -70,6 +69,12 @@ motion fallback for slider updates.
    keyframes. Conversion retains observed samples and their acquisition times, with
    no invented samples across gaps. Native playback still interpolates between those
    chosen keyframes. Recording and assets retain the bridge's quota/rate/size defaults.
+8. In **Camera and microphone clips**, choose an available source and a duration.
+   **Finish clip** requests early finalization. Download the verified MJPEG AVI or
+   PCM WAV after an asset appears. **Play WAV on robot** submits the microphone clip
+   through the bridge's speaker playback operation. The panel tracks one clip at a
+   time, independently of joint samples. Download any clip you want to keep before
+   starting the next clip or disconnecting. The bridge's asset retention still applies.
 
 The Python process owns the session and event subscription. Closing a tab ends its
 interactive control but leaves the example process available. **Disconnect** or
@@ -90,5 +95,5 @@ tests in `server/tests/core/test_recorder_example.py`. They run the application
 controller against an actual HTTP/SSE server with the fake backend, covering capture,
 portable files, one trajectory submission, voice/touch suppression, stream gaps,
 explicit configuration, browser expiry, stale observations, stop during preparation,
-recordings, downloads and segment conversion. No test here establishes physical
-motion or hold behavior.
+sample conversion, media start/stop, verified file downloads and robot playback
+admission. Physical motion, hold and recording quality require robot testing.
