@@ -10,8 +10,11 @@ Use `--hand-foot-only` for a focused check of each hand back and foot bumper
 in fresh state and two simultaneous SSE streams on the candidate image, or
 `--hand-foot` to include those contacts in the full guided run.
 The focused CLI rehearsal passed all four contacts and session cleanup against
-the pinned native fixture. Integrated physical checks remain pending on both
-firmware generations.
+the pinned native fixture. It also passed against increment-2 candidate `1e8cf5d`
+with contract 1.1.0. This candidate advertises the `touch` state field and sensor
+ID. Later catalogs also supply an explicit state path. Integrated physical
+checks remain pending on both firmware generations.
+[Increment-2 candidate](https://github.com/davesnowdon/nao-bridge/pull/37) ·
 [Hardware acceptance runner](hardware-acceptance.md#optional-hand-and-foot-contacts)
 
 The direct HTTP Recorder scenario captures three measured `HeadYaw` and `LHand`

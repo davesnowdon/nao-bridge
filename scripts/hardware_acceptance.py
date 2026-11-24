@@ -531,11 +531,14 @@ class Runner:
             require(
                 entry is not None
                 and entry["state"]["status"] == "available"
-                and entry["events"]["status"] == "available"
-                and entry.get("state_path"),
+                and entry["events"]["status"] == "available",
                 sensor_id + " is unavailable in state or events",
             )
-            contact_paths[sensor_id] = entry["state_path"]
+            path = entry.get("state_path")
+            if not path and entry["state_group"] == "sensors" and entry["state_field"] == "touch":
+                path = ["touch", sensor_id]
+            require(path, sensor_id + " has no advertised touch state path")
+            contact_paths[sensor_id] = path
         self.evidence.summary.pop("active_check", None)
         return contact_paths
 

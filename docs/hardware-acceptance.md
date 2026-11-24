@@ -101,6 +101,10 @@ Hold each contact for about two seconds. The report checks press and release in
 fresh state and two SSE subscriptions. This mode uses only discovery, state reads,
 and session and subscription requests.
 
+To test the stacked changes in order, use this runner from the increment-4
+checkout and pass the URL of the bridge built from the increment-2 candidate.
+The focused mode has been rehearsed against that candidate's sensor catalog.
+
 To include those checks in the full guided run:
 
 ```bash

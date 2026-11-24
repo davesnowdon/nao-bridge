@@ -135,10 +135,21 @@ async def test_changed_identity_prevents_speech(socket_rig, tmp_path):
         evidence.file.close()
 
 
-async def test_hand_foot_only_rehearsal(socket_rig, tmp_path):
+@pytest.mark.parametrize("has_state_path", [True, False])
+async def test_hand_foot_only_rehearsal(socket_rig, tmp_path, monkeypatch, has_state_path):
     touches = []
     output = tmp_path / "hand-foot"
     async with socket_rig() as (url, core, backend):
+        if not has_state_path:
+            catalog = core.sensors
+
+            def sensors():
+                value = catalog()
+                for item in value["items"]:
+                    item.pop("state_path", None)
+                return value
+
+            monkeypatch.setattr(core, "sensors", sensors)
 
         async def touch(sensor):
             await asyncio.sleep(0.05)
