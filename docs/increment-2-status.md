@@ -15,6 +15,15 @@ poses, round-trips the portable JSON, and plays it as one timed operation using
 only the selected joints. It also verifies a checksummed sample asset when storage
 is available. [Direct conformance runner](../scripts/conformance.py)
 
+Repeating speech with an active vocabulary listener reproduced much of the
+agent RSS growth from the mixed-load soak. In isolated 150-second trials, RSS
+grew 3,896 KiB after the 31-second sample with repeated native subscriber
+lookups and 1,548 KiB with subscriber reuse. The adapter now retains up to two
+ALMemory subscriber proxies while recognition is configured. Each revision
+still replaces its signal links and rejects callbacks from older revisions.
+Stopping recognition releases both links and proxies. The recognition tests
+verify reuse, stale callback rejection, cleanup, and later reacquisition.
+
 | Deliverable | Software status | Physical acceptance |
 | --- | --- | --- |
 | Hand/foot state, dedicated events, sensor discovery | Implemented; unit/client/raw-HTTP and native container checks pass | Native hand-back and foot probes recorded; integrated API pending |

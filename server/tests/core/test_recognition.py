@@ -41,6 +41,7 @@ class Native:
         self.paused = False
         self.running = False
         self.subscribers = set()
+        self.subscriber_requests = []
         self.fail = None
         self.after_write = lambda _: None
         self.sources = {"WordRecognized": SimpleNamespace(signal=Signal())}
@@ -64,6 +65,7 @@ class Native:
         return self.running
 
     def subscriber(self, key):
+        self.subscriber_requests.append(key)
         return self.sources[key]
 
     def write(self, method, *args):
@@ -182,8 +184,11 @@ def test_pause_reconfigure_and_stop_reject_old_callbacks(recognition):
     assert len(seen) == count
     native.sources["WordRecognized"].signal.emit(["play", 0.9, "save", 0.8])
     assert seen[-1][1]["hypotheses"] == [{"text": "save", "confidence": 0.8}]
+    assert native.subscriber_requests == list(native.sources)
     assert adapter.configure({**request(4), "configuration": None})["status"] == "stopped"
     assert not native.subscribers and not adapter.links
+    assert adapter.configure(request(5))["status"] == "listening"
+    assert native.subscriber_requests == list(native.sources) * 2
 
 
 def test_rejected_updates_preserve_existing_producer(recognition):
