@@ -12,6 +12,7 @@ from .contract import CONTACTS, PASSIVE_SENSORS
 from .errors import BackendUnknown, BridgeError
 from .fake_controls import FakeControls, FakeVelocityControls
 from .lights import RGB_CHANNELS
+from .playback import AudioSource
 from .wav import SAMPLE_RATE
 
 EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
@@ -24,6 +25,13 @@ class Backend(Protocol):
     async def close(self) -> None: ...
     async def speak(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
+    async def play_audio(
+        self,
+        operation_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+        source: AudioSource,
     ) -> dict[str, Any]: ...
     async def trajectory(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
@@ -329,6 +337,7 @@ class FakeBackend:
                         "max_rotation_rad_s": 0.40,
                     },
                     "microphone": connected,
+                    "speaker_sample_rate_hz": 22050 if connected else None,
                     "cameras": [
                         {
                             "id": camera,
@@ -752,6 +761,24 @@ class FakeBackend:
         )
         return {**result, "name": name}
 
+    async def play_audio(
+        self,
+        operation_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+        source: AudioSource,
+    ) -> dict[str, Any]:
+        result = await self._execute(
+            operation_id, session_id, payload, "audio_playback", delay=payload["duration_seconds"]
+        )
+        return {
+            **result,
+            "sample_rate_hz": payload["sample_rate_hz"],
+            "frames_submitted": 0
+            if result.get("cancelled")
+            else round(payload["sample_rate_hz"] * payload["duration_seconds"]),
+        }
+
     async def _execute(
         self,
         operation_id: str,
@@ -961,6 +988,7 @@ class FakeBackend:
                         "camera_capture",
                         "camera_feed",
                         "microphone_feed",
+                        "audio_playback",
                         "light_transition",
                     }
                 )

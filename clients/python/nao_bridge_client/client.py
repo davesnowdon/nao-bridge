@@ -64,6 +64,7 @@ class Nao:
         self.behaviors = Behaviors(self)
         self.sequences = Sequences(self)
         self.speech = Speech(self)
+        self.audio = Audio(self)
         self.operations = Operations(self)
         self.events = Events(self)
         self.recordings = Recordings(self)
@@ -744,6 +745,33 @@ class Autonomy:
                     settings,
                     allow_partial=allow_partial,
                     restore_on_close=restore_on_close,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+
+class Audio:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def play(
+        self,
+        asset_id: str,
+        *,
+        volume: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.audio.play(
+                    asset_id,
+                    volume=volume,
                     wait=wait,
                     timeout=timeout,
                     idempotency_key=idempotency_key,

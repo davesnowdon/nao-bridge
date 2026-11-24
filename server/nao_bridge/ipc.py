@@ -4,11 +4,13 @@ import logging
 import math
 import os
 import re
+import shutil
 import stat
 import sys
 import tempfile
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,7 @@ from .backend import EventSink
 from .camera_frames import CAMERA_SIZES
 from .config import Settings
 from .errors import BackendUnknown, BridgeError
+from .playback import AudioSource, prepare_pcm
 
 LOG = logging.getLogger(__name__)
 MAX_FRAME = 16384
@@ -167,6 +170,7 @@ class AgentBackend:
         self.connected = asyncio.Event()
         self.closing = False
         self._last_status: dict[str, Any] = {}
+        self.playback_lock = asyncio.Lock()
 
     async def start(self, sink: EventSink) -> None:
         self.sink = sink
@@ -201,7 +205,7 @@ class AgentBackend:
         assert self.root is not None
         for path in Path(self.root.name).glob("*.sock"):
             path.unlink()
-        for pattern in ("camera-*.rgb*", "microphone-*.pcm*"):
+        for pattern in ("camera-*.rgb*", "microphone-*.pcm*", "playback-*.pcm"):
             for path in Path(self.root.name).glob(pattern):
                 path.unlink()
         env = {
@@ -405,6 +409,52 @@ class AgentBackend:
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         return await self._rpc("command", "speak", payload, session_id, operation_id, timeout=None)
+
+    async def play_audio(
+        self,
+        operation_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+        source: AudioSource,
+    ) -> dict[str, Any]:
+        instance, epoch = self.instance, self.epoch
+        if self.root is None or instance is None or not self.connected.is_set():
+            raise BackendUnknown("Agent is not ready for audio playback")
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg is None:
+            raise BridgeError("unsupported", "Audio preparation is unavailable", 422)
+        if self.playback_lock.locked():
+            raise BridgeError("resource_busy", "Previous audio playback is still settling", 409)
+        path = Path(self.root.name) / f"playback-{instance}-{operation_id}.pcm"
+        async with self.playback_lock:
+            prepare = asyncio.create_task(
+                asyncio.to_thread(
+                    prepare_pcm, ffmpeg, path, source, payload["sample_rate_hz"], payload["volume"]
+                )
+            )
+            try:
+                frames = await asyncio.shield(prepare)
+                if (instance, epoch) != (self.instance, self.epoch) or not self.connected.is_set():
+                    raise BackendUnknown("Agent generation changed before playback")
+                rate = payload["sample_rate_hz"]
+                try:
+                    return await self._rpc(
+                        "command",
+                        "audio_playback",
+                        {"sample_rate_hz": rate, "frames": frames},
+                        session_id,
+                        operation_id,
+                        timeout=frames / rate * 2 + 5,
+                    )
+                except BackendUnknown:
+                    if (instance, epoch) == (self.instance, self.epoch) and self.connected.is_set():
+                        with suppress(BackendUnknown, BridgeError):
+                            await self.stop(operation_id=operation_id)
+                    raise
+            finally:
+                if not prepare.done():
+                    await asyncio.gather(prepare, return_exceptions=True)
+                path.unlink(missing_ok=True)
 
     async def trajectory(
         self, operation_id: str, session_id: str, payload: dict[str, Any]

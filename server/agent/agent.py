@@ -24,6 +24,7 @@ from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
 from camera import CameraError, CameraUnknown, handoff, handoff_feed, valid_capture, valid_capture_id, valid_feed
 from microphone import MicrophoneError, MicrophoneUnknown, clear_handoff, handoff as handoff_microphone
+from speaker import SpeakerError, SpeakerUnknown, valid_playback
 from faces import valid_configuration as valid_faces
 from lights import valid_light
 from behaviors import MAX_PAGE as BEHAVIOR_PAGE_SIZE, valid_behavior, valid_name
@@ -37,7 +38,7 @@ COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_moti
                 autonomy=valid_autonomy, restore_autonomy=valid_restoration,
                 camera_capture=valid_capture, camera_feed=valid_feed, light_transition=valid_light,
                 microphone_feed=lambda payload: payload == {},
-                behavior_run=valid_behavior)
+                behavior_run=valid_behavior, audio_playback=valid_playback)
 GUARDED_MOTION = ("walk", "animated_speech", "behavior", "gesture")
 
 
@@ -78,6 +79,7 @@ class Agent(object):
         self.faces_work = queue.Queue(1)
         self.camera_work = queue.Queue(1)
         self.microphone_work = queue.Queue(1)
+        self.playback_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
@@ -153,7 +155,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "light_transition", "behavior_run") + tuple(CAPTURE_ACTIONS) and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "light_transition", "behavior_run", "audio_playback") + tuple(CAPTURE_ACTIONS) and request.get("session_id") in self.revoked:
             return "fenced_session"
         if request.get("action") == "restore_autonomy":
             fence = self.revoked.get(request.get("session_id"))
@@ -219,6 +221,9 @@ class Agent(object):
                     continue
                 if request["action"] in CAPTURE_ACTIONS:
                     self.run_capture(request, record, replies)
+                    continue
+                if request["action"] == "audio_playback":
+                    self.run_playback(request, record, replies)
                     continue
                 if request["action"] == "trajectory":
                     self.driver.prepare_trajectory(request["payload"])
@@ -420,6 +425,46 @@ class Agent(object):
             record.update(status="completed", result=result, finished=monotonic())
             self.reply(replies, request, result=result)
 
+    def run_playback(self, request, record, replies):
+        adapter = self.driver.speaker
+        done = record["playback_done"] = threading.Event()
+
+        def authorized():
+            return (not record.get("stop_requested") and self.driver.connected()
+                    and self.driver.speaker is adapter and self.valid(request, initial=False) is None)
+
+        def dispatch(method, *args):
+            with self.lock:
+                if not authorized() or self.valid(request, initial=record["phase"] == "queued"):
+                    return None
+                record["phase"] = "dispatch_started"
+                return method(*args, _async=True)
+
+        try:
+            if adapter is None:
+                raise SpeakerError("unsupported", "Speaker is unavailable")
+            path = os.path.join(self.root, "playback-" + self.instance + "-" + request["id"] + ".pcm")
+            frames = adapter.play(path, request["payload"], authorized, dispatch)
+            with self.lock:
+                if not frames and not record.get("stop_requested") and authorized():
+                    raise SpeakerError("expired_deadline", "Playback dispatch deadline passed")
+                result = dict(cancelled=record.get("stop_requested", False) or frames < request["payload"]["frames"],
+                              dispatched=record["phase"] != "queued", frames_submitted=frames,
+                              sample_rate_hz=request["payload"]["sample_rate_hz"], backend="naoqi")
+                record.update(status="completed", result=result, finished=monotonic())
+            self.reply(replies, request, result=result)
+        except SpeakerError as error:
+            with self.lock:
+                record.update(status="rejected", finished=monotonic())
+            self.reply(replies, request, "rejected", code=error.code, message=str(error))
+        except Exception as error:
+            with self.lock:
+                record.update(status="unknown", finished=monotonic())
+            message = str(error) if isinstance(error, SpeakerUnknown) else "Native playback outcome unconfirmed"
+            self.reply(replies, request, "unknown", message=message)
+        finally:
+            done.set()
+
     def stop(self, request):
         with self.lock:
             payload = request.get("payload", {}) if request else {}
@@ -540,6 +585,10 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
+            if record.get("action") == "audio_playback" and record["phase"] != "queued":
+                record["playback_done"].wait(0.75)
+                (confirmed if record["status"] in ("completed", "rejected") else unresolved).append(key)
+                continue
             if (record.get("action") in PRODUCERS or record.get("action") in CAPTURE_ACTIONS or record.get("action") in AUTONOMY_ACTIONS + ("light_transition",)) and record["phase"] != "queued":
                 # These operations require their own completion record. A light fade has
                 # no confirmed native interruption and may settle after this stop request.
@@ -617,7 +666,7 @@ class Agent(object):
                 joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
                         if key in self.records and "result" in self.records[key]
-                        and (self.records[key].get("action") in AUTONOMY_ACTIONS + ("light_transition",)
+                        and (self.records[key].get("action") in AUTONOMY_ACTIONS + ("light_transition", "audio_playback")
                              or self.records[key].get("motion_kind") in ("animated_speech", "behavior", "gesture")))
         if outcomes:
             result["results"] = outcomes
@@ -810,12 +859,13 @@ class Agent(object):
                                       else COMMANDS[action](request.get("payload"))
                                       and (action in PRODUCERS or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
-                            elif action in CAPTURE_ACTIONS and not valid_capture_id(rid):
+                            elif (action in CAPTURE_ACTIONS or action == "audio_playback") and not valid_capture_id(rid):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid capture operation ID")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
                                 requests = (getattr(self, action + "_work") if action in PRODUCERS
+                                            else self.playback_work if action == "audio_playback"
                                             else getattr(self, CAPTURE_ACTIONS[action] + "_work")
                                             if action in CAPTURE_ACTIONS else self.work)
                                 try:
@@ -862,6 +912,7 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
+        background(self.run_critical, self.worker, self.playback_work)
         background(self.run_critical, self.worker, self.camera_work, "camera")
         background(self.run_critical, self.worker, self.microphone_work, "microphone")
         for name in PRODUCERS:

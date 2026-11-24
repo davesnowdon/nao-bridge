@@ -1127,6 +1127,30 @@ different upload with the same key returns 409. Both Python clients expose
 `nao.assets.upload(path)`. The async client supports explicit retry using the
 original bytes after an ambiguous response.
 
+## Audio playback
+
+Check `audio.playback` in capabilities and `audio.speaker_sample_rate_hz` for
+the discovered output rate. Send `POST /api/audio/playbacks` with the active
+session and a retained WAV asset ID. Uploads and microphone recordings with
+playable PCM are accepted.
+
+```json
+{"asset_id":"<asset-id>","volume":0.6}
+```
+
+Volume is optional and ranges from 0 to 1, with a default of 1. It scales
+this clip. The bridge prepares stereo PCM at the discovered speaker rate and
+uses the joint speech and playback reservation. Listeners configured to pause
+during output remain paused until the operation settles. The asset stays pinned
+against removal while the operation holds its reservation.
+
+HTTP 202 returns an `audio.playback` operation. A completed native result
+reports its `asset_id`, `sample_rate_hz`, and `frames_submitted`. Cancellation
+stops further submissions and allows the last acknowledged buffer time to
+elapse. An unconfirmed buffer outcome leaves `speech.output` quarantined for
+session recovery. Speaker output and the audible stop tail require hardware
+verification. Both Python clients expose `nao.audio.play(asset_id, volume=...)`.
+
 ## Sample recordings and retained assets
 
 Recording storage is enabled by default in Docker; local runs need

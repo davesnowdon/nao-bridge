@@ -377,6 +377,10 @@ method with `await` on `AsyncNao`. The bridge advertises supported formats and
 limits under `robot.capabilities()`. If a response is lost, `nao.retry` sends
 the WAV bytes kept in `AmbiguousRequest.request` with the original key.
 
+Play an uploaded or recorded WAV with `nao.audio.play(asset.id, volume=0.6)`.
+Use `wait=False` to keep the playback operation handle and cancel it explicitly.
+The async equivalent uses `await nao.audio.play(...)`.
+
 `assets.download(id, destination, resume=False, overwrite=False)` streams bounded
 chunks, checks length and SHA-256, then atomically publishes the file. It returns
 typed `AssetData`, preserving `partial` status and the recording error. Local disk

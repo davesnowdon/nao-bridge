@@ -288,6 +288,7 @@ class Probe:
             conn.request("GET", "/api/assets/" + asset["id"] + "/content")
             response = conn.getresponse()
             assert response.status == 200 and response.read() == content
+            return asset["id"]
         finally:
             conn.close()
 
@@ -848,6 +849,7 @@ def run(url):
     video = capabilities["features"]["recordings.camera"]["status"] == "available"
     microphone = capabilities["features"]["recordings.microphone"]["status"] == "available"
     audio_upload = capabilities["features"]["assets.audio_upload"]["status"] == "available"
+    audio_playback = capabilities["features"]["audio.playback"]["status"] == "available"
     if robot["backend"] == "native-fixture":
         assert previews, "Native container preview must use the pinned FFmpeg encoder"
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
@@ -1050,7 +1052,22 @@ def run(url):
         if microphone:
             probe.microphone_recording()
         if audio_upload:
-            probe.upload_audio()
+            audio_asset = probe.upload_audio()
+            if audio_playback:
+                played = probe.wait(
+                    probe.request(
+                        "POST",
+                        "/api/audio/playbacks",
+                        {"asset_id": audio_asset, "volume": 0.5},
+                        status=202,
+                        schema="Operation",
+                    )
+                )
+                assert played["status"] == "succeeded" and played["kind"] == "audio.playback", (
+                    played
+                )
+                assert played["result"]["asset_id"] == audio_asset
+                assert played["result"]["frames_submitted"] > 0
         subscription = probe.request(
             "POST",
             "/api/events/subscriptions",
@@ -1126,6 +1143,7 @@ def run(url):
         + (["camera_recording_asset"] if video else [])
         + (["microphone_recording_asset"] if microphone else [])
         + (["wav_upload_asset_and_retry"] if audio_upload else [])
+        + (["wav_audio_playback"] if audio_upload and audio_playback else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])

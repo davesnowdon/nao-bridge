@@ -269,3 +269,18 @@ Raw HTTP conformance verifies the upload, digest, identical retry, and
 download in the pinned container. Local tests cover competing requests,
 lost responses, malformed files, byte limits, and storage recovery.
 See [audio upload](http-api.md#audio-upload).
+
+### WAV playback
+
+Contract 1.21.0 plays retained uploads and microphone WAV assets through
+`audio.playback` operations. The modern process uses the pinned FFmpeg
+runtime for rate conversion and clip volume. The native agent submits
+paced stereo PCM in 40 ms blocks on a dedicated worker, with a native
+acknowledgement for each block. It reads the speaker rate and neither changes
+that setting nor flushes the shared mixer. Playback shares speech ownership
+and listener suppression. Unknown output stops keep that ownership fenced.
+
+The pinned SDK fixture exercises scoped cancellation and PCM submission
+alongside blocked command workers. Physical sound, duration, and audible
+stop timing are still open on NAOqi 2.1 and 2.8.
+See [audio playback](http-api.md#audio-playback).

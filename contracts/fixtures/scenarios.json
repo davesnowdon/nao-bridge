@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.20.0",
+  "contract_version": "1.21.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -15,6 +15,22 @@
     "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "WAV playback and scoped cancellation",
+      "steps": [
+        "Check audio.playback and the discovered speaker rate",
+        "Create a playback operation using a retained PCM WAV asset ID",
+        "Cancel an active playback and await its terminal operation"
+      ],
+      "expected": [
+        "Playback reserves speech output and protects the referenced asset from deletion",
+        "The bridge stops submitting PCM before reporting a confirmed cancellation",
+        "A subsequent session command can acquire speech output after settlement"
+      ],
+      "client_decisions": [
+        "Use the terminal operation and its result to distinguish cancellation, failure and uncertain output."
+      ]
+    },
     {
       "name": "bounded WAV upload and retry",
       "steps": [

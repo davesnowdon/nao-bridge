@@ -134,6 +134,7 @@ class AsyncNao:
         self.behaviors = AsyncBehaviors(self)
         self.sequences = AsyncSequences(self)
         self.speech = AsyncSpeech(self)
+        self.audio = AsyncAudio(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
         self.recordings = AsyncRecordings(self)
@@ -1298,6 +1299,38 @@ class AsyncSpeech:
                 await self._nao._request(
                     "POST",
                     "/api/speech/utterances",
+                    body=body,
+                    key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+                ),
+            ),
+        )
+        return await op.wait(timeout=timeout) if wait else op
+
+
+class AsyncAudio:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def play(
+        self,
+        asset_id: str,
+        *,
+        volume: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"asset_id": asset_id}
+        if volume is not None:
+            body["volume"] = volume
+        op = AsyncOperation(
+            self._nao,
+            decode(
+                OperationData,
+                await self._nao._request(
+                    "POST",
+                    "/api/audio/playbacks",
                     body=body,
                     key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
                 ),

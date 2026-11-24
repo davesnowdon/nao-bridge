@@ -17,6 +17,7 @@ from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 from camera import VideoDevice, FixtureVideo
 from microphone import AudioDevice, FixtureAudio
+from speaker import Speaker
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
 from lights import Lights, FixtureLights
 from behaviors import EVENT as BEHAVIOR_EVENT, Behaviors, FixtureBehaviors
@@ -76,6 +77,7 @@ class NativeDriver(object):
         self.sonar = None
         self.camera = None
         self.microphone = None
+        self.speaker = None
         self.faces = None
         self.lights = None
         self.behaviors = None
@@ -158,6 +160,8 @@ class NativeDriver(object):
         self.description["cameras"] = self.camera.items
         self.microphone = AudioDevice(self.session, monotonic)
         self.description["microphone"] = self.microphone.service is not None
+        self.speaker = Speaker(self.microphone.service, monotonic)
+        self.description["speaker_sample_rate_hz"] = self.speaker.rate
         self.faces = FaceDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
         self.description["faces"] = self.faces.catalog
         self.lights = Lights(self.session, self.memory, self.call)
@@ -428,6 +432,7 @@ class NativeDriver(object):
             self.microphone.invalidate()
             self.microphone.cleanup()
             self.microphone = None
+        self.speaker = None
         if self.sonar:
             self.sonar.close()
             self.sonar = None

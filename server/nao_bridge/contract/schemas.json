@@ -47,6 +47,15 @@
       ],
       "additionalProperties": false
     },
+    "AudioPlaybackCreate": {
+      "type": "object",
+      "properties": {
+        "asset_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 }
+      },
+      "required": ["asset_id"],
+      "additionalProperties": false
+    },
     "SpeechCreate": {
       "type": "object",
       "properties": {

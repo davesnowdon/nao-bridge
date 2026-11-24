@@ -141,6 +141,7 @@ class AssetHTTP:
         self.downloads: set[Download] = set()
         self.upload_reads = 0
         self.uploads: dict[asyncio.Future, int] = {}
+        self.playback_assets: set[str] = set()
         self.jobs: set[asyncio.Future] = set()
         self.deleting: set[str] = set()
         self.next_expiry = 0.0
@@ -330,6 +331,8 @@ class AssetHTTP:
 
     async def delete(self, aid: str) -> None:
         self.get(aid)
+        if aid in self.playback_assets:
+            raise BridgeError("resource_busy", "Asset is in use by audio playback", 409)
         if any(download.aid == aid for download in self.downloads):
             raise BridgeError("resource_busy", "Asset is being downloaded", 409)
         self.deleting.add(aid)
@@ -362,7 +365,7 @@ class AssetHTTP:
             return
         self.expiry_pending = True
         self.next_expiry = now + 60
-        eligible = set(self.manager.assets) - self.deleting
+        eligible = set(self.manager.assets) - self.deleting - self.playback_assets
 
         def sweep() -> set[str]:
             store = self.manager.store

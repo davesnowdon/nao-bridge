@@ -9,10 +9,11 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 import wave
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("conformance", "/tests/conformance.py")
@@ -699,6 +700,38 @@ async def check_native_controls():
                 await backend.stop(operation_id=microphone_id)
                 assert (await asyncio.wait_for(microphone, 3))["cancelled"]
         print("Native microphone feed: exact PCM, scoped stop and reacquisition passed", flush=True)
+
+        @contextmanager
+        def source():
+            with tempfile.TemporaryFile() as file:
+                with wave.open(file, "wb") as audio:
+                    audio.setparams((1, 2, 16000, 0, "NONE", ""))
+                    audio.writeframes(b"\xff\x7f\x00\x80" * 16000)
+                file.seek(0)
+                yield {}, file
+
+        assert info["speaker_sample_rate_hz"] == 22050
+        playback_id = uuid.uuid4().hex
+        playback = asyncio.create_task(
+            backend.play_audio(
+                playback_id, "fixture-playback", {"sample_rate_hz": 22050, "volume": 0.25}, source
+            )
+        )
+        try:
+            async with asyncio.timeout(4):
+                while playback_id not in backend.pending and not playback.done():
+                    await asyncio.sleep(0.01)
+                await asyncio.sleep(0.14)
+                assert not playback.done() and all(not task.done() for task in blocked)
+        finally:
+            stopped = await backend.stop(operation_id=playback_id)
+            result = await asyncio.wait_for(playback, 3)
+        assert playback_id in stopped["confirmed_ids"] and result["cancelled"]
+        assert 0 < result["frames_submitted"] < 44100
+        print(
+            "Native playback: bounded PCM and scoped stop with four blocked workers passed",
+            flush=True,
+        )
         async with asyncio.timeout(3):
             while state["faces.detections"]["observed"] <= first_face["observed"]:
                 await asyncio.sleep(0.01)

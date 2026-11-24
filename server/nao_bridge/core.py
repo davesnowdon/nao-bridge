@@ -33,6 +33,8 @@ from .joint_controls import VELOCITY_KIND, JointControls, VelocityControls
 from .lights import LIGHT_KIND, transition_payload
 from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
+from .playback import KIND as PLAYBACK_KIND
+from .playback import MAX_PLAYBACK_SECONDS, OUTPUT_RATES
 from .recordings import KINDS as RECORDING_KINDS
 from .recordings import Recordings
 from .sensor_observers import SONAR_IDS, SensorObservers
@@ -50,8 +52,9 @@ from .thresholds import EVENT as THRESHOLD_EVENT
 from .thresholds import MAX_RULES, Threshold
 from .vision import KIND as CAPTURE_KIND
 from .vision import Vision
+from .wav import ASSET_KIND as MICROPHONE_ASSET
 from .wav import CONTENT_TYPE as WAV_CONTENT_TYPE
-from .wav import MAX_UPLOAD_BYTES, MAX_UPLOAD_SECONDS, UPLOAD_SAMPLE_RATES
+from .wav import MAX_UPLOAD_BYTES, MAX_UPLOAD_SECONDS, UPLOAD_KIND, UPLOAD_SAMPLE_RATES
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -69,7 +72,7 @@ PLAIN_SPEECH = "speech.utterance"
 ANIMATED_SPEECH = "speech.animated_utterance"
 SPEECH_KINDS = {PLAIN_SPEECH, ANIMATED_SPEECH}
 BEHAVIOR_RUN = "behavior.run"
-OUTPUT_KINDS = SPEECH_KINDS | {BEHAVIOR_RUN}
+OUTPUT_KINDS = SPEECH_KINDS | {BEHAVIOR_RUN, PLAYBACK_KIND}
 SPEECH_RANGES = {
     name: {
         key: SCHEMAS["$defs"]["SpeechCreate"]["properties"][name][key]
@@ -90,8 +93,8 @@ ORDINARY_KINDS = (
     | SPEECH_KINDS
 )
 CONTROL_KINDS = {CONTROL_KIND, VELOCITY_KIND}
-NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS
-MOTION_KINDS = NATIVE_KINDS - {PLAIN_SPEECH, LIGHT_KIND}
+NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS | {PLAYBACK_KIND}
+MOTION_KINDS = NATIVE_KINDS - {PLAIN_SPEECH, LIGHT_KIND, PLAYBACK_KIND}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
     "stream.reset": "StreamReset",
@@ -172,6 +175,7 @@ class Operation:
     stop_scope: str | None = None
     native_slots: int = 0
     restore_on_close: bool = False
+    asset_id: str | None = None
 
 
 @dataclass
@@ -544,6 +548,9 @@ class Core:
                 "recordings.microphone": feature(self.recordings.microphone_available()),
                 "assets": feature(self.recordings.store is not None),
                 "assets.audio_upload": feature(self.recordings.available()),
+                "audio.playback": feature(
+                    self.speaker_rate() is not None and self.recordings.available()
+                ),
                 "vision.cameras": feature(available and bool(self.info.get("cameras"))),
                 "vision.observers": feature(self.face_observers.available()),
                 "vision.previews": feature(self.camera_previews.available()),
@@ -613,6 +620,7 @@ class Core:
             "event_types": list(EVENT_TYPES),
             "state_groups": ["sensors", "joints", "motion", "autonomy", "lights"],
             "audio": {
+                "speaker_sample_rate_hz": self.speaker_rate(),
                 "upload_formats": [
                     {
                         "content_type": WAV_CONTENT_TYPE,
@@ -1214,6 +1222,8 @@ class Core:
                 self.record_autonomy_restoration(owner, op.restore_on_close, result["settings"])
         if status != "unknown" or not op.public["resources"]:
             self.release_operation(op)
+        if op.asset_id and result is not None:
+            result = {**result, "asset_id": op.asset_id}
         self.update(
             op,
             status=status,
@@ -1228,6 +1238,8 @@ class Core:
             self.sequences.reconcile(parent_id)
 
     def release_operation(self, op: Operation) -> None:
+        if not op.released and op.asset_id:
+            self.recordings.http.playback_assets.discard(op.asset_id)
         op.released = True
         successor = self.operations.get(self.pending_replacements.get(op.public["id"], ""))
         for resource in op.public["resources"]:
@@ -1277,6 +1289,57 @@ class Core:
 
     def utterance(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         return self.submit_command(session, self.prepare_utterance(body))
+
+    def speaker_rate(self) -> int | None:
+        if self.connection == "connected" and (
+            self.settings.backend == "fake" or self.camera_previews.encoder_path
+        ):
+            rate = self.info.get("speaker_sample_rate_hz")
+            if type(rate) is int and rate in OUTPUT_RATES:
+                return rate
+        return None
+
+    def audio_playback(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        rate = self.speaker_rate()
+        if rate is None or not self.recordings.available():
+            raise BridgeError("unsupported", "Audio playback is unavailable", 422)
+        asset_id = body["asset_id"]
+        asset = self.recordings.http.get(asset_id)
+        if (
+            asset["kind"] not in {UPLOAD_KIND, MICROPHONE_ASSET}
+            or asset["content_type"] != WAV_CONTENT_TYPE
+        ):
+            raise BridgeError("invalid_audio", "Asset is not a supported WAV file", 422)
+        frames = asset["metadata"].get("frame_count")
+        source_rate = (
+            asset["metadata"].get("sample_rate_hz")
+            if asset["kind"] == UPLOAD_KIND
+            else asset["metadata"].get("source", {}).get("sample_rate_hz")
+        )
+        if (
+            type(frames) is not int
+            or type(source_rate) is not int
+            or source_rate <= 0
+            or not 0 < frames <= source_rate * MAX_PLAYBACK_SECONDS
+        ):
+            raise BridgeError("invalid_audio", "Asset has no playable bounded PCM data", 422)
+        op = self.new_operation(session, PLAYBACK_KIND, ["speech.output"])
+        op.asset_id = asset_id
+        self.recordings.http.playback_assets.add(asset_id)
+        op.task = self.spawn(
+            self.run_native(
+                op,
+                {
+                    "asset_id": asset_id,
+                    "sample_rate_hz": rate,
+                    "volume": body.get("volume", 1.0),
+                    "duration_seconds": frames / source_rate,
+                },
+            )
+        )
+        return copy.deepcopy(op.public)
 
     def prepare_utterance(self, body: dict[str, Any], *, ready: bool = True) -> FiniteCommand:
         if self.connection != "connected":
@@ -1816,7 +1879,17 @@ class Core:
                 if op.public["kind"] in MOTION_ACTIONS
                 else self.backend.trajectory
             )
-            result = await dispatch(op.public["id"], op.public["session_id"], payload)
+            if op.public["kind"] == PLAYBACK_KIND:
+                store = self.recordings.store
+                assert store is not None
+                result = await self.backend.play_audio(
+                    op.public["id"],
+                    op.public["session_id"],
+                    payload,
+                    lambda: store.content(payload["asset_id"]),
+                )
+            else:
+                result = await dispatch(op.public["id"], op.public["session_id"], payload)
             if op.public["kind"] in MOTION_ACTIONS:
                 result["state_refreshed"] = await self.refresh_motion_after(self.clock())
             if op.public["kind"] == GESTURE_KIND and not result.get("cancelled"):
@@ -1969,7 +2042,7 @@ class Core:
             return
         result = stopped.get("results", {}).get(op.public["id"])
         if op.public["kind"] == LIGHT_KIND or (
-            op.public["kind"] in {ANIMATED_SPEECH, BEHAVIOR_RUN, GESTURE_KIND}
+            op.public["kind"] in {ANIMATED_SPEECH, BEHAVIOR_RUN, GESTURE_KIND, PLAYBACK_KIND}
             and isinstance(result, dict)
         ):
             result = (

@@ -16,7 +16,7 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.20.0 replaces the old API without compatibility
+remain available. Contract 1.21.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
@@ -28,7 +28,7 @@ camera capture as downloadable PNG assets, and managed face detection events.
 Managed previews stream live JPEG frames over HTTP, and matching previews and
 stills share camera acquisition with bounded MJPEG AVI recordings. The bridge
 also records the front microphone to WAV when the robot exposes its audio device
-and accepts PCM WAV uploads as retained assets.
+and plays retained PCM WAV uploads or recordings through the robot speaker.
 The [Wanderer reference app](examples/wanderer/README.md) demonstrates short
 finite moves, live stop handling, a local occupancy map and pose-associated stills.
 Velocity leases are available in software fixtures. Hardware velocity remains

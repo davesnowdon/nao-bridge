@@ -206,6 +206,13 @@ class FixtureAudio(object):
         self._stop = threading.Event()
         self._worker = None
 
+    def getParameter(self, parameter):
+        return 22050 if parameter == "outputSampleRate" else -1
+
+    def sendRemoteBufferToOutput(self, frames, raw):
+        return (integer(frames, 1, 882) and isinstance(raw, (bytes, bytearray))
+                and len(raw) == frames * 4)
+
     def setClientPreferences(self, name, rate, channel, deinterleaved):
         if self._worker or (rate, channel, deinterleaved) != (SAMPLE_RATE, FRONT_CHANNEL, 0):
             raise ValueError("Unexpected microphone preferences")

@@ -301,6 +301,20 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.post("/api/audio/playbacks")
+    async def play_audio(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "AudioPlaybackCreate")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /audio/playbacks",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.audio_playback(item, value),
+        )
+        return created(result, "operations", 202)
+
     @app.get("/api/vision/cameras")
     async def cameras(request: Request) -> dict[str, Any]:
         query(request, set())
