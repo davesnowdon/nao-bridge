@@ -1,4 +1,4 @@
-"""Guided increment-1 checks over public HTTP/SSE; no Python SDK dependency."""
+"""Guided speech and contact checks over public HTTP/SSE."""
 
 import argparse
 import asyncio
@@ -30,6 +30,16 @@ CORE_CHECKS = [
     "session cleanup",
 ]
 FAULT_CHECKS = ["network loss", "network recovery", "bridge restart"]
+HAND_FOOT_CONTACTS = {
+    "touch.hand.left.back": "back of the left hand",
+    "touch.hand.right.back": "back of the right hand",
+    "bumper.left": "front of the left foot bumper",
+    "bumper.right": "front of the right foot bumper",
+}
+
+
+def contact_check(sensor_id):
+    return "state and two SSE subscribers: " + sensor_id
 
 
 class ObservationFailed(RuntimeError):
@@ -73,7 +83,16 @@ class Evidence:
             "automation": "running",
             "hardware_acceptance": "incomplete",
             "checks": [
-                {"name": name, "result": "not tested"} for name in CORE_CHECKS + FAULT_CHECKS
+                {"name": name, "result": "not tested"}
+                for name in [
+                    *CORE_CHECKS,
+                    *(
+                        contact_check(sensor)
+                        for sensor in HAND_FOOT_CONTACTS
+                        if metadata.get("hand_foot")
+                    ),
+                    *FAULT_CHECKS,
+                ]
             ],
             "observations": [],
         }
@@ -113,7 +132,13 @@ class Evidence:
             "",
             "Result: **" + summary.get("result", "RUNNING") + "**",
             "",
-            "Scope: increment-1 connection, speech and touch; optional idle disconnect/restart.",
+            "Scope: connection, speech and head touch"
+            + (
+                ", plus hand-back and foot-bumper state and events"
+                if metadata.get("hand_foot")
+                else ""
+            )
+            + ". Optional idle disconnect/restart results are listed below.",
             "",
             "| Check | Result |",
             "| --- | --- |",
@@ -434,13 +459,40 @@ class Runner:
         await stream.event("stream.ready", timeout=10)
         return stream
 
-    async def touch(self, streams, label, sensor="front"):
+    async def expect_contact_state(self, sensor_id, state_path, pressed):
+        try:
+            async with asyncio.timeout(1.5):
+                while True:
+                    state = await self.request("GET", "/api/state?include=sensors", schema="State")
+                    group = state["groups"]["sensors"]
+                    value = group["value"]
+                    for part in state_path:
+                        value = value.get(part) if isinstance(value, dict) else None
+                    if group["quality"] == "fresh" and value is pressed:
+                        return
+                    await asyncio.sleep(0.05)
+        except TimeoutError as exc:
+            raise RuntimeError(f"Fresh state did not show {sensor_id} pressed={pressed}") from exc
+
+    async def touch(self, streams, label, sensor="front", *, state_path=None):
         self.evidence.summary["active_check"] = label
-        await self.ask(f"{label}: release all head sensors, then press Enter when ready.")
+        sensor_id = sensor if state_path is not None else "touch.head." + sensor
+        contact = (
+            HAND_FOOT_CONTACTS[sensor]
+            if state_path is not None
+            else f"{sensor.upper()} head sensor"
+        )
+        release = "the selected contact" if state_path is not None else "all head sensors"
+        await self.ask(f"{label}: release {release}, then press Enter when ready.")
         for stream in streams:
             stream.discard_pending()
+        action = (
+            "Press and hold for two seconds, then release"
+            if state_path is not None
+            else "Press and release once"
+        )
         print(
-            f"Now press and release the {sensor.upper()} head sensor once (within 180 seconds).",
+            f"{contact}: {action} (within 180 seconds).",
             flush=True,
         )
 
@@ -449,16 +501,15 @@ class Runner:
             for pressed in (True, False):
                 while True:
                     event = await stream.event("touch.changed", timeout=180)
-                    if event["data"]["sensor"] != "touch.head." + sensor:
+                    if event["data"]["sensor"] != sensor_id:
                         continue
                     if pressed and not event["data"]["pressed"]:
                         continue
                     break
-                require(
-                    event["data"] == {"sensor": "touch.head." + sensor, "pressed": pressed},
-                    "Unexpected head press/release; see recorded events",
-                )
-                result.append(event["data"])
+                require(event["data"]["pressed"] is pressed, "Unexpected contact edge")
+                result.append(pressed)
+                if state_path is not None and stream is streams[0]:
+                    await self.expect_contact_state(sensor_id, state_path, pressed)
             return result
 
         try:
@@ -470,9 +521,25 @@ class Runner:
         self.evidence.passed(label)
         self.evidence.summary.pop("active_check", None)
 
-    async def exercise(self, capabilities):
+    async def exercise(self, capabilities, *, hand_foot=False):
         for name in ("speech.utterances", "touch.changed"):
             require(capabilities["features"][name]["status"] == "available", name + " unavailable")
+        contact_paths = {}
+        if hand_foot:
+            catalog = await self.request("GET", "/api/sensors", schema="Sensors")
+            sensors = {sensor["id"]: sensor for sensor in catalog["items"]}
+            for sensor_id in HAND_FOOT_CONTACTS:
+                self.evidence.summary["active_check"] = contact_check(sensor_id)
+                entry = sensors.get(sensor_id)
+                require(
+                    entry is not None
+                    and entry["state"]["status"] == "available"
+                    and entry["events"]["status"] == "available"
+                    and entry.get("state_path"),
+                    sensor_id + " is unavailable in state or events",
+                )
+                contact_paths[sensor_id] = entry["state_path"]
+            self.evidence.summary.pop("active_check", None)
         await self.ask(
             "This run speaks and cancels speech. No motion, posture or stiffness commands.\n"
             "Use an otherwise idle bridge: priority stop affects all speech. "
@@ -546,6 +613,10 @@ class Runner:
         for sensor in ("front", "middle", "rear"):
             await self.touch(
                 [first, second], "two independent touch subscribers: " + sensor, sensor
+            )
+        for sensor_id, state_path in contact_paths.items():
+            await self.touch(
+                [first, second], contact_check(sensor_id), sensor_id, state_path=state_path
             )
         await first.close()
         self.streams.remove(first)
@@ -744,7 +815,12 @@ async def execute(args, *, ask=prompt):
         datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
     )
     metadata, container = await collect_metadata(args.url, args.container)
-    metadata.update(inspect_only=args.inspect, fault_checks=args.faults, rehearsal=args.rehearsal)
+    metadata.update(
+        inspect_only=args.inspect,
+        fault_checks=args.faults,
+        rehearsal=args.rehearsal,
+        hand_foot=args.hand_foot,
+    )
     evidence = Evidence(directory, metadata)
     print("Results will be saved to " + str(directory.resolve()), flush=True)
     async with httpx.AsyncClient(base_url=args.url, timeout=5, trust_env=False) as http:
@@ -752,7 +828,7 @@ async def execute(args, *, ask=prompt):
         try:
             capabilities = await runner.preflight()
             if not args.inspect:
-                await runner.exercise(capabilities)
+                await runner.exercise(capabilities, hand_foot=args.hand_foot)
                 await runner.cleanup()
                 if args.faults:
                     await runner.faults(container)
@@ -812,6 +888,11 @@ def main():
         "--faults", action="store_true", help="Also guide idle network/restart checks"
     )
     parser.add_argument(
+        "--hand-foot",
+        action="store_true",
+        help="Also verify hand-back and foot-bumper state and events",
+    )
+    parser.add_argument(
         "--container", default="nao-bridge", help="Local Docker container name for evidence/restart"
     )
     parser.add_argument(
@@ -821,8 +902,10 @@ def main():
         "--output", type=Path, help="Optional new results directory; default is automatic"
     )
     args = parser.parse_args()
-    if args.inspect and args.faults:
-        parser.error("--faults cannot be combined with --inspect")
+    if args.inspect and (args.faults or args.hand_foot):
+        parser.error(
+            "--inspect runs preflight only. Use --faults or --hand-foot with a guided run."
+        )
     origin = httpx.URL(args.url)
     if (
         origin.scheme not in {"http", "https"}

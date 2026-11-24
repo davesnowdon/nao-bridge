@@ -88,6 +88,18 @@ Results go into the same report; no separate monitor or manual result recording
 is needed. These checks run while idle; in-flight/process-freeze/load tests remain
 listed as outside this run's scope.
 
+## Optional hand and foot contacts
+
+```bash
+uv run --project server python scripts/hardware_acceptance.py --hand-foot
+```
+
+After the head sensors, the script guides you through the back of each hand and
+the front of each foot bumper. Hold each contact for about two seconds. It
+checks the sensor IDs and state paths advertised by the bridge, then verifies
+press and release in fresh state and in both SSE subscriptions. The report
+identifies each of the four contacts by its public sensor ID.
+
 For connection checks only, use `--inspect`. For a simulated backend, use
 `--rehearsal`; the report is prominently labelled as a rehearsal. `--output DIR`
 lets you choose a new results directory but is not required. Existing results are

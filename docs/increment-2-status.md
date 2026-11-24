@@ -6,6 +6,10 @@ the first contact-sensor change. Physical motion, controlled hold, and source
 sampling rates remain unverified until hardware acceptance; discovery retains
 `hardware_verified: false`.
 
+Use the guided `--hand-foot` checks to verify each hand-back and foot-bumper
+contact in fresh state and two simultaneous SSE streams on the candidate image.
+[Hardware acceptance runner](hardware-acceptance.md#optional-hand-and-foot-contacts)
+
 | Deliverable | Software status | Physical acceptance |
 | --- | --- | --- |
 | Hand/foot state, dedicated events, sensor discovery | Implemented; unit/client/raw-HTTP and native container checks pass | Native hand-back and foot probes recorded; integrated API pending |

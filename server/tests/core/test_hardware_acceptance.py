@@ -32,6 +32,7 @@ def options(url, output=None, **overrides):
                 "output": output,
                 "inspect": False,
                 "faults": False,
+                "hand_foot": False,
                 "container": "nao-bridge",
                 "rehearsal": True,
             }
@@ -52,21 +53,25 @@ async def test_preflight_refuses_simulation_without_mutations(socket_rig, tmp_pa
         evidence.file.close()
 
 
-@pytest.mark.parametrize("answer", ["y", "n", "s"])
-async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, answer):
+@pytest.mark.parametrize(
+    ("answer", "hand_foot"), [("y", False), ("y", True), ("n", False), ("s", False)]
+)
+async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, answer, hand_foot):
     touches = []
     output = tmp_path / "run"
     try:
         async with socket_rig(lease_seconds=1.2) as (url, core, backend):
 
-            async def touch(sensor):
+            async def touch(sensor, hold=0):
                 await asyncio.sleep(0.05)
-                other = "middle" if sensor == "front" else "front"
-                await backend.touch_changed("touch.head." + other, True)
-                await backend.touch_changed("touch.head." + other, False)
-                await backend.touch_changed("touch.head." + sensor, False)
-                await backend.touch_changed("touch.head." + sensor, True)
-                await backend.touch_changed("touch.head." + sensor, False)
+                other = "touch.head.middle" if sensor == "touch.head.front" else "touch.head.front"
+                await backend.touch_changed(other, True)
+                await backend.touch_changed(other, False)
+                await backend.touch_changed(sensor, False)
+                await backend.touch_changed(sensor, True)
+                if hold:
+                    await asyncio.sleep(hold)
+                await backend.touch_changed(sensor, False)
 
             async def ask(message):
                 if "start the cancel check" in message or "start the stop check" in message:
@@ -75,10 +80,17 @@ async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, ans
                     backend.duration = 0.01
                 if "release all head sensors" in message:
                     sensor = next((s for s in ("middle", "rear") if s in message), "front")
-                    touches.append(asyncio.create_task(touch(sensor)))
+                    touches.append(asyncio.create_task(touch("touch.head." + sensor)))
+                if "release the selected contact" in message:
+                    sensor = next(
+                        sensor_id
+                        for sensor_id in hardware.HAND_FOOT_CONTACTS
+                        if sensor_id in message
+                    )
+                    touches.append(asyncio.create_task(touch(sensor, hold=0.35)))
                 return answer if "[y=yes" in message else ""
 
-            result = await hardware.execute(options(url, output), ask=ask)
+            result = await hardware.execute(options(url, output, hand_foot=hand_foot), ask=ask)
             await asyncio.gather(*touches)
             assert result == {"y": 0, "n": 1, "s": 2}[answer]
             assert len(backend.calls) == (1 if answer == "n" else 6)
@@ -89,6 +101,12 @@ async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, ans
             verdict = {"y": "PASS", "n": "FAIL", "s": "INCOMPLETE"}[answer]
             assert summary["result"] == "REHEARSAL " + verdict
             assert len(summary["observations"]) == (1 if answer == "n" else 4)
+            if hand_foot:
+                checks = {check["name"]: check["result"] for check in summary["checks"]}
+                assert all(
+                    checks[hardware.contact_check(sensor_id)] == "passed"
+                    for sensor_id in hardware.HAND_FOOT_CONTACTS
+                )
             report = (output / "report.md").read_text()
             assert "REHEARSAL " + verdict in report and "network loss | NOT TESTED" in report
             assert "requires_manual_review" not in report
