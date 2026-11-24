@@ -417,6 +417,40 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "vision/observers", 202)
 
+    @app.post("/api/vision/trackers")
+    async def create_tracker(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "VisionTrackerCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/trackers",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.start_face_tracker(owner),
+        )
+        return created(result, "vision/trackers", 201)
+
+    @app.get("/api/vision/trackers/{tracker_id}")
+    async def get_tracker(request: Request, tracker_id: str) -> dict[str, Any]:
+        query(request, set())
+        return core.tracker_view(core.tracker(tracker_id, session(request, False).public["id"]))
+
+    @app.post("/api/vision/trackers/{tracker_id}/stop")
+    async def stop_tracker(request: Request, tracker_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        op = core.tracker(tracker_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/trackers/" + tracker_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.stop_face_tracker(op),
+        )
+        return created(result, "vision/trackers", 202)
+
     @app.get("/api/assets")
     async def list_assets(request: Request) -> dict[str, Any]:
         query(request, {"cursor", "limit"})
@@ -893,6 +927,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     if name == "sensor.observer_changed"
                     else core.capabilities()["features"]["vision.observers"]
                     if name in {"vision.observer_changed", "vision.detections"}
+                    else core.capabilities()["features"]["vision.face_tracking"]
+                    if name == "vision.tracker_changed"
                     else core.capabilities()["features"]["recordings"]
                     if name == "recording.changed"
                     else core.capabilities()["features"]["assets"]

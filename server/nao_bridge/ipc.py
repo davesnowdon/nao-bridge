@@ -519,6 +519,9 @@ class AgentBackend:
     async def configure_people(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._rpc("command", "people", payload, timeout=5)
 
+    async def track_face(self, operation_id: str, session_id: str) -> dict[str, Any]:
+        return await self._rpc("command", "face_track", {}, session_id, operation_id, timeout=None)
+
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]:

@@ -93,7 +93,10 @@ ORDINARY_KINDS = (
     | SPEECH_KINDS
 )
 CONTROL_KINDS = {CONTROL_KIND, VELOCITY_KIND}
-NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS | {PLAYBACK_KIND}
+TRACKER_KIND = "vision.face_tracking"
+TRACKER_CHANGED = "vision.tracker_changed"
+TRACKER_RESOURCES = ["joint.HeadYaw", "joint.HeadPitch"]
+NATIVE_KINDS = ORDINARY_KINDS | CONTROL_KINDS | {PLAYBACK_KIND, TRACKER_KIND}
 MOTION_KINDS = NATIVE_KINDS - {PLAIN_SPEECH, LIGHT_KIND, PLAYBACK_KIND}
 EVENT_TYPES = {
     "stream.ready": "StreamReady",
@@ -113,6 +116,7 @@ EVENT_TYPES = {
     "sensor.observer_changed": "SensorObserver",
     VISION_OBSERVER_CHANGED: "VisionObserver",
     DETECTIONS: "VisionDetections",
+    TRACKER_CHANGED: "VisionTracker",
     THRESHOLD_EVENT: "SensorThresholdChanged",
     "recording.changed": "Recording",
     "asset.created": "Asset",
@@ -176,6 +180,7 @@ class Operation:
     native_slots: int = 0
     restore_on_close: bool = False
     asset_id: str | None = None
+    tracker_state: str | None = None
 
 
 @dataclass
@@ -292,7 +297,7 @@ class Core:
 
     def emit(self, kind: str, data: dict[str, Any], session_id: str | None = None) -> None:
         event = self.event(kind, data)
-        if kind == "operation.changed":
+        if kind in {"operation.changed", TRACKER_CHANGED}:
             event["operation_id"] = data["id"]
         for sub in self.subscriptions.values():
             if not sub.buffer or sub.buffer.closed or kind not in sub.public["events"]:
@@ -360,6 +365,19 @@ class Core:
             self.sensor_observers.observation(data)
         elif kind in {"faces.detections", "landmarks.detections", "people.detections"}:
             self.vision_observers.observation(kind.split(".", 1)[0], data)
+        elif kind == "tracker.state":
+            operation_id, state = data.get("operation_id"), data.get("state")
+            op = self.operations.get(operation_id) if isinstance(operation_id, str) else None
+            if (
+                op
+                and op.public["kind"] == TRACKER_KIND
+                and op.public["status"] == "running"
+                and op.public["connection_generation"] == self.generation
+                and state in ("searching", "tracking", "lost")
+                and state != op.tracker_state
+            ):
+                op.tracker_state = state
+                self.emit(TRACKER_CHANGED, self.tracker_view(op), op.public["session_id"])
         elif kind == "velocity_control.changed":
             operation = self.operations.get(data.get("operation_id", ""))
             if operation and operation.public["kind"] == VELOCITY_KIND:
@@ -556,6 +574,14 @@ class Core:
                 "vision.faces": feature(self.vision_observers.available("faces")),
                 "vision.landmarks": feature(self.vision_observers.available("landmarks")),
                 "vision.people": feature(self.vision_observers.available("people")),
+                "vision.face_tracking": {
+                    **feature(
+                        available and bool(self.info.get("face_tracker", {}).get("available"))
+                    ),
+                    "reason": self.info.get("face_tracker", {}).get(
+                        "reason", "not_connected_or_discovered"
+                    ),
+                },
                 "vision.previews": feature(self.camera_previews.available()),
                 "vision.captures": feature(
                     available and bool(self.info.get("cameras")) and self.recordings.available()
@@ -1184,8 +1210,71 @@ class Core:
         self.update(op, status="running", started_at=utc())
 
     def update(self, op: Operation, **changes: Any) -> None:
+        previous = self.tracker_view(op)["status"] if op.public["kind"] == TRACKER_KIND else None
         op.public.update(changes)
         self.emit("operation.changed", op.public, op.public["session_id"])
+        if previous is not None:
+            view = self.tracker_view(op)
+            if view["status"] != previous:
+                self.emit(TRACKER_CHANGED, view, op.public["session_id"])
+
+    @staticmethod
+    def tracker_view(op: Operation) -> dict[str, Any]:
+        public = op.public
+        status = {
+            "accepted": "starting",
+            "running": op.tracker_state or "starting",
+            "cancelling": "stopping",
+            "cancelled": "stopped",
+            "succeeded": "stopped",
+            "failed": "failed",
+            "unknown": "unknown",
+        }[public["status"]]
+        return {
+            **{
+                key: public[key]
+                for key in (
+                    "id",
+                    "session_id",
+                    "bridge_instance_id",
+                    "connection_generation",
+                    "error",
+                )
+            },
+            "target": "face",
+            "mode": "head",
+            "status": status,
+            "head_hold": (public.get("result") or {}).get("head_hold"),
+        }
+
+    def tracker(self, tracker_id: str, sid: str) -> Operation:
+        op = self.operation(tracker_id, sid)
+        if op.public["kind"] != TRACKER_KIND:
+            raise BridgeError("not_found", "Unknown tracker", 404)
+        return op
+
+    def start_face_tracker(self, session: Session) -> dict[str, Any]:
+        if self.connection != "connected":
+            raise BridgeError("robot_unavailable", "Robot is not connected", 503)
+        capability = self.info.get("face_tracker", {})
+        if not capability.get("available"):
+            raise BridgeError(
+                "unsupported",
+                "Head-only face tracking is unavailable",
+                422,
+                details={"reason": capability.get("reason")},
+            )
+        self.require_joint_motion(TRACKER_RESOURCES)
+        op = self.new_operation(session, TRACKER_KIND, TRACKER_RESOURCES)
+        view = self.tracker_view(op)
+        self.emit(TRACKER_CHANGED, view, op.public["session_id"])
+        op.task = self.spawn(self.run_native(op, {}))
+        return copy.deepcopy(view)
+
+    def stop_face_tracker(self, op: Operation) -> dict[str, Any]:
+        if op.public["status"] not in TERMINAL:
+            self.request_native_cancel(op)
+        return self.tracker_view(op)
 
     def finish(
         self,
@@ -1884,7 +1973,9 @@ class Core:
                 if op.public["kind"] in MOTION_ACTIONS
                 else self.backend.trajectory
             )
-            if op.public["kind"] == PLAYBACK_KIND:
+            if op.public["kind"] == TRACKER_KIND:
+                result = await self.backend.track_face(op.public["id"], op.public["session_id"])
+            elif op.public["kind"] == PLAYBACK_KIND:
                 store = self.recordings.store
                 assert store is not None
                 result = await self.backend.play_audio(
@@ -1982,12 +2073,15 @@ class Core:
                 if item.operation is op:
                     self.recordings.stop(item, reason="cancelled", cancelled=True)
                     return copy.deepcopy(op.public)
+        self.request_native_cancel(op)
+        return copy.deepcopy(op.public)
+
+    def request_native_cancel(self, op: Operation) -> None:
         if op.public["status"] == "accepted":
             self.finish(op, "cancelled", {"dispatched": False})
         elif op.public["status"] != "cancelling":
             self.update(op, status="cancelling")
             op.cancel_task = self.spawn(self.cancel_native(op))
-        return copy.deepcopy(op.public)
 
     async def cancel_native(self, op: Operation) -> bool:
         try:
@@ -2047,7 +2141,8 @@ class Core:
             return
         result = stopped.get("results", {}).get(op.public["id"])
         if op.public["kind"] == LIGHT_KIND or (
-            op.public["kind"] in {ANIMATED_SPEECH, BEHAVIOR_RUN, GESTURE_KIND, PLAYBACK_KIND}
+            op.public["kind"]
+            in {ANIMATED_SPEECH, BEHAVIOR_RUN, GESTURE_KIND, PLAYBACK_KIND, TRACKER_KIND}
             and isinstance(result, dict)
         ):
             result = (
@@ -2689,6 +2784,8 @@ class Core:
                 recover.append("sensor_observers")
             if {DETECTIONS, VISION_OBSERVER_CHANGED} & events:
                 recover.append("vision_observers")
+            if TRACKER_CHANGED in events:
+                recover.append("vision_trackers")
             if "asset.created" in sub.public["events"]:
                 recover.append("assets")
             initial.append(

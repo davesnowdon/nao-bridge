@@ -9,7 +9,7 @@ import uuid
 import warnings
 from collections import deque
 from typing import Any, Literal, TypeVar
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 from pydantic import ValidationError
@@ -58,11 +58,12 @@ from .models import (
     StreamNotice,
     SubscriptionData,
     VisionObserverData,
+    VisionTrackerData,
     WireModel,
 )
 from .previews import AsyncCameraPreview
 from .recordings import AsyncRecordings
-from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
+from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver, AsyncVisionTracker
 from .sequences import sequence_document
 from .sse import SSEParser
 from .trajectory import Trajectory
@@ -604,6 +605,29 @@ class AsyncVision:
             key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
         )
         return AsyncVisionObserver(self._nao, decode(VisionObserverData, value))
+
+    async def track(
+        self, target: str = "face", *, idempotency_key: str | None = None
+    ) -> AsyncVisionTracker:
+        await self._nao._ensure_session()
+        result = await self._nao._request(
+            "POST",
+            "/api/vision/trackers",
+            body={"target": target},
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        return AsyncVisionTracker(self._nao, decode(VisionTrackerData, result))
+
+    async def get_tracker(self, tracker_id: str) -> AsyncVisionTracker:
+        if self._nao.session_id is None:
+            raise SessionLost("A tracker must belong to the current client session")
+        data = decode(
+            VisionTrackerData,
+            await self._nao._request("GET", "/api/vision/trackers/" + quote(tracker_id, safe="")),
+        )
+        if data.id != tracker_id or data.session_id != self._nao.session_id:
+            raise ProtocolError("Tracker identity changed")
+        return AsyncVisionTracker(self._nao, data)
 
     async def get_observer(self, observer_id: str) -> AsyncVisionObserver:
         if self._nao.session_id is None:

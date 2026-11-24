@@ -362,6 +362,20 @@ class VisionObserverData(WireModel):
     error: ErrorDetail | None
 
 
+class VisionTrackerData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    target: Literal["face"]
+    mode: Literal["head"]
+    status: Literal[
+        "starting", "searching", "tracking", "lost", "stopping", "stopped", "failed", "unknown"
+    ]
+    head_hold: dict[str, Any] | None
+    error: ErrorDetail | None
+
+
 class CameraTimestamp(WireModel):
     clock: Literal["naoqi_camera"]
     seconds: int = Field(ge=0, le=9007199254740991)

@@ -21,6 +21,7 @@ from speaker import Speaker
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
 from landmarks import EVENT as LANDMARK_EVENT, LandmarkDetector, FixtureLandmarks
 from people import EVENT as PEOPLE_EVENT, PeopleDetector, FixturePeople
+from tracker import FaceTracker, FixtureTracker
 from lights import Lights, FixtureLights
 from behaviors import EVENT as BEHAVIOR_EVENT, Behaviors, FixtureBehaviors
 from velocity import MAX_ROTATION, MAX_TRANSLATION
@@ -55,6 +56,7 @@ class NativeDriver(object):
     animated_speech_stop_verified = False
     behavior_stop_verified = False
     gestures_verified = False
+    tracker_stop_verified = False
 
     def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
@@ -83,6 +85,7 @@ class NativeDriver(object):
         self.faces = None
         self.landmarks = None
         self.people = None
+        self.tracker = None
         self.lights = None
         self.behaviors = None
         self.passive_sensors = None
@@ -172,6 +175,10 @@ class NativeDriver(object):
         self.description["landmarks"] = self.landmarks.catalog
         self.people = PeopleDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
         self.description["people"] = self.people.catalog
+        tracker_safety = self.safety_motion
+        self.tracker = FaceTracker(self.session, self.tracker_stop_verified and self.joint_control_available(),
+                                   self.require_stiff, lambda names: self.hold_joints(names, tracker_safety))
+        self.description["face_tracker"] = self.tracker.catalog
         self.lights = Lights(self.session, self.memory, self.call)
         self.description["lights"] = self.lights.catalog()
         self.discover_animated_speech()
@@ -360,15 +367,16 @@ class NativeDriver(object):
     def set_joint_target(self, payload):
         return self.motion.motion.setAngles(payload["names"], payload["angles"], payload["speed"], _async=True)
 
-    def hold_joints(self, names):
+    def hold_joints(self, names, safety_motion=None):
+        motion = safety_motion if safety_motion is not None else self.safety_motion
         start = monotonic()
-        angles = self.safety_motion.getAngles(names, True, _async=True).value(150)
+        angles = motion.getAngles(names, True, _async=True).value(150)
         if (len(angles) != len(names) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool)
                 and v == v and abs(v) != float("inf") for v in angles) or monotonic() - start > 0.15):
             raise ValueError("Fresh measured joint targets unavailable for hold")
         payload = {"names": names, "angles": angles, "speed": 0.1}
         self.validate_joint_target(payload)
-        self.safety_motion.setAngles(names, angles, 0.1, _async=True).value(150)
+        motion.setAngles(names, angles, 0.1, _async=True).value(150)
         return {"required": True, "confirmed": bool(self.joint_hold_verified),
                 "mechanism": "fresh_measured_target", "speed": 0.1,
                 "acquisition_to_confirmation_ms": (monotonic() - start) * 1000}
@@ -438,6 +446,9 @@ class NativeDriver(object):
         if self.people:
             self.people.close()
             self.people = None
+        if self.tracker:
+            self.tracker.cleanup()
+            self.tracker = None
         if self.camera:
             self.camera.invalidate()
             self.camera.cleanup()
@@ -564,6 +575,7 @@ class FixtureDriver(NativeDriver):
     animated_speech_stop_verified = True
     behavior_stop_verified = True
     gestures_verified = True
+    tracker_stop_verified = True
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
@@ -584,6 +596,7 @@ class FixtureDriver(NativeDriver):
         self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
         self.landmarks_impl = qi.multiThreaded()(FixtureLandmarks)(self.memory_impl)
         self.people_impl = qi.multiThreaded()(FixturePeople)(self.memory_impl)
+        self.tracker_impl = FixtureTracker()
         self.lights_impl = qi.multiThreaded()(FixtureLights)(self.memory_impl)
         self.behaviors_impl = qi.multiThreaded()(FixtureBehaviors)(self.memory_impl)
         self.face_sequence = 0
@@ -602,6 +615,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALFaceDetection", self.faces_impl)
         self.server.registerService("ALLandMarkDetection", self.landmarks_impl)
         self.server.registerService("ALPeoplePerception", self.people_impl)
+        self.server.registerService("ALTracker", self.tracker_impl)
         self.server.registerService("ALLeds", self.lights_impl)
         self.server.registerService("ALBehaviorManager", self.behaviors_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)

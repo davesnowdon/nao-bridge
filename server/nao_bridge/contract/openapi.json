@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.23.0",
+    "version": "1.24.0",
     "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots. Increment 4 begins with discovered light groups and state. Speech options are discoverable and animated speech is available in fixtures. Installed behavior discovery and observed running sets are available. Built-in nod, shake and wave gestures are fixture-gated. Portable sequence documents can be validated without executing actions. Validated sequences reserve resources and expose each child operation."
   },
   "servers": [
@@ -2921,6 +2921,204 @@
         "description": "On success the operation result is a CameraCaptureResult with the asset ID and acquisition metadata."
       }
     },
+    "/vision/trackers": {
+      "post": {
+        "operationId": "createVisionTracker",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionTracker"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionTrackerCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/vision/trackers/{tracker_id}": {
+      "get": {
+        "operationId": "getVisionTracker",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionTracker"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tracker_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ]
+      }
+    },
+    "/vision/trackers/{tracker_id}/stop": {
+      "post": {
+        "operationId": "stopVisionTracker",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionTracker"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tracker_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
     "/vision/observers": {
       "post": {
         "operationId": "createVisionObserver",
@@ -4271,6 +4469,12 @@
       },
       "CameraCaptureMetadata": {
         "$ref": "schemas.json#/$defs/CameraCaptureMetadata"
+      },
+      "VisionTrackerCreate": {
+        "$ref": "schemas.json#/$defs/VisionTrackerCreate"
+      },
+      "VisionTracker": {
+        "$ref": "schemas.json#/$defs/VisionTracker"
       },
       "VisionObserver": {
         "$ref": "schemas.json#/$defs/VisionObserver"

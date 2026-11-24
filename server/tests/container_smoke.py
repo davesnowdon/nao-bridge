@@ -661,6 +661,35 @@ async def check_native_controls():
             "Native people observation: camera filter, optional range and owned teardown passed",
             flush=True,
         )
+        tracker_id = uuid.uuid4().hex
+        assert info["face_tracker"]["available"]
+        tracker = asyncio.create_task(backend.track_face(tracker_id, "fixture-tracker"))
+        states = []
+        try:
+            async with asyncio.timeout(4):
+                while not states or states[-1] != "lost":
+                    update = state.get("tracker.state", {})
+                    if (
+                        update.get("operation_id") == tracker_id
+                        and update.get("state") not in states
+                    ):
+                        states.append(update["state"])
+                    assert not tracker.done()
+                    await asyncio.sleep(0.01)
+            assert states == ["searching", "tracking", "lost"] and all(
+                not task.done() for task in blocked
+            )
+        finally:
+            stopped_tracker = await backend.stop(operation_id=tracker_id)
+            tracker_result = await asyncio.wait_for(tracker, 3)
+        assert (
+            tracker_id in stopped_tracker["confirmed_ids"]
+            and tracker_result["head_hold"]["confirmed"]
+        )
+        print(
+            "Native face tracker: detection states, scoped stop and measured hold passed",
+            flush=True,
+        )
         assert [camera["id"] for camera in info["cameras"]] == ["top", "bottom"]
         for camera, size, color in (
             ("top", "320x240", b"\x00\x80\xff"),

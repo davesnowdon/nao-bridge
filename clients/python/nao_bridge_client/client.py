@@ -36,6 +36,7 @@ from .models import (
     StreamNotice,
     SubscriptionData,
     VisionObserverData,
+    VisionTrackerData,
 )
 from .previews import AsyncCameraPreview, CameraPreviewFrame
 from .recordings import AsyncRecording
@@ -574,6 +575,17 @@ class Vision:
             ),
         )
 
+    def track(self, target: str = "face", *, idempotency_key: str | None = None) -> VisionTracker:
+        return VisionTracker(
+            self._nao,
+            self._nao._run(self._nao._async.vision.track(target, idempotency_key=idempotency_key)),
+        )
+
+    def get_tracker(self, tracker_id: str) -> VisionTracker:
+        return VisionTracker(
+            self._nao, self._nao._run(self._nao._async.vision.get_tracker(tracker_id))
+        )
+
     def get_observer(self, observer_id: str) -> VisionObserver:
         return VisionObserver(
             self._nao, self._nao._run(self._nao._async.vision.get_observer(observer_id))
@@ -980,6 +992,10 @@ class SensorObserver(_Observer[SensorObserverData]):
 
 
 class VisionObserver(_Observer[VisionObserverData]):
+    pass
+
+
+class VisionTracker(_Observer[VisionTrackerData]):
     pass
 
 

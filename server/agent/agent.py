@@ -25,6 +25,7 @@ from sonar import valid_configuration as valid_sonar
 from camera import CameraError, CameraUnknown, handoff, handoff_feed, valid_capture, valid_capture_id, valid_feed
 from microphone import MicrophoneError, MicrophoneUnknown, clear_handoff, handoff as handoff_microphone
 from speaker import SpeakerError, SpeakerUnknown, valid_playback
+from tracker import TrackerError, TrackerUnknown
 from faces import valid_configuration as valid_faces
 from lights import valid_light
 from behaviors import MAX_PAGE as BEHAVIOR_PAGE_SIZE, valid_behavior, valid_name
@@ -39,7 +40,8 @@ COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_moti
                 autonomy=valid_autonomy, restore_autonomy=valid_restoration,
                 camera_capture=valid_capture, camera_feed=valid_feed, light_transition=valid_light,
                 microphone_feed=lambda payload: payload == {},
-                behavior_run=valid_behavior, audio_playback=valid_playback)
+                behavior_run=valid_behavior, audio_playback=valid_playback,
+                face_track=lambda payload: payload == {})
 GUARDED_MOTION = ("walk", "animated_speech", "behavior", "gesture")
 
 
@@ -83,6 +85,7 @@ class Agent(object):
         self.camera_work = queue.Queue(1)
         self.microphone_work = queue.Queue(1)
         self.playback_work = queue.Queue(1)
+        self.tracker_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
@@ -160,7 +163,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "light_transition", "behavior_run", "audio_playback") + tuple(CAPTURE_ACTIONS) and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "light_transition", "behavior_run", "audio_playback", "face_track") + tuple(CAPTURE_ACTIONS) and request.get("session_id") in self.revoked:
             return "fenced_session"
         if request.get("action") == "restore_autonomy":
             fence = self.revoked.get(request.get("session_id"))
@@ -229,6 +232,9 @@ class Agent(object):
                     continue
                 if request["action"] == "audio_playback":
                     self.run_playback(request, record, replies)
+                    continue
+                if request["action"] == "face_track":
+                    self.run_tracker(request, record, replies)
                     continue
                 if request["action"] == "trajectory":
                     self.driver.prepare_trajectory(request["payload"])
@@ -470,6 +476,45 @@ class Agent(object):
         finally:
             done.set()
 
+    def run_tracker(self, request, record, replies):
+        adapter = self.driver.tracker
+        done = record["tracker_done"] = threading.Event()
+
+        def authorized():
+            return (not record.get("stop_requested") and self.driver.connected()
+                    and self.driver.tracker is adapter and self.valid(request, initial=False) is None)
+
+        def dispatch(method, *args):
+            with self.lock:
+                if not authorized() or self.valid(request, initial=record["phase"] == "queued"):
+                    return None
+                record["phase"] = "dispatch_started"
+                return method(*args, _async=True)
+
+        def publish(state):
+            self.observe("tracker.state", {"operation_id": request["id"], "state": state})
+
+        try:
+            if adapter is None:
+                raise TrackerError("unsupported", "Head-only tracking is unavailable")
+            result = adapter.run(authorized, dispatch, publish)
+            result["dispatched"] = record["phase"] != "queued"
+            result["backend"] = "naoqi"
+            with self.lock:
+                record.update(status="completed", result=result, finished=monotonic())
+            self.reply(replies, request, result=result)
+        except ValueError as error:
+            with self.lock:
+                record.update(status="rejected", finished=monotonic())
+            self.reply(replies, request, "rejected", code=getattr(error, "code", "unsupported"), message=str(error))
+        except Exception as error:
+            with self.lock:
+                record.update(status="unknown", finished=monotonic())
+            message = str(error) if isinstance(error, TrackerUnknown) else "Native tracker outcome is unconfirmed"
+            self.reply(replies, request, "unknown", message=message)
+        finally:
+            done.set()
+
     def stop(self, request):
         with self.lock:
             payload = request.get("payload", {}) if request else {}
@@ -512,7 +557,7 @@ class Agent(object):
                         and (not scope
                              or scope == "locomotion" and record.get("motion_kind") == "walk"
                              or scope == "all" and (
-                                 record.get("action") in ("trajectory", "motion_action") + AUTONOMY_ACTIONS
+                                 record.get("action") in ("trajectory", "motion_action", "face_track") + AUTONOMY_ACTIONS
                                  or record.get("motion_kind") in ("animated_speech", "behavior")))
                         and record["status"] not in ("completed", "rejected")]
             for _, record in selected:
@@ -590,6 +635,10 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
+            if record.get("action") == "face_track" and record["phase"] != "queued":
+                record["tracker_done"].wait(1.2)
+                (confirmed if record["status"] in ("completed", "rejected") else unresolved).append(key)
+                continue
             if record.get("action") == "audio_playback" and record["phase"] != "queued":
                 record["playback_done"].wait(0.75)
                 (confirmed if record["status"] in ("completed", "rejected") else unresolved).append(key)
@@ -671,7 +720,7 @@ class Agent(object):
                 joint_stop_confirmed=joint_stop_confirmed)
         outcomes = dict((key, self.records[key]["result"]) for key in confirmed
                         if key in self.records and "result" in self.records[key]
-                        and (self.records[key].get("action") in AUTONOMY_ACTIONS + ("light_transition", "audio_playback")
+                        and (self.records[key].get("action") in AUTONOMY_ACTIONS + ("light_transition", "audio_playback", "face_track")
                              or self.records[key].get("motion_kind") in ("animated_speech", "behavior", "gesture")))
         if outcomes:
             result["results"] = outcomes
@@ -871,6 +920,7 @@ class Agent(object):
                             else:
                                 requests = (getattr(self, action + "_work") if action in PRODUCERS
                                             else self.playback_work if action == "audio_playback"
+                                            else self.tracker_work if action == "face_track"
                                             else getattr(self, CAPTURE_ACTIONS[action] + "_work")
                                             if action in CAPTURE_ACTIONS else self.work)
                                 try:
@@ -918,6 +968,7 @@ class Agent(object):
 
     def run(self):
         background(self.run_critical, self.worker, self.playback_work)
+        background(self.run_critical, self.worker, self.tracker_work, "tracker")
         background(self.run_critical, self.worker, self.camera_work, "camera")
         background(self.run_critical, self.worker, self.microphone_work, "microphone")
         for name in PRODUCERS:

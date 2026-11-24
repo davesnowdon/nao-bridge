@@ -14,15 +14,18 @@ from .errors import (
     SessionLost,
     VisionObserverError,
     VisionObserverTimeout,
+    VisionTrackerError,
+    VisionTrackerTimeout,
 )
-from .models import CameraPreviewData, SensorObserverData, VisionObserverData
+from .models import CameraPreviewData, SensorObserverData, VisionObserverData, VisionTrackerData
 
 if TYPE_CHECKING:
     from .async_client import AsyncNao
 
 TERMINAL = {"stopped", "failed", "unknown"}
 ObserverData = TypeVar(
-    "ObserverData", bound=SensorObserverData | VisionObserverData | CameraPreviewData
+    "ObserverData",
+    bound=SensorObserverData | VisionObserverData | CameraPreviewData | VisionTrackerData,
 )
 Observer = TypeVar("Observer", bound="AsyncObserver[Any]")
 
@@ -175,3 +178,23 @@ class AsyncVisionObserver(AsyncObserver[VisionObserverData]):
         super().__init__(
             nao, data, VisionObserverData, "vision", VisionObserverError, VisionObserverTimeout
         )
+
+
+class AsyncVisionTracker(AsyncObserver[VisionTrackerData]):
+    def __init__(self, nao: AsyncNao, data: VisionTrackerData):
+        super().__init__(
+            nao,
+            data,
+            VisionTrackerData,
+            "vision",
+            VisionTrackerError,
+            VisionTrackerTimeout,
+            resource="trackers",
+            label="Vision tracker",
+        )
+
+    async def wait_ready(self, *, timeout: float | None = 10) -> AsyncVisionTracker:
+        return await self._wait({"searching", "tracking", "lost"}, timeout)
+
+    async def wait_configured(self, *, timeout: float | None = 10) -> AsyncVisionTracker:
+        return await self.wait_ready(timeout=timeout)

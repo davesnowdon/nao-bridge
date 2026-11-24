@@ -473,6 +473,33 @@ class Probe:
             self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
         stop(observers[1])
 
+    def face_tracker(self):
+        collection = "/api/vision/trackers"
+        headers = {"Idempotency-Key": "fixture-face-tracker"}
+        tracker = self.request(
+            "POST", collection, {}, status=201, schema="VisionTracker", headers=headers
+        )
+        replay = self.request(
+            "POST", collection, {}, status=201, schema="VisionTracker", headers=headers
+        )
+        assert tracker["id"] == replay["id"] and tracker["mode"] == "head"
+        path = collection + "/" + tracker["id"]
+        deadline = time.monotonic() + 5
+        while True:
+            view = self.request("GET", path, schema="VisionTracker")
+            if view["status"] in {"tracking", "lost"}:
+                break
+            assert time.monotonic() < deadline and view["status"] in {"starting", "searching"}, view
+            time.sleep(0.03)
+        self.request("POST", path + "/stop", {}, status=202, schema="VisionTracker")
+        operation = self.wait({"id": tracker["id"]})
+        assert operation["status"] == "cancelled" and set(operation["resources"]) == {
+            "joint.HeadYaw",
+            "joint.HeadPitch",
+        }
+        view = self.request("GET", path, schema="VisionTracker")
+        assert view["status"] == "stopped" and view["head_hold"]["confirmed"]
+
     def light_transitions(self):
         catalog = self.request("GET", "/api/lights", schema="LightCatalog")
         groups = {group["id"]: group for group in catalog["items"]}
@@ -855,6 +882,7 @@ def run(url):
     faces = capabilities["features"]["vision.faces"]["status"] == "available"
     landmarks = capabilities["features"]["vision.landmarks"]["status"] == "available"
     people = capabilities["features"]["vision.people"]["status"] == "available"
+    tracker = capabilities["features"]["vision.face_tracking"]["status"] == "available"
     velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
     behaviors = capabilities["features"]["behaviors.runs"]["status"] == "available"
     gestures = capabilities["features"]["motion.gestures"]["status"] == "available"
@@ -923,6 +951,8 @@ def run(url):
             probe.vision_observers("landmarks")
         if people:
             probe.vision_observers("people")
+        if tracker:
+            probe.face_tracker()
         if behaviors:
             probe.behaviors()
         lights = probe.request("GET", "/api/lights", schema="LightCatalog")["support"]["status"]
@@ -1153,6 +1183,7 @@ def run(url):
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["landmark_observer_sharing_and_detections"] if landmarks else [])
         + (["people_observer_sharing_and_detections"] if people else [])
+        + (["head_only_face_tracker_and_scoped_stop"] if tracker else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])
         + (["animated_speech"] if animated else [])

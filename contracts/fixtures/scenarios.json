@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.23.0",
+  "contract_version": "1.24.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -15,6 +15,22 @@
     "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "head-only tracker lifecycle",
+      "steps": [
+        "Check vision.face_tracking and fresh head joint readiness",
+        "Create a face tracker and follow tracker state",
+        "Stop the tracker and read its operation and hold result"
+      ],
+      "expected": [
+        "The tracker reserves HeadYaw and HeadPitch while active",
+        "Confirmed stop releases only the owned registration and reports head hold",
+        "Uncertain cleanup remains fenced for session recovery"
+      ],
+      "client_decisions": [
+        "Read the tracker status after SSE gaps and keep unknown outcomes visible."
+      ]
+    },
     {
       "name": "managed people observation",
       "steps": [

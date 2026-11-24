@@ -1079,6 +1079,29 @@ and vertical angles in radians, and `distance_m` when the SDK provides a
 positive range. IDs and range are observations scoped to the robot connection.
 `stream.ready` includes `vision.people` readiness.
 
+### Head-only face tracking
+
+Check `vision.face_tracking` in capabilities. When enabled, use
+`POST /api/vision/trackers` with `{"target":"face"}` to start a managed
+head tracker. The robot must be awake with both head joints stiff.
+The tracker reserves `joint.HeadYaw` and `joint.HeadPitch`. Both Python
+clients expose `nao.vision.track()` as a context manager.
+
+The tracker ID is also the ID of its `vision.face_tracking` operation.
+`GET /api/vision/trackers/{id}` and `vision.tracker_changed` report
+`starting`, `searching`, `tracking`, `lost`, `stopping`, and terminal
+`stopped`, `failed`, or `unknown` states. Stop using
+`POST /api/vision/trackers/{id}/stop` with `{}`. After a stream gap, read
+the tracker status. Session close, lease expiry, and a full motion or
+robot stop request teardown.
+
+The agent requires the native tracker to be idle in Head mode with no arm
+effector. It creates its own face registration and removes it during teardown.
+Confirmed stop reports a fresh measured head hold when tracking ran.
+Unconfirmed cleanup keeps the head joints quarantined. The pinned fixture
+enables tracking for software verification. Physical robot capability remains
+disabled pending hardware acceptance.
+
 ## Camera video recording
 
 Check `recordings.camera` in capabilities. It requires a discovered camera,

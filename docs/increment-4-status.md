@@ -312,3 +312,22 @@ fixed camera query, missing range, and teardown. Physical detections and range
 quality on both robot generations remain open. See
 [people observations](http-api.md#people-observations) and the
 [NAOqi 2.1 people perception API](https://doc.aldebaran.com/2-1/naoqi/peopleperception/alpeopleperception-api.html).
+
+### Head-only face tracking
+
+Contract 1.24.0 defines managed face trackers through HTTP, SSE, and both
+Python clients. Tracking reserves both head joints and uses a dedicated
+agent worker. The agent checks Head mode and the effector, confirms an
+idle tracker, and owns only the face registration it creates. Scoped stop
+checks native inactivity, applies a measured hold, and removes that
+registration. Unconfirmed outcomes keep the head reservation fenced.
+
+The pinned fixture reports searching, tracking, and lost states and
+confirms scoped teardown and measured hold with ordinary command workers
+occupied. Raw HTTP covers creation retry, ownership, and the final stop
+result. Local tests cover uncertain cleanup and foreign target preservation.
+
+Real robot dispatch remains disabled until the hardware acceptance checks
+cover head motion, scoped stop, and hold on NAOqi 2.1 and 2.8. See
+[head-only face tracking](http-api.md#head-only-face-tracking) and the
+[NAOqi tracker API](https://doc.aldebaran.com/2-8/naoqi/trackers/altracker-api.html).

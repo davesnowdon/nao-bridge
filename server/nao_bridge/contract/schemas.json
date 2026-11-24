@@ -3801,6 +3801,102 @@
       ],
       "additionalProperties": true
     },
+    "VisionTrackerCreate": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "const": "face",
+          "default": "face"
+        }
+      },
+      "additionalProperties": false
+    },
+    "VisionTracker": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "const": "face"
+        },
+        "mode": {
+          "const": "head"
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "searching",
+            "tracking",
+            "lost",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "head_hold": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "confirmed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "confirmed"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "error",
+        "target",
+        "mode",
+        "status",
+        "head_hold"
+      ],
+      "additionalProperties": true
+    },
     "VisionObserverCreate": {
       "anyOf": [
         {

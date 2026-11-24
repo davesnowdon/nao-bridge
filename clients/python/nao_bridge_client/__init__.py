@@ -13,6 +13,7 @@ from .client import (
     Subscription,
     VelocityControl,
     VisionObserver,
+    VisionTracker,
 )
 from .controls import AsyncJointControl, AsyncVelocityControl
 from .errors import (
@@ -36,6 +37,8 @@ from .errors import (
     StaleState,
     VisionObserverError,
     VisionObserverTimeout,
+    VisionTrackerError,
+    VisionTrackerTimeout,
 )
 from .listeners import AsyncListener
 from .models import (
@@ -92,6 +95,7 @@ from .models import (
     VisionDetections,
     VisionObserverConfiguration,
     VisionObserverData,
+    VisionTrackerData,
 )
 from .previews import (
     AsyncCameraPreview,
@@ -100,7 +104,7 @@ from .previews import (
     CameraPreviewTimeout,
 )
 from .recordings import AsyncRecording
-from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
+from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver, AsyncVisionTracker
 from .sequences import delay, parallel, sequence, sequence_document
 from .trajectory import Keyframe, Trajectory
 
@@ -124,6 +128,11 @@ __all__ = [
     "VisionObserverData",
     "VisionObserverError",
     "VisionObserverTimeout",
+    "AsyncVisionTracker",
+    "VisionTracker",
+    "VisionTrackerData",
+    "VisionTrackerError",
+    "VisionTrackerTimeout",
     "VisionDetections",
     "LandmarkBounds",
     "PersonDetection",

@@ -29,6 +29,7 @@ from .models import (
     TouchChangedData,
     VisionDetections,
     VisionObserverData,
+    VisionTrackerData,
 )
 
 PAYLOADS = {
@@ -39,6 +40,7 @@ PAYLOADS = {
     "sensor.observer_changed": SensorObserverData,
     "vision.observer_changed": VisionObserverData,
     "vision.detections": VisionDetections,
+    "vision.tracker_changed": VisionTrackerData,
     "sensor.threshold_changed": SensorThresholdChangedData,
     "speech.recognized": SpeechRecognizedData,
     "recording.changed": RecordingData,

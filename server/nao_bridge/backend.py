@@ -57,6 +57,7 @@ class Backend(Protocol):
     async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_landmarks(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_people(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def track_face(self, operation_id: str, session_id: str) -> dict[str, Any]: ...
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]: ...
@@ -374,6 +375,10 @@ class FakeBackend:
                         "camera": None,
                         "rates_hz": [1, 2, 5] if connected else [],
                     },
+                    "face_tracker": {
+                        "available": connected,
+                        "reason": None if connected else "not_connected",
+                    },
                     "locomotion": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -522,6 +527,27 @@ class FakeBackend:
         self.people = value if value["configuration"] else None
         self.next_people = 0
         return value
+
+    async def track_face(self, operation_id: str, session_id: str) -> dict[str, Any]:
+        running = asyncio.create_task(
+            self._execute(operation_id, session_id, {}, "face_track", delay=3600)
+        )
+        try:
+            while not running.done() and operation_id not in self.active:
+                await asyncio.sleep(0)
+            for state in ("searching", "tracking", "lost"):
+                if running.done() or self.sink is None or not self.connected:
+                    break
+                await self.sink("tracker.state", {"operation_id": operation_id, "state": state})
+                await asyncio.wait({running}, timeout=0.12)
+            result = await running
+            if result.get("dispatched") is not False:
+                result["head_hold"] = {"required": True, "confirmed": True}
+            return result
+        finally:
+            if not running.done():
+                running.cancel()
+                await asyncio.gather(running, return_exceptions=True)
 
     def configure_vision(
         self, payload: dict[str, Any], failure: str | None = None, *, auto_camera: bool = False
@@ -1105,7 +1131,21 @@ class FakeBackend:
             for call in self.calls
             if call["id"] in matched and call["action"] == "behavior_run"
         }
-        outcomes = {**self.autonomy_results, **self.light_results, **behavior_stops}
+        tracker_stops = {
+            call["id"]: {
+                "cancelled": True,
+                "dispatched": True,
+                "head_hold": {"required": True, "confirmed": True},
+            }
+            for call in self.calls
+            if call["id"] in matched and call["action"] == "face_track"
+        }
+        outcomes = {
+            **self.autonomy_results,
+            **self.light_results,
+            **behavior_stops,
+            **tracker_stops,
+        }
         completed = [
             key
             for key in outcomes
