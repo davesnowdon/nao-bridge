@@ -383,8 +383,7 @@ class FakeBackend:
             if self.connected and self.sink:
                 now = time.monotonic()
                 if self.faces and now >= self.next_face:
-                    self.next_face = now + 1 / self.faces["configuration"]["rate_hz"]
-                    await self.sample_vision(now, "faces", self.faces)
+                    await self.sample_face(now)
                 if self.landmarks and now >= self.next_landmark:
                     self.next_landmark = now + 1 / self.landmarks["configuration"]["rate_hz"]
                     await self.sample_vision(now, "landmarks", self.landmarks)
@@ -522,6 +521,11 @@ class FakeBackend:
             "configuration": accepted,
             "status": "active" if accepted else "stopped",
         }
+
+    async def sample_face(self, now: float) -> None:
+        if self.faces is not None:
+            self.next_face = now + 1 / self.faces["configuration"]["rate_hz"]
+            await self.sample_vision(now, "faces", self.faces)
 
     async def sample_vision(self, now: float, kind: str, detector: dict[str, Any]) -> None:
         if self.sink is None:
