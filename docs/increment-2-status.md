@@ -164,6 +164,14 @@ cannot be advertised. No physical robot was contacted; independent sampling-grou
 workers were implemented in the following step; source rate/skew measurements
 remain outstanding.
 
+The `--sample-timing` mode rehearsed the planned measurement against the exact
+increment-2 candidate `1e8cf5d`. One 10.09-second native fixture run captured
+102 fresh SSE frames at 10.01 Hz. The observed sensor, joint, and motion sample
+rates were 7.71, 9.29, and 8.29 Hz, with p95 acquisition-start skew of 101.89 ms.
+The report records group age and coalescing too. Collect the same evidence on
+both robots for physical acceptance.
+[Sampling measurement](hardware-acceptance.md#measure-shared-sampling)
+
 Sampler isolation validation: `make check` passed 262 server/integration and 41
 client tests plus lint/types. The production native container suite passed after
 separating acquisition into four fixed workers. A deliberately blocked real SDK

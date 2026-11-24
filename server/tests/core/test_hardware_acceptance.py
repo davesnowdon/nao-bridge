@@ -34,6 +34,7 @@ def options(url, output=None, **overrides):
                 "faults": False,
                 "hand_foot": False,
                 "hand_foot_only": False,
+                "sample_timing": False,
                 "container": "nao-bridge",
                 "rehearsal": True,
             }
@@ -180,6 +181,58 @@ async def test_hand_foot_only_rehearsal(socket_rig, tmp_path, monkeypatch, has_s
     )
     assert checks["session cleanup"] == "passed"
     assert checks["stop protocol outcome"] == "not tested"
+
+
+def test_sampling_metrics_count_distinct_fresh_acquisitions():
+    samples = []
+    for clock, stamps, stale in [
+        (1000, (980, 970, 960), False),
+        (1100, (980, 970, 960), True),
+        (1200, (1170, 1160, 1150), False),
+    ]:
+        groups = {
+            name: {
+                "quality": "stale" if stale and name == "joints" else "fresh",
+                "sampled_bridge_time_ms": stamp,
+                "age_ms": clock - stamp,
+            }
+            for name, stamp in zip(hardware.TIMING_GROUPS, stamps, strict=True)
+        }
+        samples.append(
+            {"state": {"bridge_time_ms": clock, "groups": groups}, "skipped_samples": int(stale)}
+        )
+    timing = hardware.sampling_metrics(samples, 10)
+    assert timing["delivery_hz"] == 10 and timing["coalesced_samples"] == 1
+    assert timing["groups"]["sensors"] == {
+        "fresh_frames": 3,
+        "distinct_fresh_samples": 2,
+        "observed_hz": 5.26,
+        "age_p95_ms": 120,
+    }
+    assert timing["groups"]["joints"]["fresh_frames"] == 2
+    assert timing["groups"]["joints"]["age_p95_ms"] == 40
+    assert timing["all_groups_fresh_frames"] == 2 and timing["group_start_skew_p95_ms"] == 20
+
+
+async def test_sample_timing_rehearsal(socket_rig, tmp_path, monkeypatch):
+    monkeypatch.setattr(hardware, "TIMING_SECONDS", 0.7)
+
+    async def no_questions(message):
+        pytest.fail(message)
+
+    output = tmp_path / "timing"
+    async with socket_rig() as (url, core, backend):
+        assert (
+            await hardware.execute(options(url, output, sample_timing=True), ask=no_questions) == 0
+        )
+        assert not backend.calls and not core.subscriptions and not core.streams
+
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["result"] == "REHEARSAL PASS"
+    timing = summary["sample_timing"]
+    assert timing["elapsed_s"] >= 0.7 and timing["accepted_rate_hz"] == 10
+    assert all(row["distinct_fresh_samples"] >= 2 for row in timing["groups"].values())
+    assert timing["all_groups_fresh_frames"] and timing["group_start_skew_p95_ms"] >= 0
 
 
 async def test_failed_request_is_recorded_and_never_retried(tmp_path):

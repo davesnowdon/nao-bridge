@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import math
 import platform
 import subprocess
 import sys
@@ -36,10 +37,59 @@ HAND_FOOT_CONTACTS = {
     "bumper.left": "front of the left foot bumper",
     "bumper.right": "front of the right foot bumper",
 }
+TIMING_GROUPS = ("sensors", "joints", "motion")
+TIMING_SECONDS = 10
+TIMING_CHECK = "shared state sampling cadence, age and skew"
 
 
 def contact_check(sensor_id):
     return "state and two SSE subscribers: " + sensor_id
+
+
+def p95_ms(values):
+    return round(sorted(values)[math.ceil(0.95 * len(values)) - 1], 2) if values else None
+
+
+def sampling_metrics(samples, accepted_rate):
+    states = [sample["state"] for sample in samples]
+    duration_ms = states[-1]["bridge_time_ms"] - states[0]["bridge_time_ms"]
+    groups = {}
+    for name in TIMING_GROUPS:
+        fresh = [
+            state["groups"][name] for state in states if state["groups"][name]["quality"] == "fresh"
+        ]
+        stamps = sorted(
+            {
+                group["sampled_bridge_time_ms"]
+                for group in fresh
+                if group["sampled_bridge_time_ms"] is not None
+            }
+        )
+        age = [group["age_ms"] for group in fresh if group["age_ms"] is not None]
+        groups[name] = {
+            "fresh_frames": len(fresh),
+            "distinct_fresh_samples": len(stamps),
+            "observed_hz": round((len(stamps) - 1) * 1000 / (stamps[-1] - stamps[0]), 2)
+            if len(stamps) >= 2
+            else None,
+            "age_p95_ms": p95_ms(age),
+        }
+    skew = []
+    for state in states:
+        group_values = [state["groups"][name] for name in TIMING_GROUPS]
+        stamps = [group["sampled_bridge_time_ms"] for group in group_values]
+        if all(group["quality"] == "fresh" for group in group_values) and None not in stamps:
+            skew.append(max(stamps) - min(stamps))
+    return {
+        "accepted_rate_hz": accepted_rate,
+        "elapsed_s": round(duration_ms / 1000, 3),
+        "frames": len(states),
+        "coalesced_samples": sum(sample["skipped_samples"] for sample in samples),
+        "delivery_hz": round((len(states) - 1) * 1000 / duration_ms, 2),
+        "groups": groups,
+        "all_groups_fresh_frames": len(skew),
+        "group_start_skew_p95_ms": p95_ms(skew),
+    }
 
 
 class ObservationFailed(RuntimeError):
@@ -91,6 +141,7 @@ class Evidence:
                         for sensor in HAND_FOOT_CONTACTS
                         if metadata.get("hand_foot")
                     ),
+                    *([TIMING_CHECK] if metadata.get("sample_timing") else []),
                     *FAULT_CHECKS,
                 ]
             ],
@@ -128,7 +179,9 @@ class Evidence:
         metadata = summary["metadata"]
         robot = summary.get("robot", {})
         scope = "connection, speech and head touch"
-        if metadata.get("hand_foot_only"):
+        if metadata.get("sample_timing"):
+            scope = "shared state sampling over SSE"
+        elif metadata.get("hand_foot_only"):
             scope = "connection, hand-back and foot-bumper state and events"
         elif metadata.get("hand_foot"):
             scope += ", plus hand-back and foot-bumper state and events"
@@ -144,13 +197,40 @@ class Evidence:
         ]
         for check in summary["checks"]:
             lines.append(f"| {check['name']} | {check['result'].upper()} |")
-        if not metadata.get("hand_foot_only"):
+        if not (metadata.get("hand_foot_only") or metadata.get("sample_timing")):
             lines += ["", "## What you observed", ""]
             for item in summary["observations"]:
                 outcome = {"y": "PASS", "n": "FAIL", "s": "NOT OBSERVED"}[item["answer"].lower()]
                 lines.append(f"- {outcome}: {item['question']}")
             if len(summary["observations"]) < 4:
                 lines.append("- Remaining listening checks: NOT TESTED.")
+        if timing := summary.get("sample_timing"):
+            lines += [
+                "",
+                "## Sampling measurements",
+                "",
+                f"{timing['frames']} frames in {timing['elapsed_s']} seconds. "
+                f"Accepted rate {timing['accepted_rate_hz']} Hz. "
+                f"SSE frame rate {timing['delivery_hz']} Hz. "
+                f"{timing['coalesced_samples']} samples coalesced.",
+                "",
+                "| Group | Fresh frames | Distinct fresh samples | Observed Hz | p95 age (ms) |",
+                "| --- | ---: | ---: | ---: | ---: |",
+            ]
+            for name, values in timing["groups"].items():
+                rate = values["observed_hz"] if values["observed_hz"] is not None else "—"
+                age = values["age_p95_ms"] if values["age_p95_ms"] is not None else "—"
+                lines.append(
+                    f"| {name} | {values['fresh_frames']} | {values['distinct_fresh_samples']} | "
+                    f"{rate} | {age} |"
+                )
+            skew = timing["group_start_skew_p95_ms"]
+            if skew is not None:
+                lines += [
+                    "",
+                    f"Acquisition-start skew p95 was {skew} ms "
+                    f"across {timing['all_groups_fresh_frames']} fully fresh frames.",
+                ]
         for field in ("error", "cleanup_error"):
             if field in summary:
                 lines += ["", "## " + field.replace("_", " ").title(), "", summary[field]]
@@ -192,10 +272,11 @@ class Evidence:
 
 
 class Stream:
-    def __init__(self, runner, subscription, reconnect=False):
+    def __init__(self, runner, subscription, reconnect=False, *, include_samples=False):
         self.runner = runner
         self.subscription = subscription
         self.queue = asyncio.Queue(maxsize=256)
+        self.include_samples = include_samples
         self.task = asyncio.create_task(self.read(reconnect))
 
     async def read(self, reconnect):
@@ -230,7 +311,7 @@ class Stream:
                             "sse", subscription=self.subscription["id"], event=event
                         )
                         # Samples remain in the evidence, not in the operator's touch queue.
-                        if event["type"] != "state.sample":
+                        if self.include_samples or event["type"] != "state.sample":
                             self.queue.put_nowait(event)
                     fields, data, size = {}, [], 0
                 elif not line.startswith(":"):
@@ -453,8 +534,8 @@ class Runner:
             key=uuid.uuid4().hex,
         )
 
-    async def open_stream(self, subscription, reconnect=False):
-        stream = Stream(self, subscription, reconnect)
+    async def open_stream(self, subscription, reconnect=False, *, include_samples=False):
+        stream = Stream(self, subscription, reconnect, include_samples=include_samples)
         self.streams.append(stream)
         await stream.event("stream.ready", timeout=10)
         return stream
@@ -570,6 +651,46 @@ class Runner:
         second = await self.open_stream(await self.subscription())
         await self.verify_hand_foot([first, second], contact_paths)
         await self.authority()
+
+    async def measure_sampling(self):
+        self.evidence.summary["active_check"] = TIMING_CHECK
+        await self.start_session()
+        subscription = await self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"samples": [{"groups": list(TIMING_GROUPS), "rate_hz": 10}], "allow_lower_rate": True},
+            status=201,
+            schema="Subscription",
+        )
+        stream = await self.open_stream(subscription, include_samples=True)
+        samples = []
+        async with asyncio.timeout(TIMING_SECONDS + 10):
+            while True:
+                frame = await stream.event("state.sample")
+                sample = frame["data"]
+                self.validate("StateSample", sample)
+                state = sample["state"]
+                require(
+                    state["bridge_instance_id"] == self.robot["bridge_instance_id"]
+                    and state["connection_generation"] == self.robot["connection_generation"],
+                    "Control identity changed during sampling",
+                )
+                samples.append(sample)
+                if (
+                    state["bridge_time_ms"] - samples[0]["state"]["bridge_time_ms"]
+                    >= TIMING_SECONDS * 1000
+                ):
+                    break
+        await self.authority()
+        timing = sampling_metrics(samples, subscription["samples"][0]["rate_hz"])
+        self.evidence.summary["sample_timing"] = timing
+        require(
+            timing["all_groups_fresh_frames"] > 0
+            and all(row["observed_hz"] is not None for row in timing["groups"].values()),
+            "Sampling window did not contain enough fresh observations from all requested groups",
+        )
+        self.evidence.passed(TIMING_CHECK)
+        self.evidence.summary.pop("active_check", None)
 
     async def exercise(self, capabilities, *, hand_foot=False):
         for name in ("speech.utterances", "touch.changed"):
@@ -842,6 +963,7 @@ async def execute(args, *, ask=prompt):
         rehearsal=args.rehearsal,
         hand_foot=args.hand_foot or args.hand_foot_only,
         hand_foot_only=args.hand_foot_only,
+        sample_timing=args.sample_timing,
     )
     evidence = Evidence(directory, metadata)
     print("Results will be saved to " + str(directory.resolve()), flush=True)
@@ -849,7 +971,9 @@ async def execute(args, *, ask=prompt):
         runner = Runner(http, evidence, ask=ask, rehearsal=args.rehearsal)
         try:
             capabilities = await runner.preflight()
-            if args.hand_foot_only:
+            if args.sample_timing:
+                await runner.measure_sampling()
+            elif args.hand_foot_only:
                 await runner.exercise_hand_foot()
             elif not args.inspect:
                 await runner.exercise(capabilities, hand_foot=args.hand_foot)
@@ -874,6 +998,7 @@ async def execute(args, *, ask=prompt):
             failed = evidence.summary["automation"] == "failed" or "n" in answers
             complete = evidence.summary["automation"] == "passed" and (
                 args.hand_foot_only
+                or args.sample_timing
                 or (len(answers) == 4 and all(answer == "y" for answer in answers))
             )
             result = "FAIL" if failed else "PASS" if complete else "INCOMPLETE"
@@ -921,6 +1046,11 @@ def main():
         action="store_true",
         help="Verify only hand-back and foot-bumper state and events",
     )
+    mode.add_argument(
+        "--sample-timing",
+        action="store_true",
+        help="Measure shared state sampling over a ten-second SSE window",
+    )
     parser.add_argument(
         "--container", default="nao-bridge", help="Local Docker container name for evidence/restart"
     )
@@ -931,7 +1061,7 @@ def main():
         "--output", type=Path, help="Optional new results directory; default is automatic"
     )
     args = parser.parse_args()
-    if args.faults and (args.inspect or args.hand_foot_only):
+    if args.faults and (args.inspect or args.hand_foot_only or args.sample_timing):
         parser.error("--faults requires the full guided run.")
     origin = httpx.URL(args.url)
     if (

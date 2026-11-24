@@ -114,6 +114,19 @@ uv run --project server python scripts/hardware_acceptance.py --hand-foot
 The four prompts follow the head sensors. Both modes use the sensor IDs and
 state paths advertised by the bridge, and report each contact by its public ID.
 
+## Measure shared sampling
+
+```bash
+uv run --project server python scripts/hardware_acceptance.py --sample-timing
+```
+
+This mode automatically collects ten seconds of SSE samples. The report
+records the accepted rate, frame rate on the bridge clock, and
+coalesced frames. For sensors, joints, and motion, it counts each fresh
+acquisition timestamp once and reports the observed rate and p95 sample age.
+The skew measurement uses the span between acquisition start timestamps in
+frames where all three groups were fresh. These are bridge acquisition times.
+
 For connection checks only, use `--inspect`. For a simulated backend, use
 `--rehearsal`; the report is prominently labelled as a rehearsal. `--output DIR`
 lets you choose a new results directory but is not required. Existing results are
