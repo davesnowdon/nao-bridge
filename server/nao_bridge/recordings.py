@@ -135,6 +135,20 @@ class Recordings:
     def available(self) -> bool:
         return self.store is not None and not self.faulted
 
+    def require_asset_capacity(self, size: int) -> None:
+        active = self.active()
+        uploads = self.http.uploads
+        used = (
+            sum(asset["size_bytes"] for asset in self.assets.values())
+            + sum(item.public["max_bytes"] for item in active)
+            + sum(uploads.values())
+        )
+        if (
+            size + used > self.core.settings.asset_quota_bytes
+            or len(self.assets) + len(active) + len(uploads) >= self.core.settings.max_assets
+        ):
+            raise BridgeError("storage_full", "Asset capacity is exhausted", 507)
+
     def video_available(self) -> bool:
         return (
             sys.platform == "linux" and self.available() and self.core.camera_previews.available()
@@ -194,14 +208,7 @@ class Recordings:
             or len(self.items) >= settings.max_recording_history
         ):
             raise BridgeError("limit_exceeded", "Recording capacity exhausted", 429)
-        used = sum(asset["size_bytes"] for asset in self.assets.values()) + sum(
-            item.public["max_bytes"] for item in active
-        )
-        if (
-            maximum + used > settings.asset_quota_bytes
-            or len(self.assets) + len(active) >= settings.max_assets
-        ):
-            raise BridgeError("storage_full", "Asset capacity is exhausted", 507)
+        self.require_asset_capacity(maximum)
         operation = self.core.new_operation(session, f"recording.{kind}", [])
         value = {
             "id": uuid.uuid4().hex,

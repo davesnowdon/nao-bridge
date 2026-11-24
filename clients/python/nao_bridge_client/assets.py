@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import stat
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, TypeVar
@@ -20,6 +21,15 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 CHUNK_SIZE = 65536
+MAX_AUDIO_UPLOAD_BYTES = 8 * 1024 * 1024
+
+
+def _read_upload_file(path: Path) -> bytes:
+    with path.open("rb") as file:
+        data = file.read(MAX_AUDIO_UPLOAD_BYTES + 1)
+    if len(data) > MAX_AUDIO_UPLOAD_BYTES:
+        raise BridgeError("payload_too_large", "Audio upload exceeds the WAV byte limit")
+    return data
 
 
 async def _disk(action: Callable[..., T], *args: Any) -> T:
@@ -147,6 +157,30 @@ class AsyncAssets:
 
     async def delete(self, asset_id: str) -> None:
         await self._nao._request("DELETE", "/api/assets/" + quote(asset_id, safe=""))
+
+    async def upload(
+        self, source: str | os.PathLike[str], *, idempotency_key: str | None = None
+    ) -> AssetData:
+        from .async_client import decode
+
+        data = await _disk(_read_upload_file, Path(source))
+        await self._nao._ensure_session()
+        asset = decode(
+            AssetData,
+            await self._nao._request(
+                "POST",
+                "/api/assets",
+                binary=data,
+                key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+            ),
+        )
+        if (
+            asset.content_type != "audio/wav"
+            or asset.size_bytes != len(data)
+            or asset.sha256 != hashlib.sha256(data).hexdigest()
+        ):
+            raise ProtocolError("Uploaded asset metadata did not match the WAV file")
+        return asset
 
     async def download(
         self,

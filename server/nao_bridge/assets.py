@@ -22,7 +22,7 @@ from typing import Any, BinaryIO
 from .contract import parse_json
 from .errors import BridgeError
 from .wav import ASSET_KIND as MICROPHONE_ASSET
-from .wav import seal_pcm
+from .wav import UPLOAD_KIND, seal_pcm
 
 ASSET_ID = re.compile(r"^[0-9a-f]{32}$")
 LOG = logging.getLogger(__name__)
@@ -143,7 +143,8 @@ class AssetStore:
             aid = path.stem
             self._validate_record(aid, record)
             if record["state"] == "deleting" or (
-                record["state"] == "writing" and record["asset"]["kind"] == STILL_IMAGE
+                record["state"] == "writing"
+                and record["asset"]["kind"] in {STILL_IMAGE, UPLOAD_KIND}
             ):
                 self._remove(aid)
                 continue
@@ -321,15 +322,20 @@ class AssetStore:
             return writer
 
     def publish_image(self, png: bytes, metadata: dict[str, Any]) -> dict[str, Any]:
+        return self.publish_blob(STILL_IMAGE, "image/png", png, metadata)
+
+    def publish_blob(
+        self, kind: str, content_type: str, data: bytes | bytearray, metadata: dict[str, Any]
+    ) -> dict[str, Any]:
         writer = self.begin(
-            kind=STILL_IMAGE,
-            content_type="image/png",
-            max_bytes=len(png),
+            kind=kind,
+            content_type=content_type,
+            max_bytes=len(data),
             metadata=metadata,
             expire=False,
         )
         try:
-            writer.write(png)
+            writer.write(data)
             return writer.finalize()
         except Exception:
             with self.lock:
@@ -339,7 +345,7 @@ class AssetStore:
                     self._remove(writer.id)
                 except OSError:
                     self.faulted = True
-                    LOG.exception("Could not remove interrupted still image")
+                    LOG.exception("Could not remove interrupted asset publication")
             raise
 
     def get(self, aid: str) -> dict[str, Any]:
@@ -433,7 +439,7 @@ class AssetWriter:
     def storage_lease_fd(self) -> int:
         return self.store._lease.fileno()
 
-    def write(self, data: bytes) -> None:
+    def write(self, data: bytes | bytearray) -> None:
         with self.store.lock:
             self.store._open()
             if self.file.closed or self.failed:

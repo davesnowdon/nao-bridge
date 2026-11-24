@@ -257,3 +257,15 @@ See [microphone recording](http-api.md#microphone-recording).
 Robot testing needs to verify callback reachability from the default Docker
 deployment, sample timing, and native teardown on NAOqi 2.1 and 2.8.
 See the [NAOqi remote microphone example](https://doc.aldebaran.com/2-5/dev/python/examples/audio/audio_soundprocessing.html).
+
+### WAV audio upload
+
+Contract 1.20.0 accepts bounded PCM WAV uploads as immutable assets. The
+bridge validates RIFF framing, sample format, duration, and frame alignment
+before publication. Uploads share asset quotas and leave robot command
+admission available while storage completes. Both Python clients expose
+upload, and an explicit async retry preserves the original binary request.
+Raw HTTP conformance verifies the upload, digest, identical retry, and
+download in the pinned container. Local tests cover competing requests,
+lost responses, malformed files, byte limits, and storage recovery.
+See [audio upload](http-api.md#audio-upload).

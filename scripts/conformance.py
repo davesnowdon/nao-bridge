@@ -262,6 +262,35 @@ class Probe:
         finally:
             conn.close()
 
+    def upload_audio(self):
+        data = io.BytesIO()
+        with wave.open(data, "wb") as audio:
+            audio.setparams((1, 2, 16000, 0, "NONE", ""))
+            audio.writeframes(b"\x10\x00\xf0\xff" * 80)
+        content = data.getvalue()
+        headers = {
+            "X-Session-ID": self.session,
+            "Content-Type": "audio/wav",
+            "Idempotency-Key": "fixture-wav-upload",
+        }
+        conn = self.connection()
+        try:
+            assets = []
+            for _ in range(2):
+                conn.request("POST", "/api/assets", body=content, headers=headers)
+                response = conn.getresponse()
+                assert response.status == 201
+                asset = json.loads(response.read())
+                self.validate("Asset", asset)
+                assets.append(asset)
+            assert assets[0] == assets[1] and asset["kind"] == "audio.upload"
+            assert asset["sha256"] == hashlib.sha256(content).hexdigest()
+            conn.request("GET", "/api/assets/" + asset["id"] + "/content")
+            response = conn.getresponse()
+            assert response.status == 200 and response.read() == content
+        finally:
+            conn.close()
+
     def wait(self, operation, timeout=5):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -818,6 +847,7 @@ def run(url):
     previews = capabilities["features"]["vision.previews"]["status"] == "available"
     video = capabilities["features"]["recordings.camera"]["status"] == "available"
     microphone = capabilities["features"]["recordings.microphone"]["status"] == "available"
+    audio_upload = capabilities["features"]["assets.audio_upload"]["status"] == "available"
     if robot["backend"] == "native-fixture":
         assert previews, "Native container preview must use the pinned FFmpeg encoder"
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
@@ -1019,6 +1049,8 @@ def run(url):
             probe.camera_recording()
         if microphone:
             probe.microphone_recording()
+        if audio_upload:
+            probe.upload_audio()
         subscription = probe.request(
             "POST",
             "/api/events/subscriptions",
@@ -1093,6 +1125,7 @@ def run(url):
         + (["shared_camera_previews_and_still_capture"] if previews else [])
         + (["camera_recording_asset"] if video else [])
         + (["microphone_recording_asset"] if microphone else [])
+        + (["wav_upload_asset_and_retry"] if audio_upload else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])

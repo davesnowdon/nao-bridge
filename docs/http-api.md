@@ -1105,6 +1105,28 @@ Stopping, cancelling, session close, and lease expiry release the microphone.
 An unconfirmed native stop blocks new recordings in the current connection
 generation. Both Python clients expose `nao.recordings.microphone(duration=...)`.
 
+## Audio upload
+
+Check `assets.audio_upload`, `audio.upload_formats`, and the `max_audio_upload_*`
+limits in robot capabilities. Send a complete WAV as the request body of
+`POST /api/assets` with `Content-Type: audio/wav` and the active `X-Session-ID`.
+The bridge accepts 16-bit PCM with one or two channels and reports the
+supported sample rates. The byte and duration limits are 8 MiB and 300 seconds.
+Upload and validation use bridge storage and can run without robot audio output.
+
+On success, HTTP 201 returns an immutable `audio.upload` asset and a `Location`
+header. The asset metadata includes frame count, sample rate, channels, sample
+width and duration. The original bytes are retained with a checksum and can be
+downloaded through the normal asset endpoint. A malformed WAV returns 422,
+an oversized request returns 413, and insufficient asset space returns 507.
+Interrupted uploads that never finalized are discarded on restart.
+
+An optional `Idempotency-Key` is scoped to the session. Retrying the same key
+with the original bytes returns the same result while its key is retained. A
+different upload with the same key returns 409. Both Python clients expose
+`nao.assets.upload(path)`. The async client supports explicit retry using the
+original bytes after an ambiguous response.
+
 ## Sample recordings and retained assets
 
 Recording storage is enabled by default in Docker; local runs need

@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.19.0",
+  "contract_version": "1.20.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -15,6 +15,21 @@
     "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "bounded WAV upload and retry",
+      "steps": [
+        "Check assets.audio_upload and audio.upload_formats",
+        "POST the WAV bytes with the session header and an idempotency key",
+        "Retry with the original key and bytes and download the asset"
+      ],
+      "expected": [
+        "Both responses identify the same finalized audio.upload asset",
+        "Downloaded bytes and SHA-256 match the uploaded WAV"
+      ],
+      "client_decisions": [
+        "Preserve the original bytes for explicit retry after an ambiguous response."
+      ]
+    },
     {
       "name": "bounded microphone recording",
       "steps": [

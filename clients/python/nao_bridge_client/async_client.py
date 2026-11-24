@@ -204,10 +204,13 @@ class AsyncNao:
         path: str,
         *,
         body: dict[str, Any] | None = None,
+        binary: bytes | None = None,
         key: str | None = None,
         session_id: str | None = None,
     ) -> Any:
         headers = self._headers(session_id)
+        if binary is not None:
+            headers["Content-Type"] = "audio/wav"
         if key is not None:
             headers["Idempotency-Key"] = key
         pending = None
@@ -221,11 +224,14 @@ class AsyncNao:
                 self._identity.bridge_instance_id,
                 self._identity.connection_generation,
                 time.monotonic() + self._history_seconds,
+                binary,
             )
             self.last_pending_request = pending
         for attempt in range(3 if method == "GET" else 1):
             try:
-                response = await self._client().request(method, path, json=body, headers=headers)
+                response = await self._client().request(
+                    method, path, json=body, content=binary, headers=headers
+                )
                 break
             except httpx.TransportError as exc:
                 if method == "GET" and attempt < 2:
@@ -376,7 +382,8 @@ class AsyncNao:
             result = await self._request(
                 request.method,
                 request.path,
-                body=request.body,
+                body=request.body if request.binary is None else None,
+                binary=request.binary,
                 key=request.key,
                 session_id=request.session_id,
             )

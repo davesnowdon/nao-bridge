@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import hashlib
 import logging
 import re
 import threading
@@ -11,11 +12,13 @@ from typing import TYPE_CHECKING, Any
 from starlette.responses import Response, StreamingResponse
 
 from .errors import BridgeError
+from .wav import CONTENT_TYPE, MAX_UPLOAD_BYTES, UPLOAD_KIND, inspect_pcm
 
 if TYPE_CHECKING:
     from .recordings import Recordings
 
 LOG = logging.getLogger(__name__)
+MAX_AUDIO_UPLOADS = 2
 
 
 def byte_range(value: str | None, size: int) -> tuple[int, int] | None:
@@ -136,6 +139,8 @@ class AssetHTTP:
     def __init__(self, manager: Recordings) -> None:
         self.manager = manager
         self.downloads: set[Download] = set()
+        self.upload_reads = 0
+        self.uploads: dict[asyncio.Future, int] = {}
         self.jobs: set[asyncio.Future] = set()
         self.deleting: set[str] = set()
         self.next_expiry = 0.0
@@ -250,6 +255,78 @@ class AssetHTTP:
 
         threading.Thread(target=run, name="asset-maintenance", daemon=True).start()
         return future
+
+    async def upload(
+        self, sid: str, key: str | None, chunks: AsyncIterator[bytes]
+    ) -> dict[str, Any]:
+        self.check()
+        if self.upload_reads >= MAX_AUDIO_UPLOADS:
+            raise BridgeError(
+                "limit_exceeded", "Audio upload capacity exhausted", 429, retryable=True
+            )
+        self.upload_reads += 1
+        try:
+            return await self.receive_upload(sid, key, chunks)
+        finally:
+            self.upload_reads -= 1
+
+    async def receive_upload(
+        self, sid: str, key: str | None, chunks: AsyncIterator[bytes]
+    ) -> dict[str, Any]:
+        content = bytearray()
+        digest = hashlib.sha256()
+        try:
+            async with asyncio.timeout(30):
+                async for chunk in chunks:
+                    if len(content) + len(chunk) > MAX_UPLOAD_BYTES:
+                        raise BridgeError(
+                            "payload_too_large",
+                            "Audio upload exceeds the advertised byte limit",
+                            413,
+                        )
+                    content.extend(chunk)
+                    digest.update(chunk)
+        except TimeoutError as exc:
+            raise BridgeError("upload_timeout", "Audio upload did not finish in time", 408) from exc
+
+        def admit() -> asyncio.Future[dict[str, Any]]:
+            self.manager.core.session(sid)
+            if not self.manager.available():
+                raise BridgeError("storage_unavailable", "Asset storage is unavailable", 503)
+            self.manager.require_asset_capacity(len(content))
+            store = self.manager.store
+            assert store is not None
+
+            def publish() -> dict[str, Any]:
+                try:
+                    meta = inspect_pcm(content)
+                except ValueError as exc:
+                    raise BridgeError("invalid_audio", str(exc), 422) from exc
+                return store.publish_blob(UPLOAD_KIND, CONTENT_TYPE, content, meta)
+
+            def complete(asset: Any, error: Exception | None) -> None:
+                self.uploads.pop(job, None)
+                if error is None:
+                    self.manager.assets[asset["id"]] = asset
+                    self.manager.core.emit("asset.created", asset)
+                elif not isinstance(error, BridgeError):
+                    self.manager.faulted = True
+
+            job = self.submit(publish, complete)
+            self.uploads[job] = len(content)
+            return job
+
+        return await self.manager.core.idempotent(
+            sid,
+            "POST /assets",
+            key,
+            {
+                "content_type": CONTENT_TYPE,
+                "sha256": digest.hexdigest(),
+                "size_bytes": len(content),
+            },
+            admit,
+        )
 
     async def delete(self, aid: str) -> None:
         self.get(aid)

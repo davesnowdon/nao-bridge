@@ -452,6 +452,27 @@
           "type": "object",
           "additionalProperties": true
         },
+        "audio": {
+          "type": "object",
+          "properties": {
+            "upload_formats": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "content_type": { "type": "string" },
+                  "codec": { "type": "string" },
+                  "channels": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+                  "sample_rates_hz": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+                },
+                "required": ["content_type", "codec", "channels", "sample_rates_hz"],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": ["upload_formats"],
+          "additionalProperties": true
+        },
         "autonomy": {
           "type": "object",
           "additionalProperties": {

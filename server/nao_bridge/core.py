@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from . import __version__
+from .asset_http import MAX_AUDIO_UPLOADS
 from .backend import Backend
 from .camera_previews import MAX_PREVIEW_STREAMS, MAX_PREVIEWS, CameraPreviews
 from .config import Settings
@@ -49,6 +50,8 @@ from .thresholds import EVENT as THRESHOLD_EVENT
 from .thresholds import MAX_RULES, Threshold
 from .vision import KIND as CAPTURE_KIND
 from .vision import Vision
+from .wav import CONTENT_TYPE as WAV_CONTENT_TYPE
+from .wav import MAX_UPLOAD_BYTES, MAX_UPLOAD_SECONDS, UPLOAD_SAMPLE_RATES
 
 LOG = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "failed", "cancelled", "unknown"}
@@ -189,6 +192,7 @@ class Idempotent:
     resource_id: str | None = None
     resource_kind: str | None = None
     recovery: bool = False
+    pending: asyncio.Future[dict[str, Any]] | None = None
 
 
 class Core:
@@ -539,6 +543,7 @@ class Core:
                 "recordings.camera": feature(self.recordings.video_available()),
                 "recordings.microphone": feature(self.recordings.microphone_available()),
                 "assets": feature(self.recordings.store is not None),
+                "assets.audio_upload": feature(self.recordings.available()),
                 "vision.cameras": feature(available and bool(self.info.get("cameras"))),
                 "vision.observers": feature(self.face_observers.available()),
                 "vision.previews": feature(self.camera_previews.available()),
@@ -595,6 +600,9 @@ class Core:
                 "max_camera_previews": MAX_PREVIEWS,
                 "max_camera_preview_streams": MAX_PREVIEW_STREAMS,
                 "max_camera_preview_frame_rate": 5,
+                "max_audio_uploads": MAX_AUDIO_UPLOADS,
+                "max_audio_upload_bytes": MAX_UPLOAD_BYTES,
+                "max_audio_upload_seconds": MAX_UPLOAD_SECONDS,
                 "max_joint_controls": 4,
                 "max_velocity_controls": 1,
                 "max_joint_control_ids": 4096,
@@ -604,6 +612,18 @@ class Core:
             },
             "event_types": list(EVENT_TYPES),
             "state_groups": ["sensors", "joints", "motion", "autonomy", "lights"],
+            "audio": {
+                "upload_formats": [
+                    {
+                        "content_type": WAV_CONTENT_TYPE,
+                        "codec": "pcm_s16le",
+                        "channels": [1, 2],
+                        "sample_rates_hz": list(UPLOAD_SAMPLE_RATES),
+                    }
+                ]
+                if self.recordings.available()
+                else [],
+            },
             "autonomy": copy.deepcopy(self.info.get("autonomy", {})),
             "recognition": copy.deepcopy(self.info.get("recognition", {})),
             "sonar": copy.deepcopy(self.info.get("sonar", {})),
@@ -887,7 +907,7 @@ class Core:
 
     def replay_request(
         self, scope: str, route: str, key: str, fingerprint: str
-    ) -> dict[str, Any] | None:
+    ) -> Idempotent | None:
         if len(key) > 128 or not key.isascii() or not key.isprintable():
             raise BridgeError("invalid_request", "Invalid Idempotency-Key")
         retained = self.keys.get((scope, key))
@@ -897,7 +917,7 @@ class Core:
             raise BridgeError(
                 "idempotency_conflict", "Key already used for a different request", 409
             )
-        return copy.deepcopy(retained.response)
+        return retained
 
     def replay_before_preflight(
         self, scope: str, route: str, key: str | None, body: dict[str, Any]
@@ -907,7 +927,8 @@ class Core:
         if not key:
             return None
         self.sweep_keys()
-        return self.replay_request(scope, route, key, canonical(body))
+        retained = self.replay_request(scope, route, key, canonical(body))
+        return copy.deepcopy(retained.response) if retained else None
 
     async def idempotent(
         self,
@@ -915,70 +936,109 @@ class Core:
         route: str,
         key: str | None,
         body: dict[str, Any],
-        create: Callable[[], dict[str, Any]],
+        create: Callable[[], dict[str, Any] | asyncio.Future[dict[str, Any]]],
         recovery: bool = False,
     ) -> dict[str, Any]:
-        stop = route in STOP_ROUTES
         async with self.admission:
             if self.closing:
                 raise BridgeError("dependency_unavailable", "Bridge is shutting down", 503)
             self.sweep_keys()
             fingerprint = canonical(body)
             identity = (scope, key or "")
-            if key:
-                if replayed := self.replay_request(scope, route, key, fingerprint):
-                    return replayed
-                if recovery and not stop:
-                    self.trim_recovery_history(self.settings.max_recovery_operations - 1)
-                capacity = (
-                    self.settings.max_recovery_operations
-                    if recovery
-                    else self.settings.max_idempotency_keys
+            retained = self.replay_request(scope, route, key, fingerprint) if key else None
+            if retained:
+                result = retained.pending if retained.pending is not None else retained.response
+            else:
+                result = self.create_idempotent(identity, route, fingerprint, create, recovery)
+        if isinstance(result, asyncio.Future):
+            result = await asyncio.shield(result)
+        return copy.deepcopy(result)
+
+    def create_idempotent(
+        self,
+        identity: tuple[str, str],
+        route: str,
+        fingerprint: str,
+        create: Callable[[], dict[str, Any] | asyncio.Future[dict[str, Any]]],
+        recovery: bool,
+    ) -> dict[str, Any] | asyncio.Future[dict[str, Any]]:
+        scope, key = identity
+        stop = route in STOP_ROUTES
+        if key:
+            if recovery and not stop:
+                self.trim_recovery_history(self.settings.max_recovery_operations - 1)
+            capacity = (
+                self.settings.max_recovery_operations
+                if recovery
+                else self.settings.max_idempotency_keys
+            )
+            if (
+                not stop
+                and sum(
+                    record.recovery == recovery
+                    and record.fingerprint.split("\n", 1)[0] not in STOP_ROUTES
+                    for record in self.keys.values()
                 )
-                if (
-                    not stop
-                    and sum(
-                        record.recovery == recovery
-                        and record.fingerprint.split("\n", 1)[0] not in STOP_ROUTES
-                        for record in self.keys.values()
-                    )
-                    >= capacity
-                ):
-                    raise BridgeError(
-                        "limit_exceeded", "Idempotency capacity exhausted", 429, retryable=True
-                    )
-            result = create()
-            if stop:
-                for old_key, record in list(self.keys.items()):
-                    if old_key[0] == scope and record.resource_id == result["id"]:
-                        del self.keys[old_key]
-            if key:
-                resource_kind = (
-                    "operation"
-                    if result["id"] in self.operations
-                    else "session"
-                    if result["id"] in self.sessions
-                    else "listener"
-                    if result["id"] in self.listeners.items
-                    else "sensor_observer"
-                    if result["id"] in self.sensor_observers.items
-                    else "vision_observer"
-                    if result["id"] in self.face_observers.items
-                    else "camera_preview"
-                    if result["id"] in self.camera_previews.items
-                    else "recording"
-                    if result["id"] in self.recordings.items
-                    else "subscription"
+                >= capacity
+            ):
+                raise BridgeError(
+                    "limit_exceeded", "Idempotency capacity exhausted", 429, retryable=True
                 )
-                self.keys[identity] = Idempotent(
+        result = create()
+        if isinstance(result, asyncio.Future):
+            if key:
+                record = self.keys[identity] = Idempotent(
                     route + "\n" + fingerprint,
-                    copy.deepcopy(result),
+                    {},
                     self.clock() + self.settings.history_seconds,
-                    result["id"],
-                    resource_kind,
-                    recovery,
+                    recovery=recovery,
+                    pending=result,
                 )
-            return copy.deepcopy(result)
+                result.add_done_callback(lambda job: self.finish_idempotent(identity, record, job))
+            return result
+        if stop:
+            for old_key, record in list(self.keys.items()):
+                if old_key[0] == scope and record.resource_id == result["id"]:
+                    del self.keys[old_key]
+        if key:
+            resource_kind = (
+                "operation"
+                if result["id"] in self.operations
+                else "session"
+                if result["id"] in self.sessions
+                else "listener"
+                if result["id"] in self.listeners.items
+                else "sensor_observer"
+                if result["id"] in self.sensor_observers.items
+                else "vision_observer"
+                if result["id"] in self.face_observers.items
+                else "camera_preview"
+                if result["id"] in self.camera_previews.items
+                else "recording"
+                if result["id"] in self.recordings.items
+                else "subscription"
+            )
+            self.keys[identity] = Idempotent(
+                route + "\n" + fingerprint,
+                copy.deepcopy(result),
+                self.clock() + self.settings.history_seconds,
+                result["id"],
+                resource_kind,
+                recovery,
+            )
+        return result
+
+    def finish_idempotent(
+        self, identity: tuple[str, str], record: Idempotent, job: asyncio.Future[dict[str, Any]]
+    ) -> None:
+        if self.keys.get(identity) is not record:
+            return
+        if job.cancelled() or job.exception() is not None:
+            del self.keys[identity]
+        else:
+            record.pending = None
+            record.response = copy.deepcopy(job.result())
+            record.expires = self.clock() + self.settings.history_seconds
 
     def new_operation(
         self,
@@ -2772,6 +2832,8 @@ class Core:
     def sweep_keys(self) -> None:
         now = self.clock()
         for identity, record in list(self.keys.items()):
+            if record.pending is not None:
+                continue
             rid = record.resource_id or ""
             if record.resource_kind == "operation":
                 op = self.operations.get(rid)

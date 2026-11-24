@@ -1130,6 +1130,13 @@ class Assets:
     def delete(self, asset_id: str) -> None:
         self._nao._run(self._nao._async.assets.delete(asset_id))
 
+    def upload(
+        self, source: str | os.PathLike[str], *, idempotency_key: str | None = None
+    ) -> AssetData:
+        return self._nao._run(
+            self._nao._async.assets.upload(source, idempotency_key=idempotency_key)
+        )
+
     def download(
         self,
         asset_id: str,

@@ -163,6 +163,7 @@ class Capabilities(WireModel):
     state_groups: list[str]
     replay_supported: Literal[False]
     speech: dict[str, Any]
+    audio: dict[str, Any] = Field(default_factory=dict)
     autonomy: dict[str, AutonomySetting] = Field(default_factory=dict)
     motion_events: dict[str, list[str]] = Field(default_factory=dict)
     recognition: dict[str, Any] = Field(default_factory=dict)

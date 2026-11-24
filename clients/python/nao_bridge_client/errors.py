@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .models import (
@@ -173,6 +173,7 @@ class PendingRequest:
     bridge_instance_id: str
     connection_generation: int
     expires_monotonic: float
+    binary: bytes | None = field(default=None, repr=False)
 
 
 class AmbiguousRequest(BridgeError):

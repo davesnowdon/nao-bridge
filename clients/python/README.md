@@ -371,6 +371,12 @@ a session, including while the robot is disconnected. Lists return typed
 `AssetsPage` with `items` and `next_cursor`; page explicitly until the cursor is null.
 Assets may expire or be deleted between listing and downloading.
 
+`assets.upload("clip.wav")` accepts bounded 16-bit PCM WAV files and returns
+typed `AssetData` with the stored asset ID, format and checksum. Use the same
+method with `await` on `AsyncNao`. The bridge advertises supported formats and
+limits under `robot.capabilities()`. If a response is lost, `nao.retry` sends
+the WAV bytes kept in `AmbiguousRequest.request` with the original key.
+
 `assets.download(id, destination, resume=False, overwrite=False)` streams bounded
 chunks, checks length and SHA-256, then atomically publishes the file. It returns
 typed `AssetData`, preserving `partial` status and the recording error. Local disk

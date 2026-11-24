@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import ClientDisconnect
 from starlette.responses import (
     FileResponse,
     HTMLResponse,
@@ -28,6 +29,7 @@ from .core import EVENT_TYPES, Core
 from .errors import BridgeError
 from .events import StreamWriteTimeout
 from .sequences import plan_sequence, sequence_schema
+from .wav import CONTENT_TYPE as WAV_CONTENT_TYPE
 
 LOG = logging.getLogger(__name__)
 DOC_ASSETS = Path(__file__).parent / "static" / "swagger-ui"
@@ -425,6 +427,23 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             "items": copy.deepcopy(page),
             "next_cursor": page[-1]["id"] if len(values) > limit else None,
         }
+
+    @app.post("/api/assets")
+    async def upload_asset(request: Request) -> Response:
+        query(request, set())
+        if (
+            request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            != WAV_CONTENT_TYPE
+        ):
+            raise BridgeError("unsupported_media_type", "Content-Type must be audio/wav", 415)
+        sid = session(request).public["id"]
+        try:
+            asset = await core.recordings.http.upload(
+                sid, request.headers.get("idempotency-key"), request.stream()
+            )
+        except ClientDisconnect as exc:
+            raise BridgeError("upload_incomplete", "Audio upload was interrupted", 400) from exc
+        return created(asset, "assets", 201)
 
     @app.get("/api/assets/{asset_id}")
     async def get_asset(request: Request, asset_id: str) -> dict[str, Any]:
