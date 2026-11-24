@@ -565,13 +565,29 @@ class AsyncVision:
             session_id=owner.id,
             key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
         )
-        data = decode(CameraPreviewData, result)
+        return self._preview_handle(result, owner)
+
+    async def get_preview(self, preview_id: str) -> AsyncCameraPreview:
+        owner = self._nao._session
+        if owner is None:
+            raise SessionLost("A camera preview must belong to the current client session")
+        result = await self._nao._request(
+            "GET", "/api/vision/previews/" + quote(preview_id, safe=""), session_id=owner.id
+        )
+        return self._preview_handle(result, owner, preview_id)
+
+    def _preview_handle(
+        self, value: Any, owner: SessionData, preview_id: str | None = None
+    ) -> AsyncCameraPreview:
+        data = decode(CameraPreviewData, value)
         if (
             data.session_id != owner.id
             or data.bridge_instance_id != owner.bridge_instance_id
             or data.connection_generation != owner.connection_generation
         ):
             raise ProtocolError("Camera preview belongs to a different session or generation")
+        if preview_id is not None and data.id != preview_id:
+            raise ProtocolError("Camera preview ID does not match the request")
         return AsyncCameraPreview(self._nao, data)
 
     async def observe(

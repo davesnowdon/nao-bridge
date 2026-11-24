@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from .contract import SCHEMAS, validate
 from .errors import BridgeError
+from .gestures import ARM_GESTURES
 
 if TYPE_CHECKING:
     from .core import Core, FiniteCommand, Operation, Session
@@ -234,7 +235,7 @@ async def plan_sequence(core: Core, document: Any) -> SequencePlan:
                     )
                 if kind == "move":
                     arguments.setdefault("speed", command.payload["move"]["speed"])
-                elif kind == "gesture" and arguments["name"] == "wave":
+                elif kind == "gesture" and arguments["name"] in ARM_GESTURES:
                     arguments.setdefault("side", "right")
                 elif kind == "say":
                     for key in ("language", "voice"):

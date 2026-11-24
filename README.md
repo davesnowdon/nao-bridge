@@ -16,8 +16,8 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.24.0 replaces the old API without compatibility
-adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
+remain available. The [HTTP/SSE contract](contracts/README.md) replaces the old API.
+[Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
 [Increment-3 work](docs/increment-3-status.md) adds passive inertial, foot-load,
@@ -103,6 +103,10 @@ default. A volume is optional: mount that directory to retain recording assets
 when replacing/removing a container. Its metadata stores files, never sessions or
 operations. Without a mount, assets last only as long as the container filesystem.
 
+For persistent recordings, add `--mount type=volume,source=nao-bridge-assets,target=/var/lib/nao-bridge/assets`
+before the image name. Reuse the same volume for that robot when replacing the
+container. Docker creates the named volume on first use.
+
 For a local fake server with recording enabled:
 
 ```bash
@@ -183,6 +187,9 @@ those locks requires rerunning the native/container checks.
 
 The [API plan](docs/api-plan.md), [delivery plan](docs/delivery-plan.md) and
 [runtime design](docs/runtime-design.md) describe the complete intended system.
+The [API coverage map](docs/api-coverage.md) links the public surfaces to SDK
+methods and verification. The [release evidence](docs/release-readiness.md)
+records which workflows have been exercised on each robot generation.
 Maintained build inputs live in [server/packaging](server/packaging/README.md).
 Historical findings and archived sources are linked from the
 [packaging decision](docs/inverted-packaging-experiment.md).

@@ -385,19 +385,21 @@ validated by the server. See [the example trajectory](../contracts/fixtures/traj
 
 ### Built-in gestures
 
-`GET /motion/gestures` lists `wave`, `nod`, and `shake` with their required
-posture, available variants, and joint resources. A wave has left and right
-variants. Each head gesture reserves both head joints. The catalog is
+`GET /motion/gestures` lists `wave`, `point`, `nod`, and `shake` with their required
+posture, available variants, and joint resources. Both arm gestures have left and
+right variants. `point` extends the selected arm forward, briefly holds the pose,
+and returns to the measured start for each repetition. Each head gesture reserves
+both head joints. The catalog is
 session-free and includes the connection generation.
 
 `POST /motion/gesture_runs` returns a `motion.gesture_run` Operation.
 Choose a `name` and optionally specify `repetitions` from 1 to 3 (default 1)
-and `strength` from 0.25 to 1 (default 0.65). Wave also accepts `side`
+and `strength` from 0.25 to 1 (default 0.65). The arm gestures also accept `side`
 `left` or `right`, with a default of `right`. Both Python clients expose
 `motion.gestures()` and `motion.gesture("wave", side="right")`.
 
 A gesture requires fresh measured joint angles, an awake robot, stiff
-target joints, and idle locomotion. Wave requires `StandInit`. The bridge
+target joints, and idle locomotion. The arm gestures require `StandInit`. The bridge
 compiles a bounded trajectory from the observed pose, plans a return to that
 pose on normal completion, and checks joint limits and the head gesture
 envelope. The agent rechecks the starting angles and required posture before
@@ -1002,6 +1004,8 @@ with Nao() as nao, nao.vision.preview(frame_rate=5) as preview:
 With `AsyncNao`, use `async with await nao.vision.preview()`, await readiness,
 and consume `preview.frames()` with `async for`. Use `contextlib.aclosing`
 to close the iterator when you leave the loop early.
+Both clients can read an existing preview with `vision.get_preview(preview_id)`
+while using its owning session.
 
 ## Managed face observations
 
@@ -1233,7 +1237,7 @@ retained session after closure. Creation and `POST /recordings/{id}/stop` accept
 idempotency keys; stop takes `{}` and returns 202 with the recording resource.
 Cancelling the associated operation also drains/finalizes before reporting cancelled.
 
-`source.kind` is currently `samples`; choose any nonempty subset of `joints`,
+For `source.kind: "samples"`, choose any nonempty subset of `joints`,
 `sensors`, `motion`, `autonomy`. Omitted rate uses the configured sampler cap
 (default 10 Hz); an excessive request needs `allow_lower_rate: true` to accept a
 lower rate. Source cadence is best effort and does not promise new hardware values

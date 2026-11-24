@@ -14,6 +14,8 @@ DOCUMENTS = (
     "docs/http-api.md",
     "docs/client-contract.md",
     "docs/api-plan.md",
+    "docs/api-coverage.md",
+    "docs/release-readiness.md",
     "docs/increment-2-status.md",
     "docs/increment-4-status.md",
     "clients/python/README.md",

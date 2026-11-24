@@ -18,6 +18,7 @@ from .contract import CONTACTS, SCHEMAS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
 from .events import EventBuffer, Subscription
 from .gestures import (
+    ARM_GESTURES,
     GESTURE_KIND,
     REQUIRED_POSTURE,
     VARIANTS,
@@ -1568,9 +1569,9 @@ class Core:
         variants = VARIANTS.get(name)
         if variants is None:
             raise BridgeError("unsupported", "Unknown gesture", 422)
-        side = body.get("side", "right" if name == "wave" else None)
+        side = body.get("side", "right" if name in ARM_GESTURES else None)
         if side not in variants:
-            raise BridgeError("invalid_request", "Only a wave accepts a side")
+            raise BridgeError("invalid_request", "Only arm gestures accept a side")
         names = variants[side]
         joints = self.info.get("joints", [])
         catalog = {joint["name"]: joint for joint in joints}

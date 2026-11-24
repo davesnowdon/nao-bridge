@@ -685,6 +685,14 @@ class Probe:
             result["status"] == "succeeded"
             and 2.5 <= result["result"]["planned_duration_seconds"] <= 12
         )
+        point = next(item for item in catalog["items"] if item["name"] == "point")
+        assert point["required_posture"] == "StandInit"
+        assert next(item for item in point["variants"] if item["side"] == "right") == right
+        action = self.request(
+            "POST", "/api/motion/gesture_runs", {"name": "point"}, status=202, schema="Operation"
+        )
+        assert action["resources"] == right["resources"]
+        assert self.wait(action)["status"] == "succeeded"
         action = self.request(
             "POST",
             "/api/motion/gesture_runs",
@@ -1189,7 +1197,11 @@ def run(url):
         + (["animated_speech"] if animated else [])
         + (["installed_behavior_run_and_stop"] if behaviors else [])
         + (
-            ["parallel_wave_speech_and_lights", "server_side_presentation_sequence"]
+            [
+                "parallel_wave_speech_and_lights",
+                "point_gesture",
+                "server_side_presentation_sequence",
+            ]
             if gestures
             else []
         ),

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.24.0",
+    "version": "1.25.0",
     "description": "Discover the current robot's capabilities before dispatching commands. HTTP exposes session-owned operations and resources. SSE reports state, observations and operation changes. The contract includes speech and audio output, motion, autonomy, lights, parallel sequences, camera preview and recordings, and retained assets. Some features require specific native services or remain gated pending hardware verification."
   },
   "servers": [

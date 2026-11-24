@@ -8,12 +8,15 @@ GESTURE_KIND = "motion.gesture_run"
 HEAD = ("HeadYaw", "HeadPitch")
 ARM = ("ShoulderPitch", "ShoulderRoll", "ElbowYaw", "ElbowRoll")
 SIDES = {"left": "L", "right": "R"}
+ARM_VARIANTS = {side: tuple(prefix + joint for joint in ARM) for side, prefix in SIDES.items()}
+ARM_GESTURES = {"wave", "point"}
 VARIANTS = {
-    "wave": {side: tuple(prefix + joint for joint in ARM) for side, prefix in SIDES.items()},
+    "wave": ARM_VARIANTS,
+    "point": ARM_VARIANTS,
     "nod": {None: HEAD},
     "shake": {None: HEAD},
 }
-REQUIRED_POSTURE = {"wave": "StandInit", "nod": None, "shake": None}
+REQUIRED_POSTURE = {"wave": "StandInit", "point": "StandInit", "nod": None, "shake": None}
 
 
 def gesture_support(
@@ -69,20 +72,27 @@ def compile_gesture(
     joints: list[dict[str, Any]],
 ) -> TrajectoryPlan:
     frames: list[tuple[dict[str, float], float]] = []
-    if name == "wave":
+    if name in ARM_GESTURES:
         assert side is not None
         sign = 1 if side == "left" else -1
         names = VARIANTS[name][side]
-        natural_pose = (0.20, sign * 0.55, -sign * 0.75, -sign * 0.94)
+        natural_pose = (
+            (0.20, sign * 0.55, -sign * 0.75, -sign * 0.94)
+            if name == "wave"
+            else (0.25, sign * 0.18, -sign * 0.15, -sign * 0.18)
+        )
         raised = {
             joint: start[joint] + strength * (target - start[joint])
             for joint, target in zip(names, natural_pose, strict=True)
         }
-        elbow = names[-1]
-        extended = {**raised, elbow: raised[elbow] + sign * 0.24 * strength}
-        frames.append((raised, 0.9))
-        frames.extend([(extended, 0.35), (raised, 0.35)] * repetitions)
-        frames.append((start, 0.9))
+        if name == "wave":
+            elbow = names[-1]
+            extended = {**raised, elbow: raised[elbow] + sign * 0.24 * strength}
+            frames.append((raised, 0.9))
+            frames.extend([(extended, 0.35), (raised, 0.35)] * repetitions)
+            frames.append((start, 0.9))
+        else:
+            frames = [(raised, 0.9), (raised, 0.5), (start, 0.9)] * repetitions
     else:
         if name == "nod":
             dipped = {**start, "HeadPitch": start["HeadPitch"] + 0.18 * strength}

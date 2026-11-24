@@ -551,6 +551,11 @@ class Vision:
             ),
         )
 
+    def get_preview(self, preview_id: str) -> CameraPreview:
+        return CameraPreview(
+            self._nao, self._nao._run(self._nao._async.vision.get_preview(preview_id))
+        )
+
     def observe(
         self,
         *,

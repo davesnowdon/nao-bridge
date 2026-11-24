@@ -33,14 +33,28 @@ def test_waves_mirror_and_restore_the_measured_pose():
         )
 
 
+def test_points_hold_each_point_then_return_to_the_measured_pose():
+    joints = FakeBackend().joints
+    for side, names in VARIANTS["point"].items():
+        start = dict.fromkeys(names, 0.0)
+        plan = compile_gesture("point", side, 2, 1.0, start, joints)
+        sign = 1 if side == "left" else -1
+        targets = (0.25, sign * 0.18, -sign * 0.15, -sign * 0.18)
+        assert plan.resources == sorted("joint." + joint for joint in names)
+        for joint, target in zip(names, targets, strict=True):
+            angles = plan.angles[plan.names.index(joint)]
+            assert angles == pytest.approx([target, target, 0.0] * 2)
+        assert plan.times[0][1] - plan.times[0][0] == pytest.approx(0.5)
+
+
 async def test_gesture_discovery_and_validation_precede_dispatch(rig):
     async with rig() as (client, core, backend):
         page = (await client.get("/api/motion/gestures")).json()
         VALIDATORS["GestureCatalog"].validate(page)
-        assert {item["name"] for item in page["items"]} == {"wave", "nod", "shake"}
+        assert {item["name"] for item in page["items"]} == {"wave", "point", "nod", "shake"}
         _, headers = await new_session(client)
         core.info["gestures_verified"] = False
-        gated = await client.post(RUN, headers=headers, json={"name": "wave"})
+        gated = await client.post(RUN, headers=headers, json={"name": "point"})
         assert gated.status_code == 422
         assert gated.json()["error"]["details"]["reason"] == "hardware_gestures_unverified"
         core.info["gestures_verified"] = True
@@ -62,6 +76,9 @@ async def test_gestures_require_safe_observed_start(rig):
         backend.motion_state["posture"] = "Sit"
         assert await core.refresh_motion_after(previous)
         refused = await client.post(RUN, headers=headers, json={"name": "wave"})
+        assert refused.status_code == 409
+        assert refused.json()["error"]["details"]["required_posture"] == "StandInit"
+        refused = await client.post(RUN, headers=headers, json={"name": "point"})
         assert refused.status_code == 409
         assert refused.json()["error"]["details"]["required_posture"] == "StandInit"
         previous = core.clock()
@@ -109,9 +126,11 @@ async def test_sdk_gesture_catalog_and_execution(socket_rig):
             catalog = await nao.motion.gestures()
             assert nao.session_id is None
             await nao.robot.state(include=["motion", "joints"], wait_for_fresh_ms=1000)
-            operation = await nao.motion.gesture("nod", repetitions=1, strength=0.5)
+            operation = await nao.motion.gesture("point", repetitions=1, strength=0.5)
             assert operation.data.status == "succeeded"
-            assert operation.data.resources == ["joint.HeadPitch", "joint.HeadYaw"]
+            assert operation.data.resources == sorted(
+                "joint." + name for name in VARIANTS["point"]["right"]
+            )
 
         def sync_gesture():
             with Nao(url) as nao:
