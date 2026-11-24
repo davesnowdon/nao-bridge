@@ -1044,6 +1044,23 @@ requires agent recovery and explicit release of old-generation ownership. After
 an SSE gap, query the observer's status and use future events. Reconnecting
 does not replay detections or recreate an observer.
 
+### NAOmark landmark observations
+
+Check `vision.landmarks` in capabilities. Start an observer with
+`POST /api/vision/observers` and `{"landmarks":true,"rate_hz":2}`.
+Both Python clients expose `nao.vision.observe(landmarks=True)`.
+Each observer selects one detector. To use faces and landmarks together,
+create one observer for each. Each detector shares compatible demand and
+stops when its last observer releases it.
+
+Landmark events use `vision.detections`. A landmark frame includes a
+`landmarks` array and an empty `faces` array. The landmark entries carry
+`marker_id`, the NAOmark code, along with angular centre, width, height,
+and heading in radians. `id` identifies a detection in one frame. The
+observer only forwards frames whose reported camera matches the accepted
+configuration. `stream.ready` reports readiness for `vision.landmarks`
+separately from `vision.faces`.
+
 ## Camera video recording
 
 Check `recordings.camera` in capabilities. It requires a discovered camera,

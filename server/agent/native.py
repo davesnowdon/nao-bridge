@@ -19,6 +19,7 @@ from camera import VideoDevice, FixtureVideo
 from microphone import AudioDevice, FixtureAudio
 from speaker import Speaker
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
+from landmarks import EVENT as LANDMARK_EVENT, LandmarkDetector, FixtureLandmarks
 from lights import Lights, FixtureLights
 from behaviors import EVENT as BEHAVIOR_EVENT, Behaviors, FixtureBehaviors
 from velocity import MAX_ROTATION, MAX_TRANSLATION
@@ -79,6 +80,7 @@ class NativeDriver(object):
         self.microphone = None
         self.speaker = None
         self.faces = None
+        self.landmarks = None
         self.lights = None
         self.behaviors = None
         self.passive_sensors = None
@@ -164,6 +166,8 @@ class NativeDriver(object):
         self.description["speaker_sample_rate_hz"] = self.speaker.rate
         self.faces = FaceDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
         self.description["faces"] = self.faces.catalog
+        self.landmarks = LandmarkDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
+        self.description["landmarks"] = self.landmarks.catalog
         self.lights = Lights(self.session, self.memory, self.call)
         self.description["lights"] = self.lights.catalog()
         self.discover_animated_speech()
@@ -424,6 +428,9 @@ class NativeDriver(object):
         if self.faces:
             self.faces.close()
             self.faces = None
+        if self.landmarks:
+            self.landmarks.close()
+            self.landmarks = None
         if self.camera:
             self.camera.invalidate()
             self.camera.cleanup()
@@ -514,7 +521,7 @@ class FixtureMemory(object):
     def __init__(self):
         self.sources = dict((event, FixtureTouch()) for event in TOUCH)
         self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
-        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT, BEHAVIOR_EVENT])
+        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT, LANDMARK_EVENT, BEHAVIOR_EVENT])
         self.values = dict((key, 0) for key in MEMORY_KEYS)
         self.values[BATTERY_KEY] = 76
         self.values.update(zip(SONAR_KEYS, [0.4, 1.2]))
@@ -568,6 +575,7 @@ class FixtureDriver(NativeDriver):
         self.video_impl = qi.multiThreaded()(FixtureVideo)()
         self.audio_impl = qi.multiThreaded()(FixtureAudio)(self.server)
         self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
+        self.landmarks_impl = qi.multiThreaded()(FixtureLandmarks)(self.memory_impl)
         self.lights_impl = qi.multiThreaded()(FixtureLights)(self.memory_impl)
         self.behaviors_impl = qi.multiThreaded()(FixtureBehaviors)(self.memory_impl)
         self.face_sequence = 0
@@ -584,6 +592,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALVideoDevice", self.video_impl)
         self.server.registerService("ALAudioDevice", self.audio_impl)
         self.server.registerService("ALFaceDetection", self.faces_impl)
+        self.server.registerService("ALLandMarkDetection", self.landmarks_impl)
         self.server.registerService("ALLeds", self.lights_impl)
         self.server.registerService("ALBehaviorManager", self.behaviors_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
@@ -598,6 +607,7 @@ class FixtureDriver(NativeDriver):
     def sample_sensors(self, memory, passive_sensors, sonar=None):
         self.face_sequence += 1
         self.faces_impl.sample(self.face_sequence)
+        self.landmarks_impl.sample(self.face_sequence)
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
             self.memory_impl.toggle(self.contact_index // 2)

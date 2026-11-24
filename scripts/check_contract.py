@@ -132,6 +132,17 @@ def asset_media_addition(before, after):
     return shape(before) == reduced
 
 
+def vision_observer_variant_addition(before, after):
+    if not isinstance(after, dict) or set(after) != {"anyOf"}:
+        return False
+    previous = before["anyOf"] if set(before) == {"anyOf"} else [before]
+    return (
+        isinstance(after["anyOf"], list)
+        and len(after["anyOf"]) > len(previous)
+        and all(shape(branch) in shape(after["anyOf"]) for branch in previous)
+    )
+
+
 def compare(previous, current, old_schemas, new_schemas):
     before = tuple(int(part) for part in previous["info"]["version"].split("."))
     after = tuple(int(part) for part in current["info"]["version"].split("."))
@@ -160,6 +171,10 @@ def compare(previous, current, old_schemas, new_schemas):
             )
             or (
                 name == "RecordingSource" and recording_variant_addition(definition, new_definition)
+            )
+            or (
+                name in {"VisionObserverCreate", "VisionObserverConfiguration"}
+                and vision_observer_variant_addition(definition, new_definition)
             )
         ):
             changes.append("schema " + name)

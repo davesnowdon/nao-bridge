@@ -391,7 +391,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             "POST /vision/observers",
             request.headers.get("idempotency-key"),
             value,
-            lambda: core.face_observers.create(owner, value),
+            lambda: core.vision_observers.create(owner, value),
         )
         return created(result, "vision/observers", 201)
 
@@ -399,7 +399,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     async def get_vision_observer(request: Request, observer_id: str) -> dict[str, Any]:
         query(request, set())
         return copy.deepcopy(
-            core.face_observers.get(observer_id, session(request, False).public["id"]).public
+            core.vision_observers.get(observer_id, session(request, False).public["id"]).public
         )
 
     @app.post("/api/vision/observers/{observer_id}/stop")
@@ -407,13 +407,13 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         query(request, set())
         value = await body(request, "EmptyRequest")
         owner = session(request)
-        item = core.face_observers.get(observer_id, owner.public["id"])
+        item = core.vision_observers.get(observer_id, owner.public["id"])
         result = await core.idempotent(
             owner.public["id"],
             "POST /vision/observers/" + observer_id + "/stop",
             request.headers.get("idempotency-key"),
             value,
-            lambda: core.face_observers.stop(item),
+            lambda: core.vision_observers.stop(item),
         )
         return created(result, "vision/observers", 202)
 

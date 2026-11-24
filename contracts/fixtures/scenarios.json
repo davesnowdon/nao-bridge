@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.21.0",
+  "contract_version": "1.22.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -15,6 +15,22 @@
     "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "shared NAOmark observation",
+      "steps": [
+        "Check vision.landmarks and create two compatible landmark observers",
+        "Stop one observer and attach a vision detections event stream",
+        "Check landmark readiness and read a frame addressed to the remaining observer",
+        "Stop the remaining observer"
+      ],
+      "expected": [
+        "The retained observer continues receiving marker codes and angular geometry",
+        "The last stop releases landmark demand without ending face demand"
+      ],
+      "client_decisions": [
+        "Select the detector using the observer configuration and keep each detector's readiness separate."
+      ]
+    },
     {
       "name": "WAV playback and scoped cancellation",
       "steps": [

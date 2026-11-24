@@ -404,18 +404,18 @@ class Probe:
         finally:
             conn.close()
 
-    def vision_observers(self):
+    def vision_observers(self, kind="faces"):
         collection = "/api/vision/observers"
         observers = [
             self.request(
                 "POST",
                 collection,
-                {"faces": True, "rate_hz": 5},
+                {kind: True, "rate_hz": 5},
                 status=201,
                 schema="VisionObserver",
                 headers={"Idempotency-Key": key},
             )
-            for key in ("face-first", "face-second")
+            for key in (kind + "-first", kind + "-second")
         ]
 
         def wait(item, status):
@@ -437,7 +437,7 @@ class Probe:
 
         for item in observers:
             assert wait(item, "active")["configuration"] == {
-                "faces": True,
+                kind: True,
                 "camera": "top",
                 "rate_hz": 5,
             }
@@ -456,7 +456,7 @@ class Probe:
                     (
                         "stream.ready",
                         "StreamReady",
-                        lambda data: data["source_readiness"]["vision.faces"] == "ready",
+                        lambda data: data["source_readiness"]["vision." + kind] == "ready",
                     ),
                     (
                         "vision.detections",
@@ -464,7 +464,7 @@ class Probe:
                         lambda data: (
                             data["observer_id"] == observers[1]["id"]
                             and data["frame"] == "camera.top"
-                            and bool(data["faces"])
+                            and bool(data[kind])
                         ),
                     ),
                 ],
@@ -852,7 +852,8 @@ def run(url):
     audio_playback = capabilities["features"]["audio.playback"]["status"] == "available"
     if robot["backend"] == "native-fixture":
         assert previews, "Native container preview must use the pinned FFmpeg encoder"
-    faces = capabilities["features"]["vision.observers"]["status"] == "available"
+    faces = capabilities["features"]["vision.faces"]["status"] == "available"
+    landmarks = capabilities["features"]["vision.landmarks"]["status"] == "available"
     velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
     behaviors = capabilities["features"]["behaviors.runs"]["status"] == "available"
     gestures = capabilities["features"]["motion.gestures"]["status"] == "available"
@@ -917,6 +918,8 @@ def run(url):
             probe.camera_previews(captures)
         if faces:
             probe.vision_observers()
+        if landmarks:
+            probe.vision_observers("landmarks")
         if behaviors:
             probe.behaviors()
         lights = probe.request("GET", "/api/lights", schema="LightCatalog")["support"]["status"]
@@ -1145,6 +1148,7 @@ def run(url):
         + (["wav_upload_asset_and_retry"] if audio_upload else [])
         + (["wav_audio_playback"] if audio_upload and audio_playback else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
+        + (["landmark_observer_sharing_and_detections"] if landmarks else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])
         + (["animated_speech"] if animated else [])

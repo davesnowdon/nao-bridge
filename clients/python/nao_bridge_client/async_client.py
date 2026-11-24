@@ -576,13 +576,16 @@ class AsyncVision:
     async def observe(
         self,
         *,
-        faces: bool = True,
+        faces: bool | None = None,
+        landmarks: bool = False,
         camera: str | None = None,
         rate_hz: int | None = None,
         idempotency_key: str | None = None,
     ) -> AsyncVisionObserver:
         await self._nao._ensure_session()
-        body: dict[str, Any] = {"faces": faces}
+        body: dict[str, Any] = {"landmarks": True} if landmarks else {"faces": True}
+        if faces is not None:
+            body["faces"] = faces
         if camera is not None:
             body["camera"] = camera
         if rate_hz is not None:

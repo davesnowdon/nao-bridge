@@ -169,6 +169,7 @@ class Capabilities(WireModel):
     recognition: dict[str, Any] = Field(default_factory=dict)
     sonar: dict[str, Any] = Field(default_factory=dict)
     faces: dict[str, Any] = Field(default_factory=dict)
+    landmarks: dict[str, Any] = Field(default_factory=dict)
     locomotion: dict[str, Any] = Field(default_factory=dict)
     velocity_control: dict[str, Any] = Field(default_factory=dict)
 
@@ -337,9 +338,16 @@ class SensorObserverData(WireModel):
 
 
 class VisionObserverConfiguration(WireModel):
-    faces: Literal[True]
+    faces: Literal[True] | None = None
+    landmarks: Literal[True] | None = None
     camera: Literal["top", "bottom"] | None
     rate_hz: int = Field(ge=1, le=5)
+
+    @model_validator(mode="after")
+    def one_source(self) -> VisionObserverConfiguration:
+        if (self.faces is True) == (self.landmarks is True):
+            raise ValueError("Expected exactly one vision observer source")
+        return self
 
 
 class VisionObserverData(WireModel):
@@ -366,12 +374,18 @@ class FaceBounds(WireModel):
     height_rad: float = Field(gt=0, le=3.141592653589793)
 
 
+class LandmarkBounds(FaceBounds):
+    marker_id: int = Field(ge=0, le=2147483647)
+    heading_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
+
+
 class VisionDetections(WireModel):
     observer_id: str = Field(min_length=1, max_length=128)
     camera: Literal["top", "bottom"]
     frame: Literal["camera.top", "camera.bottom"]
     source_time: CameraTimestamp
     faces: list[FaceBounds] = Field(max_length=16)
+    landmarks: list[LandmarkBounds] | None = Field(default=None, max_length=16)
 
     @model_validator(mode="after")
     def matching_frame(self) -> VisionDetections:

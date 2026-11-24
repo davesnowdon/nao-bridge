@@ -55,6 +55,7 @@ class Backend(Protocol):
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def configure_landmarks(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]: ...
@@ -130,6 +131,9 @@ class FakeBackend:
         self.sonar_calls: list[dict[str, Any]] = []
         self.sonar_failure: str | None = None
         self.faces: dict[str, Any] | None = None
+        self.landmarks: dict[str, Any] | None = None
+        self.next_landmark = 0.0
+        self.landmark_calls: list[dict[str, Any]] = []
         self.face_calls: list[dict[str, Any]] = []
         self.face_failure: str | None = None
         self.next_face = 0.0
@@ -250,6 +254,7 @@ class FakeBackend:
                 self.active[self.microphone_id][1].set()
         self.connected = connected
         self.faces = None
+        self.landmarks = None
         self.motion_state["odometry"] = {
             "origin_id": uuid.uuid4().hex,
             "origin_reason": "connection_started",
@@ -355,6 +360,11 @@ class FakeBackend:
                         "camera": "top" if connected else None,
                         "rates_hz": [1, 2, 5] if connected else [],
                     },
+                    "landmarks": {
+                        "available": connected,
+                        "camera": "top" if connected else None,
+                        "rates_hz": [1, 2, 5] if connected else [],
+                    },
                     "locomotion": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -373,7 +383,11 @@ class FakeBackend:
             if self.connected and self.sink:
                 now = time.monotonic()
                 if self.faces and now >= self.next_face:
-                    await self.sample_face(now)
+                    self.next_face = now + 1 / self.faces["configuration"]["rate_hz"]
+                    await self.sample_vision(now, "faces", self.faces)
+                if self.landmarks and now >= self.next_landmark:
+                    self.next_landmark = now + 1 / self.landmarks["configuration"]["rate_hz"]
+                    await self.sample_vision(now, "landmarks", self.landmarks)
                 if (
                     self.sonar["enabled"]
                     and self.sonar["status"] == "warming"
@@ -480,33 +494,53 @@ class FakeBackend:
 
     async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.face_calls.append(copy.deepcopy(payload))
-        if not self.connected or self.face_failure == "unknown":
-            raise BackendUnknown("Face detector acknowledgement lost")
+        value = self.configure_vision(payload, self.face_failure)
+        self.faces = value if value["configuration"] else None
+        self.next_face = 0
+        return value
+
+    async def configure_landmarks(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.landmark_calls.append(copy.deepcopy(payload))
+        value = self.configure_vision(payload)
+        self.landmarks = value if value["configuration"] else None
+        self.next_landmark = 0
+        return value
+
+    def configure_vision(
+        self, payload: dict[str, Any], failure: str | None = None
+    ) -> dict[str, Any]:
+        if not self.connected or failure == "unknown":
+            raise BackendUnknown("Detector acknowledgement lost")
         config = payload["configuration"]
-        if config and (config["camera"] not in ("top", None) or self.face_failure == "rejected"):
+        if config and (config["camera"] not in ("top", None) or failure == "rejected"):
             raise BridgeError(
                 "unsupported", "Requested camera is not configured on the detector", 422
             )
         accepted = {**config, "camera": "top"} if config is not None else None
-        value = {
+        return {
             **payload,
             "configuration": accepted,
             "status": "active" if accepted else "stopped",
         }
-        self.faces = value if accepted else None
-        self.next_face = 0
-        return value
 
-    async def sample_face(self, now: float) -> None:
-        if self.sink is None or self.faces is None:
+    async def sample_vision(self, now: float, kind: str, detector: dict[str, Any]) -> None:
+        if self.sink is None:
             return
-        self.next_face = now + 1 / self.faces["configuration"]["rate_hz"]
         usecs = int((now % 1) * 1_000_000)
+        detection = {
+            "id": f"top-{int(now)}-{usecs}-0",
+            "alpha_rad": -0.15,
+            "beta_rad": 0.08,
+            "width_rad": 0.4,
+            "height_rad": 0.3,
+        }
+        if kind == "landmarks":
+            detection.update(marker_id=84, heading_rad=0.2)
         await self.sink(
-            "faces.detections",
+            kind + ".detections",
             {
-                "producer_id": self.faces["producer_id"],
-                "revision": self.faces["revision"],
+                "producer_id": detector["producer_id"],
+                "revision": detector["revision"],
                 "camera": "top",
                 "frame": "camera.top",
                 "source_time": {
@@ -514,15 +548,7 @@ class FakeBackend:
                     "seconds": int(now),
                     "microseconds": usecs,
                 },
-                "faces": [
-                    {
-                        "id": f"top-{int(now)}-{usecs}-0",
-                        "alpha_rad": -0.15,
-                        "beta_rad": 0.08,
-                        "width_rad": 0.4,
-                        "height_rad": 0.3,
-                    }
-                ],
+                kind: [detection],
             },
         )
 

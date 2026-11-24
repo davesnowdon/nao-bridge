@@ -284,3 +284,17 @@ The pinned SDK fixture exercises scoped cancellation and PCM submission
 alongside blocked command workers. Physical sound, duration, and audible
 stop timing are still open on NAOqi 2.1 and 2.8.
 See [audio playback](http-api.md#audio-playback).
+
+### NAOmark observation
+
+Contract 1.22.0 adds managed NAOmark detection through the existing vision
+observer routes and `vision.detections` SSE event. Each detector maintains
+its own native subscription and producer revision. The bridge sends angular
+geometry, marker codes, the reported camera, and source timestamps. It
+gates availability on native extractor and camera discovery.
+
+The pinned fixture exercises native face and landmark producers together,
+including face teardown while landmark events continue. Physical marker
+delivery, camera naming, and concurrent use still need NAOqi 2.1 and 2.8
+coverage. See [landmark observations](http-api.md#naomark-landmark-observations)
+and the [NAOqi landmark example](https://doc.aldebaran.com/2-8/dev/python/examples/vision/landmark.html).

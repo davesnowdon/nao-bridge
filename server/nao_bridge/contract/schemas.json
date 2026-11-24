@@ -518,6 +518,10 @@
           "type": "object",
           "additionalProperties": true
         },
+        "landmarks": {
+          "type": "object",
+          "additionalProperties": true
+        },
         "locomotion": {
           "type": "object",
           "additionalProperties": true
@@ -3794,11 +3798,44 @@
       "additionalProperties": true
     },
     "VisionObserverCreate": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "faces": {
+              "const": true,
+              "default": true
+            },
+            "camera": {
+              "enum": [
+                "top",
+                "bottom"
+              ]
+            },
+            "rate_hz": {
+              "enum": [
+                1,
+                2,
+                5
+              ],
+              "default": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/LandmarkObserverCreate"
+        }
+      ]
+    },
+    "LandmarkObserverCreate": {
       "type": "object",
       "properties": {
+        "landmarks": {
+          "const": true
+        },
         "faces": {
-          "const": true,
-          "default": true
+          "const": false
         },
         "camera": {
           "enum": [
@@ -3815,12 +3852,56 @@
           "default": 2
         }
       },
+      "required": [
+        "landmarks"
+      ],
       "additionalProperties": false
     },
     "VisionObserverConfiguration": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "faces": {
+              "const": true
+            },
+            "camera": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "top",
+                    "bottom"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rate_hz": {
+              "enum": [
+                1,
+                2,
+                5
+              ]
+            }
+          },
+          "required": [
+            "faces",
+            "camera",
+            "rate_hz"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "$ref": "#/$defs/LandmarkObserverConfiguration"
+        }
+      ]
+    },
+    "LandmarkObserverConfiguration": {
       "type": "object",
       "properties": {
-        "faces": {
+        "landmarks": {
           "const": true
         },
         "camera": {
@@ -3845,7 +3926,7 @@
         }
       },
       "required": [
-        "faces",
+        "landmarks",
         "camera",
         "rate_hz"
       ],
@@ -3910,7 +3991,7 @@
         "error"
       ],
       "additionalProperties": true,
-      "description": "Session-owned demand for shared sensor producers. Active means the native subscription is confirmed and its software settling interval elapsed; it does not guarantee valid readings or a new native producer update. Stop removes this observer only."
+      "description": "Session-owned demand for one shared vision detector. Active confirms the native subscription. Stop removes this observer only."
     },
     "FaceBounds": {
       "type": "object",
@@ -4053,6 +4134,13 @@
             "$ref": "#/$defs/FaceBounds"
           },
           "maxItems": 16
+        },
+        "landmarks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LandmarkBounds"
+          },
+          "maxItems": 16
         }
       },
       "required": [
@@ -4063,6 +4151,85 @@
         "faces"
       ],
       "additionalProperties": true
+    },
+    "LandmarkFrame": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "landmarks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LandmarkBounds"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "source_time",
+        "landmarks"
+      ],
+      "additionalProperties": true
+    },
+    "LandmarkBounds": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/FaceBounds"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "marker_id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "heading_rad": {
+              "type": "number",
+              "minimum": -3.141592653589793,
+              "maximum": 3.141592653589793
+            }
+          },
+          "required": [
+            "marker_id",
+            "heading_rad"
+          ]
+        }
+      ]
     },
     "VelocitySetpoint": {
       "type": "object",

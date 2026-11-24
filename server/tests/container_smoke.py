@@ -618,6 +618,18 @@ async def check_native_controls():
         assert first_face["frame"] == "camera.top" and first_face["revision"] == 1
         assert first_face["faces"][0]["alpha_rad"] == -0.15
         assert "fixture label" not in str(first_face)
+        landmark_request = {
+            "producer_id": "blocked-workers-landmarks",
+            "revision": 1,
+            "configuration": {"camera": "top", "rate_hz": 5},
+        }
+        assert info["landmarks"]["available"]
+        assert (await backend.configure_landmarks(landmark_request))["status"] == "active"
+        async with asyncio.timeout(3):
+            while "landmarks.detections" not in state:
+                await asyncio.sleep(0.01)
+        marker = state["landmarks.detections"]
+        assert marker["frame"] == "camera.top" and marker["landmarks"][0]["marker_id"] == 84
         assert [camera["id"] for camera in info["cameras"]] == ["top", "bottom"]
         for camera, size, color in (
             ("top", "320x240", b"\x00\x80\xff"),
@@ -743,6 +755,22 @@ async def check_native_controls():
         await asyncio.sleep(0.3)
         # The event socket can deliver an earlier observation after the command reply.
         assert state["faces.detections"]["observed"] <= confirmed_stop
+        async with asyncio.timeout(3):
+            while state["landmarks.detections"]["observed"] <= confirmed_stop:
+                await asyncio.sleep(0.01)
+        assert (
+            await backend.configure_landmarks(
+                {
+                    **landmark_request,
+                    "revision": 2,
+                    "configuration": None,
+                }
+            )
+        )["status"] == "stopped"
+        print(
+            "Native landmarks: NAOmark decoding and teardown independent of faces passed",
+            flush=True,
+        )
         print(
             "Native face IPC: observations, concurrent stills and owned teardown passed", flush=True
         )

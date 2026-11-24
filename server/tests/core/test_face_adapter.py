@@ -24,6 +24,24 @@ def frame(usecs=1, *, camera=0, faces=None):
     return [[42, usecs], [*faces, [2, ["private label"]]], [], [], camera]
 
 
+def test_landmark_geometry_uses_the_reported_camera_and_bounds_the_frame(monkeypatch):
+    monkeypatch.syspath_prepend(str(AGENT))
+    spec = importlib.util.spec_from_file_location("landmarks_under_test", AGENT / "landmarks.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    mark = [[1, -0.2, 0.03, 0.12, 0.1, 0.25], [84]]
+    raw = [[42, 12], [mark] * 20, [], [], "CameraBottom"]
+    frame = module.detections(raw)
+    assert frame["camera"] == "bottom" and frame["frame"] == "camera.bottom"
+    assert len(frame["landmarks"]) == 16
+    assert frame["landmarks"][0]["id"] == "bottom-42-12-0"
+    assert frame["landmarks"][0]["marker_id"] == 84
+    assert frame["landmarks"][0]["heading_rad"] == 0.25
+    assert module.detections(raw[:4]) is None
+    raw[1] = [[mark[0], [True]]]
+    assert module.detections(raw) is None
+
+
 class Native:
     def __init__(self, module):
         self.clock = 0
