@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import ctypes
 import json
+import os
 import socket
 import time
 
@@ -37,6 +38,15 @@ def encode(message):
     if len(data) > MAX_FRAME:
         raise ValueError("oversized frame")
     return data
+
+
+def replace_slot(path, header, payload):
+    pending = path + ".tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    with os.fdopen(os.open(pending, flags, 0o600), "wb") as output:
+        output.write(header)
+        output.write(payload)
+    os.rename(pending, path)
 
 
 def reject_constant(value):

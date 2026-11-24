@@ -11,6 +11,8 @@ import time
 import uuid
 from contextlib import contextmanager
 
+from wire import replace_slot
+
 try:
     string_type = basestring
 except NameError:
@@ -58,15 +60,6 @@ def valid_feed(payload):
     return (isinstance(payload, dict) and set(payload) == {"camera", "resolution", "frame_rate"}
             and type(payload["frame_rate"]) is int and 1 <= payload["frame_rate"] <= MAX_FEED_RATE
             and valid_capture(dict(camera=payload["camera"], resolution=payload["resolution"])))
-
-
-def replace_slot(path, header, pixels):
-    pending = path + ".tmp"
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
-    with os.fdopen(os.open(pending, flags, 0o600), "wb") as output:
-        output.write(header)
-        output.write(pixels)
-    os.rename(pending, path)
 
 
 def handoff(root, instance, operation, pixels):

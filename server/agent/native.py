@@ -16,6 +16,7 @@ from locomotion import Locomotion, Odometry, LocomotionError
 from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 from camera import VideoDevice, FixtureVideo
+from microphone import AudioDevice, FixtureAudio
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
 from lights import Lights, FixtureLights
 from behaviors import EVENT as BEHAVIOR_EVENT, Behaviors, FixtureBehaviors
@@ -74,6 +75,7 @@ class NativeDriver(object):
         self.recognition = None
         self.sonar = None
         self.camera = None
+        self.microphone = None
         self.faces = None
         self.lights = None
         self.behaviors = None
@@ -154,6 +156,8 @@ class NativeDriver(object):
         self.description["sonar"] = self.sonar.catalog
         self.camera = VideoDevice(self.session, monotonic)
         self.description["cameras"] = self.camera.items
+        self.microphone = AudioDevice(self.session, monotonic)
+        self.description["microphone"] = self.microphone.service is not None
         self.faces = FaceDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
         self.description["faces"] = self.faces.catalog
         self.lights = Lights(self.session, self.memory, self.call)
@@ -420,6 +424,10 @@ class NativeDriver(object):
             self.camera.invalidate()
             self.camera.cleanup()
             self.camera = None
+        if self.microphone:
+            self.microphone.invalidate()
+            self.microphone.cleanup()
+            self.microphone = None
         if self.sonar:
             self.sonar.close()
             self.sonar = None
@@ -553,6 +561,7 @@ class FixtureDriver(NativeDriver):
         self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
         self.sonar_impl = qi.multiThreaded()(FixtureSonar)()
         self.video_impl = qi.multiThreaded()(FixtureVideo)()
+        self.audio_impl = qi.multiThreaded()(FixtureAudio)(self.server)
         self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
         self.lights_impl = qi.multiThreaded()(FixtureLights)(self.memory_impl)
         self.behaviors_impl = qi.multiThreaded()(FixtureBehaviors)(self.memory_impl)
@@ -568,6 +577,7 @@ class FixtureDriver(NativeDriver):
         self.server.registerService("ALSpeechRecognition", self.recognition_impl)
         self.server.registerService("ALSonar", self.sonar_impl)
         self.server.registerService("ALVideoDevice", self.video_impl)
+        self.server.registerService("ALAudioDevice", self.audio_impl)
         self.server.registerService("ALFaceDetection", self.faces_impl)
         self.server.registerService("ALLeds", self.lights_impl)
         self.server.registerService("ALBehaviorManager", self.behaviors_impl)

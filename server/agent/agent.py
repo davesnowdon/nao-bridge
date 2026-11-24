@@ -23,6 +23,7 @@ from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
 from camera import CameraError, CameraUnknown, handoff, handoff_feed, valid_capture, valid_capture_id, valid_feed
+from microphone import MicrophoneError, MicrophoneUnknown, handoff as handoff_microphone
 from faces import valid_configuration as valid_faces
 from lights import valid_light
 from behaviors import MAX_PAGE as BEHAVIOR_PAGE_SIZE, valid_behavior, valid_name
@@ -31,10 +32,11 @@ from wire import VERSION, encode, frames, monotonic
 
 PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar, "faces": valid_faces}
 AUTONOMY_ACTIONS = ("autonomy", "restore_autonomy")
-CAMERA_ACTIONS = ("camera_capture", "camera_feed")
+CAPTURE_ACTIONS = {"camera_capture": "camera", "camera_feed": "camera", "microphone_feed": "microphone"}
 COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
                 autonomy=valid_autonomy, restore_autonomy=valid_restoration,
                 camera_capture=valid_capture, camera_feed=valid_feed, light_transition=valid_light,
+                microphone_feed=lambda payload: payload == {},
                 behavior_run=valid_behavior)
 GUARDED_MOTION = ("walk", "animated_speech", "behavior", "gesture")
 
@@ -75,6 +77,7 @@ class Agent(object):
         self.sonar_work = queue.Queue(1)
         self.faces_work = queue.Queue(1)
         self.camera_work = queue.Queue(1)
+        self.microphone_work = queue.Queue(1)
         self.priority = queue.Queue(8)
         self.emergency_stop = threading.Event()
         self.events = queue.Queue(128)
@@ -115,9 +118,10 @@ class Agent(object):
                 if adapter:
                     adapter.invalidate()
                     setattr(self, name + "_cleanup", adapter)
-            camera = getattr(self.driver, "camera", None)
-            if camera:
-                camera.invalidate()
+            for name in ("camera", "microphone"):
+                adapter = getattr(self.driver, name, None)
+                if adapter:
+                    adapter.invalidate()
         self.emergency_stop.set()
 
     def producer_recovery(self, name):
@@ -149,7 +153,7 @@ class Agent(object):
             return "invalid_deadline"
         if initial and not monotonic() < deadline <= monotonic() + 1.5:
             return "expired_deadline"
-        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "light_transition", "behavior_run") + CAMERA_ACTIONS and request.get("session_id") in self.revoked:
+        if request.get("action") in ("speak", "trajectory", "motion_action", "autonomy", "joint_setpoint", "velocity_setpoint", "light_transition", "behavior_run") + tuple(CAPTURE_ACTIONS) and request.get("session_id") in self.revoked:
             return "fenced_session"
         if request.get("action") == "restore_autonomy":
             fence = self.revoked.get(request.get("session_id"))
@@ -180,15 +184,15 @@ class Agent(object):
                 return False
         return bool(request.get("session_id"))
 
-    def worker(self, work=None):
+    def worker(self, work=None, capture=None):
         requests = self.work if work is None else work
         while True:
-            if requests is self.camera_work:
-                adapter = self.driver.camera
+            if capture:
+                adapter = getattr(self.driver, capture)
                 if adapter:
                     adapter.cleanup()
             try:
-                request, replies = requests.get(timeout=0.1 if requests is self.camera_work else None)
+                request, replies = requests.get(timeout=0.1 if capture else None)
             except queue.Empty:
                 continue
             rid = request["id"]
@@ -213,8 +217,8 @@ class Agent(object):
                 if request["action"] in AUTONOMY_ACTIONS:
                     self.run_autonomy(request, record, replies)
                     continue
-                if request["action"] in CAMERA_ACTIONS:
-                    self.run_camera(request, record, replies)
+                if request["action"] in CAPTURE_ACTIONS:
+                    self.run_capture(request, record, replies)
                     continue
                 if request["action"] == "trajectory":
                     self.driver.prepare_trajectory(request["payload"])
@@ -358,19 +362,21 @@ class Agent(object):
                           result=result, finished=monotonic())
         self.reply(replies, request, result=result)
 
-    def run_camera(self, request, record, replies):
-        adapter = self.driver.camera
+    def run_capture(self, request, record, replies):
+        action = request["action"]
+        source = CAPTURE_ACTIONS[action]
+        adapter = getattr(self.driver, source)
         if adapter is None:
-            raise CameraError("unsupported", "Camera discovery is unavailable")
+            raise CameraError("unsupported", "Capture source is unavailable")
 
         def authorized():
             return (not record.get("stop_requested") and self.driver.connected()
-                    and self.driver.camera is adapter and self.valid(request, initial=False) is None)
+                    and getattr(self.driver, source) is adapter and self.valid(request, initial=False) is None)
 
         def dispatch(method, *args):
             with self.lock:
                 if not authorized():
-                    raise CameraError("capture_cancelled", "Camera capture authority ended")
+                    raise CameraError("capture_cancelled", "Capture authority ended")
                 record["phase"] = "dispatch_started"
                 return method(*args, _async=True)
 
@@ -380,24 +386,27 @@ class Agent(object):
             try:
                 writer(self.root, self.instance, request["id"], *frame)
             except (IOError, OSError):
-                raise CameraError("capture_transfer_failed", "Could not transfer the camera image")
+                raise CameraError("capture_transfer_failed", "Could not transfer media from the agent")
 
         try:
-            if request["action"] == "camera_feed":
+            if action == "microphone_feed":
+                adapter.feed(lambda blocks: publish(handoff_microphone, blocks), authorized, dispatch)
+                result = {}
+            elif action == "camera_feed":
                 adapter.feed(request["payload"], lambda frame, pixels: publish(handoff_feed, frame, pixels),
                              authorized, dispatch)
                 result = {}
             else:
                 result, pixels = adapter.capture(request["payload"], authorized, dispatch)
                 publish(handoff, pixels)
-        except CameraError as error:
+        except (CameraError, MicrophoneError) as error:
             if error.code != "capture_cancelled" and authorized():
                 with self.lock:
                     record.update(status="rejected", finished=monotonic())
                 self.reply(replies, request, "rejected", code=error.code, message=str(error))
                 return
             result = {"cancelled": True}
-        except CameraUnknown as error:
+        except (CameraUnknown, MicrophoneUnknown) as error:
             with self.lock:
                 record.update(status="unknown", finished=monotonic())
             self.reply(replies, request, "unknown", message=str(error))
@@ -446,7 +455,7 @@ class Agent(object):
             selected = [(key, record) for key, record in self.records.items()
                         if (not oid or key == oid) and (not sid or record["session_id"] == sid)
                         and (record.get("action") not in PRODUCERS or key == oid)
-                        and (record.get("action") not in CAMERA_ACTIONS or record["status"] != "unknown" or key == oid)
+                        and (record.get("action") not in CAPTURE_ACTIONS or record["status"] != "unknown" or key == oid)
                         and (not scope
                              or scope == "locomotion" and record.get("motion_kind") == "walk"
                              or scope == "all" and (
@@ -528,7 +537,7 @@ class Agent(object):
             controls.start_holds(control_ids)
         deadline = monotonic() + 0.2
         for key, record in selected:
-            if (record.get("action") in PRODUCERS or record.get("action") in AUTONOMY_ACTIONS + CAMERA_ACTIONS + ("light_transition",)) and record["phase"] != "queued":
+            if (record.get("action") in PRODUCERS or record.get("action") in CAPTURE_ACTIONS or record.get("action") in AUTONOMY_ACTIONS + ("light_transition",)) and record["phase"] != "queued":
                 # These operations require their own completion record. A light fade has
                 # no confirmed native interruption and may settle after this stop request.
                 (confirmed if record["status"] == "completed" else unresolved).append(key)
@@ -798,13 +807,14 @@ class Agent(object):
                                       else COMMANDS[action](request.get("payload"))
                                       and (action in PRODUCERS or bool(request.get("session_id")))):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid command payload")
-                            elif action in CAMERA_ACTIONS and not valid_capture_id(rid):
+                            elif action in CAPTURE_ACTIONS and not valid_capture_id(rid):
                                 self.reply(replies, request, "rejected", code="invalid_request", message="Invalid capture operation ID")
                             elif len(self.records) >= 4096:
                                 self.reply(replies, request, "rejected", code="limit_exceeded", message="Agent ledger full")
                             else:
                                 requests = (getattr(self, action + "_work") if action in PRODUCERS
-                                            else self.camera_work if action in CAMERA_ACTIONS else self.work)
+                                            else getattr(self, CAPTURE_ACTIONS[action] + "_work")
+                                            if action in CAPTURE_ACTIONS else self.work)
                                 try:
                                     requests.put_nowait((request, replies))
                                 except queue.Full:
@@ -849,7 +859,8 @@ class Agent(object):
                 os._exit(1)
 
     def run(self):
-        background(self.run_critical, self.worker, self.camera_work)
+        background(self.run_critical, self.worker, self.camera_work, "camera")
+        background(self.run_critical, self.worker, self.microphone_work, "microphone")
         for name in PRODUCERS:
             background(self.run_critical, self.worker, getattr(self, name + "_work"))
             background(self.run_critical, self.producer_recovery, name)

@@ -234,3 +234,18 @@ during sample and video recording and verifies recovery of both partial
 assets on restart. Camera rate, timing, and throughput on both robot
 generations remain unverified.
 See [camera video recording](http-api.md#camera-video-recording).
+
+### Native microphone acquisition
+
+The Python 2 agent registers a uniquely named `ALAudioDevice` callback for
+the front microphone at 16 kHz, mono, signed 16-bit PCM. A dedicated worker
+transfers a rolling window of up to eight timestamped blocks through a
+private binary slot. Sequence numbers identify overruns. Scoped stop waits
+for unsubscribe and unregister, and an unconfirmed cleanup blocks another
+capture on the same connection. The fixture checks exact PCM bytes and
+reacquisition while all four command workers are occupied.
+
+Public WAV recording and capability discovery are still pending. Robot
+testing needs to verify callback reachability from the default Docker
+deployment, sample timing, and native teardown on NAOqi 2.1 and 2.8.
+See the [NAOqi remote microphone example](https://doc.aldebaran.com/2-5/dev/python/examples/audio/audio_soundprocessing.html).

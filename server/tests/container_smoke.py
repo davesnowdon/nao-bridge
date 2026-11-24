@@ -672,6 +672,31 @@ async def check_native_controls():
             "Native camera feed: paced frame transfer, scoped stop and reacquisition passed",
             flush=True,
         )
+        assert info["microphone"] is True
+        for _ in range(2):
+            microphone_id = uuid.uuid4().hex
+            assert not await backend.microphone_blocks(microphone_id, 0)
+            microphone = asyncio.create_task(
+                backend.run_microphone_feed(microphone_id, "fixture-microphone")
+            )
+            sequence = 0
+            try:
+                async with asyncio.timeout(3):
+                    while sequence < 3:
+                        blocks = await backend.microphone_blocks(microphone_id, sequence)
+                        for block, pcm in blocks:
+                            sequence += 1
+                            assert block["sequence"] == sequence and block["frames"] == 1600
+                            assert block["source_time"]["microseconds"] == (sequence - 1) * 100000
+                            assert pcm == b"\x00\x00\x01\x00\x01\xff\xff\x7f" * 400
+                        if not blocks:
+                            assert not microphone.done()
+                            await asyncio.sleep(0.02)
+                assert all(not task.done() for task in blocked)
+            finally:
+                await backend.stop(operation_id=microphone_id)
+                assert (await asyncio.wait_for(microphone, 3))["cancelled"]
+        print("Native microphone feed: exact PCM, scoped stop and reacquisition passed", flush=True)
         async with asyncio.timeout(3):
             while state["faces.detections"]["observed"] <= first_face["observed"]:
                 await asyncio.sleep(0.01)

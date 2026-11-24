@@ -20,6 +20,9 @@ from .errors import BackendUnknown, BridgeError
 LOG = logging.getLogger(__name__)
 MAX_FRAME = 16384
 MAX_CAMERA_HEADER = 2048
+MAX_AUDIO_HEADER = 4096
+MAX_AUDIO_BLOCKS = 8
+MAX_AUDIO_BLOCK_FRAMES = 4096
 
 
 def read_camera_slot(path: Path, operation_id: str, size: int) -> bytes:
@@ -91,6 +94,61 @@ def read_camera_feed_slot(
         ) from exc
 
 
+def read_microphone_slot(
+    path: Path, operation_id: str, after: int
+) -> list[tuple[dict[str, Any], bytes]]:
+    try:
+        with open(
+            path,
+            "rb",
+            opener=lambda name, flags: os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK),
+        ) as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError("Invalid microphone slot")
+            header = source.readline(MAX_AUDIO_HEADER + 1)
+            if not header.startswith(operation_id.encode("ascii") + b" "):
+                return []
+            if len(header) > MAX_AUDIO_HEADER or not header.endswith(b"\n"):
+                raise ValueError("Invalid microphone header")
+            metadata = json.loads(header[33:])
+            if not isinstance(metadata, list) or not 1 <= len(metadata) <= MAX_AUDIO_BLOCKS:
+                raise ValueError("Invalid number of microphone blocks")
+            blocks = []
+            previous = None
+            total = len(header)
+            for block in metadata:
+                frames, sequence, received = block["frames"], block["sequence"], block["received"]
+                if (
+                    type(frames) is not int
+                    or not 1 <= frames <= MAX_AUDIO_BLOCK_FRAMES
+                    or type(sequence) is not int
+                    or sequence <= 0
+                    or previous is not None
+                    and sequence != previous + 1
+                    or type(received) not in (int, float)
+                    or not math.isfinite(received)
+                    or received < 0
+                ):
+                    raise ValueError("Invalid microphone block metadata")
+                previous = sequence
+                total += frames * 2
+                pcm = source.read(frames * 2)
+                if len(pcm) != frames * 2:
+                    raise ValueError("Incomplete microphone block")
+                if sequence > after:
+                    blocks.append((block, pcm))
+            if total != info.st_size:
+                raise ValueError("Unexpected microphone slot size")
+            return blocks
+    except FileNotFoundError:
+        return []
+    except (OSError, KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise BridgeError(
+            "capture_transfer_failed", "Private microphone blocks are invalid", 503
+        ) from exc
+
+
 class AgentBackend:
     """One supervised agent, with separate priority, command and observation lanes."""
 
@@ -143,8 +201,9 @@ class AgentBackend:
         assert self.root is not None
         for path in Path(self.root.name).glob("*.sock"):
             path.unlink()
-        for path in Path(self.root.name).glob("camera-*.rgb*"):
-            path.unlink()
+        for pattern in ("camera-*.rgb*", "microphone-*.pcm*"):
+            for path in Path(self.root.name).glob(pattern):
+                path.unlink()
         env = {
             key: value
             for key, value in os.environ.items()
@@ -449,6 +508,27 @@ class AgentBackend:
         )
         if (instance, epoch) != (self.instance, self.epoch) or not self.connected.is_set():
             raise BackendUnknown("Agent generation changed during image transfer")
+        return value
+
+    async def run_microphone_feed(self, operation_id: str, session_id: str) -> dict[str, Any]:
+        return await self._rpc(
+            "command", "microphone_feed", {}, session_id, operation_id, timeout=None
+        )
+
+    async def microphone_blocks(
+        self, operation_id: str, after: int
+    ) -> list[tuple[dict[str, Any], bytes]]:
+        instance, epoch = self.instance, self.epoch
+        if self.root is None or instance is None or re.fullmatch(r"[0-9a-f]{32}", instance) is None:
+            raise BackendUnknown("Agent generation is unavailable")
+        value = await asyncio.to_thread(
+            read_microphone_slot,
+            Path(self.root.name) / f"microphone-{instance}.pcm",
+            operation_id,
+            after,
+        )
+        if (instance, epoch) != (self.instance, self.epoch) or not self.connected.is_set():
+            raise BackendUnknown("Agent generation changed during microphone transfer")
         return value
 
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]:

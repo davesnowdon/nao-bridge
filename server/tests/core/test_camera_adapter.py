@@ -9,7 +9,9 @@ from nao_bridge.ipc import read_camera_feed_slot
 PATH = Path(__file__).resolve().parents[2] / "agent" / "camera.py"
 SPEC = importlib.util.spec_from_file_location("test_agent_camera", PATH)
 camera = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(camera)
+with pytest.MonkeyPatch.context() as patch:
+    patch.syspath_prepend(str(PATH.parent))
+    SPEC.loader.exec_module(camera)
 
 
 def test_latest_feed_slot_rejects_incomplete_frames_and_ignores_previous_identity(tmp_path):
