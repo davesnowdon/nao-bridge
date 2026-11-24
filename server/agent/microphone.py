@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 from collections import deque
+import errno
 import json
 import logging
 import os
@@ -30,6 +31,16 @@ def handoff(root, instance, operation, blocks):
     header = (operation + " " + metadata + "\n").encode("ascii")
     replace_slot(os.path.join(root, "microphone-" + instance + ".pcm"), header,
                  b"".join(block[1] for block in blocks))
+
+
+def clear_handoff(root, instance):
+    slot = os.path.join(root, "microphone-" + instance + ".pcm")
+    for path in (slot, slot + ".tmp"):
+        try:
+            os.unlink(path)
+        except OSError as error:
+            if error.errno != errno.ENOENT:
+                LOG.warning("Could not remove the private microphone slot", exc_info=True)
 
 
 class MicrophoneError(ValueError):

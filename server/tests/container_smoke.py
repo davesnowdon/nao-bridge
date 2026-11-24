@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import signal
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import time
 import uuid
+import wave
 from contextlib import suppress
 from pathlib import Path
 
@@ -1357,6 +1359,19 @@ try:
             == "recording"
         )
     )
+    interrupted_audio = probe.request(
+        "POST",
+        "/api/recordings",
+        {"source": {"kind": "microphone"}, "duration": 30, "max_bytes": 1048576},
+        status=201,
+        schema="Recording",
+    )
+    until(
+        lambda: (
+            probe.request("GET", "/api/recordings/" + interrupted_audio["id"])["status"]
+            == "recording"
+        )
+    )
     time.sleep(0.5)
     operation = probe.request(
         "POST", "/api/speech/utterances", {"text": "[fixture:block]"}, status=202
@@ -1413,8 +1428,24 @@ try:
         assert content[:4] == b"RIFF" and content[8:12] == b"AVI "
     finally:
         connection.close()
+    audio_asset = recovered[interrupted_audio["id"]]
+    assert audio_asset["kind"] == "microphone.audio" and audio_asset["status"] == "partial"
+    assert audio_asset["error"]["code"] == "recording_interrupted"
+    connection = probe.connection()
+    try:
+        connection.request("GET", "/api/assets/" + audio_asset["id"] + "/content")
+        response = connection.getresponse()
+        content = response.read()
+        assert (
+            response.status == 200 and hashlib.sha256(content).hexdigest() == audio_asset["sha256"]
+        )
+        with wave.open(io.BytesIO(content)) as audio:
+            assert audio.getnframes() == audio_asset["metadata"]["frame_count"] > 0
+            assert len(audio.readframes(audio.getnframes())) == 2 * audio.getnframes()
+    finally:
+        connection.close()
     print(
-        "API restart: retained finalized assets and recovered partial samples and video",
+        "API restart: retained finalized assets and recovered partial samples, video and audio",
         flush=True,
     )
     probe.session = probe.request("POST", "/api/sessions", {}, status=201)["id"]

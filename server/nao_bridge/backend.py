@@ -12,6 +12,7 @@ from .contract import CONTACTS, PASSIVE_SENSORS
 from .errors import BackendUnknown, BridgeError
 from .fake_controls import FakeControls, FakeVelocityControls
 from .lights import RGB_CHANNELS
+from .wav import SAMPLE_RATE
 
 EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -53,6 +54,10 @@ class Backend(Protocol):
     async def latest_camera_frame(
         self, feed_id: str, payload: dict[str, Any], after: int
     ) -> tuple[dict[str, Any], bytes] | None: ...
+    async def run_microphone_feed(self, operation_id: str, session_id: str) -> dict[str, Any]: ...
+    async def microphone_blocks(
+        self, operation_id: str, after: int
+    ) -> list[tuple[dict[str, Any], bytes]]: ...
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
@@ -96,6 +101,8 @@ class FakeBackend:
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
         self.camera_feed_frame: tuple[dict[str, Any], bytes] | None = None
         self.camera_feed_id: str | None = None
+        self.microphone_id: str | None = None
+        self.audio_blocks: deque[tuple[dict[str, Any], bytes]] = deque(maxlen=8)
         self.motion_stop_ids: deque[str] = deque(maxlen=4096)
         self.revoked: set[str] = set()
         self.sink: EventSink | None = None
@@ -231,6 +238,8 @@ class FakeBackend:
             self.motion_state["locomotion_active"] = False
             if self.camera_feed_id is not None:
                 self.active[self.camera_feed_id][1].set()
+            if self.microphone_id is not None:
+                self.active[self.microphone_id][1].set()
         self.connected = connected
         self.faces = None
         self.motion_state["odometry"] = {
@@ -319,6 +328,7 @@ class FakeBackend:
                         "max_translation_m_s": 0.10,
                         "max_rotation_rad_s": 0.40,
                     },
+                    "microphone": connected,
                     "cameras": [
                         {
                             "id": camera,
@@ -862,6 +872,59 @@ class FakeBackend:
             return None
         return latest
 
+    async def run_microphone_feed(self, operation_id: str, session_id: str) -> dict[str, Any]:
+        if not self.connected:
+            raise BackendUnknown("Robot disconnected before audio acquisition")
+        if operation_id in self.motion_stop_ids or session_id in self.revoked:
+            return {"cancelled": True, "dispatched": False}
+        if self.microphone_id is not None:
+            raise BridgeError("resource_busy", "Microphone acquisition is already running", 409)
+        cancel = asyncio.Event()
+        self.microphone_id = operation_id
+        self.active[operation_id] = (session_id, cancel)
+        self.calls.append(
+            {"id": operation_id, "session_id": session_id, "action": "microphone_feed"}
+        )
+        sequence = 0
+        frames = SAMPLE_RATE // 20
+        pcm = b"\x00\x00\x01\x00\xff\x7f\x00\x80" * (frames // 4)
+        try:
+            while not cancel.is_set():
+                sequence += 1
+                seconds, microseconds = divmod((sequence - 1) * 50000, 1000000)
+                stamp = {"seconds": seconds, "microseconds": microseconds}
+                self.audio_blocks.append(
+                    (
+                        {
+                            "frames": frames,
+                            "received": time.monotonic(),
+                            "sequence": sequence,
+                            "source_time": stamp,
+                        },
+                        pcm,
+                    )
+                )
+                try:
+                    await asyncio.wait_for(cancel.wait(), 0.05)
+                except TimeoutError:
+                    continue
+            return {"cancelled": True, "dispatched": True}
+        finally:
+            self.active.pop(operation_id, None)
+            self.audio_blocks.clear()
+            self.microphone_id = None
+
+    async def microphone_blocks(
+        self, operation_id: str, after: int
+    ) -> list[tuple[dict[str, Any], bytes]]:
+        if not self.connected:
+            raise BackendUnknown("Microphone connection changed during acquisition")
+        if operation_id != self.microphone_id:
+            return []
+        return [
+            (metadata, pcm) for metadata, pcm in self.audio_blocks if metadata["sequence"] > after
+        ]
+
     async def stop(
         self,
         operation_id: str | None = None,
@@ -893,7 +956,13 @@ class FakeBackend:
                     call["action"] == "walk"
                     if motion_scope == "locomotion"
                     else call["action"]
-                    not in {"speech", "camera_capture", "camera_feed", "light_transition"}
+                    not in {
+                        "speech",
+                        "camera_capture",
+                        "camera_feed",
+                        "microphone_feed",
+                        "light_transition",
+                    }
                 )
             }
             if motion_scope

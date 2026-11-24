@@ -21,6 +21,8 @@ from typing import Any, BinaryIO
 
 from .contract import parse_json
 from .errors import BridgeError
+from .wav import ASSET_KIND as MICROPHONE_ASSET
+from .wav import seal_pcm
 
 ASSET_ID = re.compile(r"^[0-9a-f]{32}$")
 LOG = logging.getLogger(__name__)
@@ -156,6 +158,11 @@ class AssetStore:
                 # A crashed NDJSON append may end inside a UTF-8 character or JSON value.
                 if record["asset"]["content_type"] == "application/x-ndjson":
                     self._trim_line(content)
+                if record["asset"]["kind"] == MICROPHONE_ASSET:
+                    with content.open("r+b") as file:
+                        record["asset"]["metadata"]["frame_count"] = seal_pcm(file)
+                        file.flush()
+                        os.fsync(file.fileno())
                 size, digest = self._digest(content)
                 if size > record["reserved_bytes"]:
                     raise ValueError("Recovered asset exceeds its reservation: " + aid)

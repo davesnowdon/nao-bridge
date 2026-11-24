@@ -537,6 +537,7 @@ class Core:
                 "lights.transitions": feature(available and bool(self.info.get("lights"))),
                 "recordings": feature(available and self.recordings.available()),
                 "recordings.camera": feature(self.recordings.video_available()),
+                "recordings.microphone": feature(self.recordings.microphone_available()),
                 "assets": feature(self.recordings.store is not None),
                 "vision.cameras": feature(available and bool(self.info.get("cameras"))),
                 "vision.observers": feature(self.face_observers.available()),

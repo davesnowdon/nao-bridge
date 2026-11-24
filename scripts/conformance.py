@@ -3,8 +3,10 @@
 import argparse
 import hashlib
 import http.client
+import io
 import json
 import time
+import wave
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
@@ -212,6 +214,51 @@ class Probe:
             conn.request("GET", path, headers={"Range": "bytes=0-11"})
             result = conn.getresponse()
             assert result.status == 206 and result.read() == video[:12]
+        finally:
+            conn.close()
+
+    def microphone_recording(self):
+        recording = self.request(
+            "POST",
+            "/api/recordings",
+            {"source": {"kind": "microphone"}, "duration": 0.6},
+            status=201,
+            schema="Recording",
+        )
+        assert recording["source"] == {
+            "kind": "microphone",
+            "format": "pcm-wav",
+            "channels": 1,
+            "sample_rate_hz": 16000,
+        }
+        operation = self.wait({"id": recording["operation_id"]})
+        assert operation["kind"] == "recording.microphone" and operation["status"] == "succeeded", (
+            operation
+        )
+        asset = self.request(
+            "GET", "/api/assets/" + operation["result"]["asset_id"], schema="Asset"
+        )
+        assert asset["kind"] == "microphone.audio" and asset["content_type"] == "audio/wav"
+        path = "/api/assets/" + asset["id"] + "/content"
+        conn = self.connection()
+        try:
+            conn.request("GET", path)
+            response = conn.getresponse()
+            content = response.read()
+            assert response.status == 200 and response.getheader("Content-Type") == "audio/wav"
+            assert response.getheader("Content-Disposition").endswith('.wav"')
+            assert len(content) == asset["size_bytes"]
+            assert hashlib.sha256(content).hexdigest() == asset["sha256"]
+            with wave.open(io.BytesIO(content)) as audio:
+                assert (audio.getnchannels(), audio.getsampwidth(), audio.getframerate()) == (
+                    1,
+                    2,
+                    16000,
+                )
+                assert audio.getnframes() == asset["metadata"]["frame_count"] > 0
+            conn.request("GET", path, headers={"Range": "bytes=0-43"})
+            response = conn.getresponse()
+            assert response.status == 206 and response.read() == content[:44]
         finally:
             conn.close()
 
@@ -770,6 +817,7 @@ def run(url):
     captures = capabilities["features"]["vision.captures"]["status"] == "available"
     previews = capabilities["features"]["vision.previews"]["status"] == "available"
     video = capabilities["features"]["recordings.camera"]["status"] == "available"
+    microphone = capabilities["features"]["recordings.microphone"]["status"] == "available"
     if robot["backend"] == "native-fixture":
         assert previews, "Native container preview must use the pinned FFmpeg encoder"
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
@@ -969,6 +1017,8 @@ def run(url):
             probe.sample_recording()
         if video:
             probe.camera_recording()
+        if microphone:
+            probe.microphone_recording()
         subscription = probe.request(
             "POST",
             "/api/events/subscriptions",
@@ -1042,6 +1092,7 @@ def run(url):
         + (["camera_capture_and_download"] if captures else [])
         + (["shared_camera_previews_and_still_capture"] if previews else [])
         + (["camera_recording_asset"] if video else [])
+        + (["microphone_recording_asset"] if microphone else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])

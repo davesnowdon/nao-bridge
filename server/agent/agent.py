@@ -23,7 +23,7 @@ from sampling import GROUPS, GroupSampler
 from recognition import valid_configuration
 from sonar import valid_configuration as valid_sonar
 from camera import CameraError, CameraUnknown, handoff, handoff_feed, valid_capture, valid_capture_id, valid_feed
-from microphone import MicrophoneError, MicrophoneUnknown, handoff as handoff_microphone
+from microphone import MicrophoneError, MicrophoneUnknown, clear_handoff, handoff as handoff_microphone
 from faces import valid_configuration as valid_faces
 from lights import valid_light
 from behaviors import MAX_PAGE as BEHAVIOR_PAGE_SIZE, valid_behavior, valid_name
@@ -411,6 +411,9 @@ class Agent(object):
                 record.update(status="unknown", finished=monotonic())
             self.reply(replies, request, "unknown", message=str(error))
             return
+        finally:
+            if action == "microphone_feed":
+                clear_handoff(self.root, self.instance)
         with self.lock:
             if not authorized():
                 result = {"cancelled": True, "dispatched": record["phase"] != "queued"}

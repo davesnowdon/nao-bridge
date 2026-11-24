@@ -1016,6 +1016,24 @@ class Recordings:
             ),
         )
 
+    def microphone(
+        self,
+        *,
+        duration: float,
+        max_bytes: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.microphone(
+                    duration=duration,
+                    max_bytes=max_bytes,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
     def samples(
         self,
         groups: list[str],

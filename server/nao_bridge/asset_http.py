@@ -173,11 +173,17 @@ class AssetHTTP:
         asset = self.get(aid)
         size = asset["size_bytes"]
         etag = '"' + asset["sha256"] + '"'
+        suffix = {
+            "application/x-ndjson": "ndjson",
+            "audio/wav": "wav",
+            "image/png": "png",
+            "video/x-msvideo": "avi",
+        }.get(asset["content_type"], "bin")
         headers = {
             "ETag": etag,
             "Accept-Ranges": "bytes",
             "Content-Type": asset["content_type"],
-            "Content-Disposition": 'attachment; filename="' + aid + '.ndjson"',
+            "Content-Disposition": f'attachment; filename="{aid}.{suffix}"',
         }
         try:
             selected = byte_range(

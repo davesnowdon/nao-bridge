@@ -8,6 +8,7 @@ import sys
 import threading
 import uuid
 from collections import deque
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -15,7 +16,17 @@ from .asset_http import AssetHTTP
 from .assets import AssetStore, AssetWriter
 from .avi import AviMuxer
 from .camera_previews import camera_config
-from .errors import BridgeError
+from .errors import BackendUnknown, BridgeError
+from .wav import ASSET_KIND as MICROPHONE_ASSET
+from .wav import (
+    CHANNELS,
+    CONTENT_TYPE,
+    HEADER_BYTES,
+    SAMPLE_BYTES,
+    SAMPLE_RATE,
+    pcm_header,
+    seal_pcm,
+)
 
 if TYPE_CHECKING:
     from .camera_previews import CameraFeed
@@ -24,12 +35,21 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 KIND = "recording.samples"
 VIDEO_KIND = "recording.camera"
-KINDS = {KIND, VIDEO_KIND}
+AUDIO_KIND = "recording.microphone"
+KINDS = {KIND, VIDEO_KIND, AUDIO_KIND}
 END_RESERVE = 4096
 
 
 def line(value: dict[str, Any]) -> bytes:
     return (json.dumps(value, allow_nan=False, separators=(",", ":")) + "\n").encode("utf-8")
+
+
+@dataclass
+class MicrophoneFeed:
+    generation: int
+    ending: asyncio.Event = field(default_factory=asyncio.Event)
+    done: asyncio.Event = field(default_factory=asyncio.Event)
+    cleanup_unconfirmed: bool = False
 
 
 @dataclass
@@ -55,6 +75,7 @@ class Capture:
     done: asyncio.Event = field(default_factory=asyncio.Event)
     retained_until: float | None = None
     camera_feed: CameraFeed | None = None
+    microphone_feed: MicrophoneFeed | None = None
     wait_for_camera: bool = False
     first_frame_ms: float | None = None
     last_frame_ms: float | None = None
@@ -73,6 +94,7 @@ class Recordings:
         self.http = AssetHTTP(self)
         self.store_closed = False
         self.close_finished = asyncio.Event()
+        self.microphone_feed: MicrophoneFeed | None = None
 
     async def start(self) -> None:
         self.loop = asyncio.get_running_loop()
@@ -118,6 +140,13 @@ class Recordings:
             sys.platform == "linux" and self.available() and self.core.camera_previews.available()
         )
 
+    def microphone_available(self) -> bool:
+        return (
+            self.available()
+            and self.core.connection == "connected"
+            and self.core.info.get("microphone") is True
+        )
+
     def create(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         from .core import utc
 
@@ -129,13 +158,26 @@ class Recordings:
             raise BridgeError("resource_busy", "Robot stop is in progress", 409)
         settings = self.core.settings
         source = copy.deepcopy(body["source"])
+        kind = source["kind"]
         camera = None
-        if source["kind"] == "camera":
+        microphone = kind == "microphone"
+        if kind == "camera":
             if not self.video_available():
                 raise BridgeError("unsupported", "Camera recording is unavailable", 422)
             camera = camera_config(source)
             self.core.camera_previews.check_feed(camera)
             source = {"kind": "camera", **camera, "format": "mjpeg-avi"}
+        elif microphone:
+            if not self.microphone_available():
+                raise BridgeError("unsupported", "Microphone recording is unavailable", 422)
+            if self.microphone_feed and self.microphone_feed.generation == self.core.generation:
+                raise BridgeError("resource_busy", "Microphone is in use or stopping", 409)
+            source = {
+                "kind": "microphone",
+                "sample_rate_hz": SAMPLE_RATE,
+                "channels": CHANNELS,
+                "format": "pcm-wav",
+            }
         else:
             source["rate_hz"] = source.get("rate_hz", settings.sample_rate_hz)
             if source["rate_hz"] > settings.sample_rate_hz:
@@ -160,7 +202,7 @@ class Recordings:
             or len(self.assets) + len(active) >= settings.max_assets
         ):
             raise BridgeError("storage_full", "Asset capacity is exhausted", 507)
-        operation = self.core.new_operation(session, VIDEO_KIND if camera else KIND, [])
+        operation = self.core.new_operation(session, f"recording.{kind}", [])
         value = {
             "id": uuid.uuid4().hex,
             "session_id": session.public["id"],
@@ -185,7 +227,7 @@ class Recordings:
             "source": source,
             "created_at": value["created_at"],
         }
-        if camera is None:
+        if kind == "samples":
             header["units"] = {
                 "joints": {
                     joint["name"]: joint["unit"] for joint in self.core.info.get("joints", [])
@@ -198,14 +240,17 @@ class Recordings:
         if camera:
             item.camera_feed = self.core.camera_previews.acquire(camera)
             item.camera_feed.recordings.add(value["id"])
+        elif microphone:
+            item.microphone_feed = self.microphone_feed = MicrophoneFeed(self.core.generation)
+            self.core.spawn(self.run_microphone(item, item.microphone_feed))
         else:
             item.next_sample = item.last_sample + 1 / source["rate_hz"]
         self.items[value["id"]] = item
         self.changed(item)
-        if camera is None:
+        if kind == "samples":
             self.capture(item)
         threading.Thread(
-            target=self.write_video if camera else self.write,
+            target=self.write_video if camera else self.write_audio if microphone else self.write,
             args=(item,),
             name="recording-" + value["id"][:8],
             daemon=True,
@@ -253,6 +298,104 @@ class Recordings:
             self.stop(
                 self.items[rid], reason=code, error=BridgeError(code, "Camera feed ended", 503)
             )
+
+    def microphone_block(self, item: Capture, metadata: dict[str, Any], pcm: bytes) -> None:
+        moment = max(0.0, (metadata["received"] - self.core.origin) * 1000)
+        sequence = metadata["sequence"]
+        if len(pcm) != metadata["frames"] * SAMPLE_BYTES:
+            raise BridgeError("invalid_audio_block", "Microphone block size did not match", 503)
+        with item.lock:
+            if item.stopped:
+                return
+            missing = sequence - (item.last_sequence or 0) - 1
+            if missing > 0:
+                self.add_gap(
+                    item, "microphone_block_gap", item.last_frame_ms or moment, moment, missing
+                )
+            item.last_sequence, item.last_frame_ms = sequence, moment
+            if item.first_frame_ms is None:
+                item.first_frame_ms = moment
+            settings = self.core.settings
+            if (
+                len(item.queue) >= settings.recording_queue_count
+                or item.queued_bytes + len(pcm) > settings.recording_queue_bytes
+            ):
+                self.add_gap(item, "writer_overflow", moment, moment, 1)
+                return
+            item.queue.append(pcm)
+            item.queued_bytes += len(pcm)
+            item.wake.set()
+
+    async def run_microphone(self, item: Capture, feed: MicrophoneFeed) -> None:
+        operation_id, sid = item.public["operation_id"], item.public["session_id"]
+        if feed.ending.is_set():
+            if self.microphone_feed is feed:
+                self.microphone_feed = None
+            feed.done.set()
+            return
+        native = asyncio.create_task(self.core.backend.run_microphone_feed(operation_id, sid))
+        error = None
+        uncertain = False
+        try:
+            sequence = 0
+            while not feed.ending.is_set():
+                if native.done():
+                    await native
+                    if not feed.ending.is_set():
+                        raise BridgeError(
+                            "microphone_feed_ended", "Microphone acquisition ended", 503
+                        )
+                    break
+                blocks = await self.core.backend.microphone_blocks(operation_id, sequence)
+                if self.core.clock() >= item.deadline:
+                    self.stop(item, reason="duration_elapsed")
+                    break
+                for metadata, pcm in blocks:
+                    self.microphone_block(item, metadata, pcm)
+                    sequence = metadata["sequence"]
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(feed.ending.wait(), 0.025)
+        except BridgeError as exc:
+            error = exc
+        except BackendUnknown:
+            uncertain = True
+        except Exception:
+            error = BridgeError("microphone_capture_failed", "Microphone acquisition failed", 503)
+            LOG.warning("Microphone acquisition failed", exc_info=True)
+        finally:
+            try:
+                async with asyncio.timeout(self.core.settings.backend_timeout_seconds):
+                    if not native.done() and feed.generation == self.core.generation:
+                        try:
+                            await self.core.backend.stop(operation_id=operation_id, session_id=sid)
+                        except BridgeError as exc:
+                            error = error or exc
+                    await asyncio.shield(native)
+            except BridgeError as exc:
+                error = error or exc
+            except (BackendUnknown, TimeoutError):
+                uncertain = True
+            except Exception:
+                uncertain = True
+                LOG.warning("Microphone cleanup failed", exc_info=True)
+            finally:
+                if not native.done():
+                    native.cancel()
+                await asyncio.gather(native, return_exceptions=True)
+            feed.cleanup_unconfirmed = uncertain
+            if self.microphone_feed is feed and not uncertain:
+                self.microphone_feed = None
+            if uncertain:
+                error = BridgeError(
+                    "microphone_cleanup_unconfirmed",
+                    "Microphone cleanup could not be confirmed",
+                    503,
+                )
+            if error is not None:
+                with item.lock:
+                    item.error = error
+                self.stop(item, reason=error.code, error=error)
+            feed.done.set()
 
     def get(self, rid: str, sid: str) -> Capture:
         item = self.items.get(rid)
@@ -314,7 +457,7 @@ class Recordings:
         now = self.core.clock()
         for item in self.active():
             if (
-                item.camera_feed
+                item.public["source"]["kind"] != "samples"
                 or item.stopped
                 or not groups.intersection(item.public["source"]["groups"])
             ):
@@ -339,7 +482,7 @@ class Recordings:
 
     def observation_gap(self) -> None:
         for item in self.active():
-            if item.camera_feed:
+            if item.public["source"]["kind"] != "samples":
                 continue
             with item.lock:
                 if not item.stopped:
@@ -361,7 +504,7 @@ class Recordings:
                 item.stopped = True
                 item.reason, item.error, item.cancelled = reason, error, cancelled
                 item.ended_ms = self.core.now_ms()
-                if feed is None and (
+                if item.public["source"]["kind"] == "samples" and (
                     self.core.clock() - item.last_sample
                     > 1 / item.public["source"]["rate_hz"] + 1.5 / self.core.settings.sample_rate_hz
                 ):
@@ -375,6 +518,8 @@ class Recordings:
         if feed is not None and item.public["id"] in feed.recordings:
             feed.recordings.remove(item.public["id"])
             item.wait_for_camera = self.core.camera_previews.end_if_unused(feed)
+        if item.microphone_feed:
+            item.microphone_feed.ending.set()
         item.public["status"] = "stopping"
         self.changed(item)
         if cancelled and item.operation.public["status"] not in {
@@ -419,6 +564,11 @@ class Recordings:
                 and item.camera_feed is not None
                 and item.camera_feed.generation == self.core.generation
                 and item.camera_feed.cleanup_unconfirmed
+            )
+            or (
+                item.microphone_feed is not None
+                and item.microphone_feed.generation == self.core.generation
+                and item.microphone_feed.cleanup_unconfirmed
             )
         ]
 
@@ -624,6 +774,112 @@ class Recordings:
                 error = BridgeError(
                     "camera_cleanup_unconfirmed", "Camera cleanup could not be confirmed", 503
                 )
+        self.finished(item, asset, error, fault)
+
+    def write_audio(self, item: Capture) -> None:
+        writer, error, fault = None, None, False
+        try:
+            assert self.store is not None
+            writer = self.store.begin(
+                kind=MICROPHONE_ASSET,
+                content_type=CONTENT_TYPE,
+                max_bytes=item.public["max_bytes"],
+                metadata=item.header,
+                expire=False,
+            )
+            writer.write(pcm_header(0))
+            duration_limit = (
+                HEADER_BYTES + int(item.public["duration"] * SAMPLE_RATE) * SAMPLE_BYTES
+            )
+            while True:
+                with item.lock:
+                    block = item.queue.popleft() if item.queue else None
+                    if block:
+                        item.queued_bytes -= len(block)
+                    else:
+                        item.wake.clear()
+                    stopped = item.stopped
+                if block:
+                    first = writer.size == HEADER_BYTES
+                    room = min(writer.max_bytes, duration_limit) - writer.size
+                    limit = room - room % SAMPLE_BYTES
+                    if len(block) > limit:
+                        writer.write(block[:limit])
+                        if duration_limit <= writer.max_bytes:
+                            if first and limit:
+                                self.notify(self.started, item)
+                            break
+                        with item.lock:
+                            now = self.core.now_ms()
+                            self.add_gap(item, "recording_size_limit", now, now, 1)
+                        raise BridgeError(
+                            "recording_size_limit", "Recording reached its byte bound", 507
+                        )
+                    writer.write(block)
+                    if first:
+                        self.notify(self.started, item)
+                    if writer.size >= duration_limit:
+                        break
+                elif stopped:
+                    break
+                else:
+                    item.wake.wait(0.1)
+        except BridgeError as exc:
+            error = exc
+        except Exception:
+            fault = True
+            error = BridgeError("storage_error", "Audio recording could not continue", 503)
+            LOG.warning("Audio recording failed", exc_info=True)
+        self.notify(self.audio_written, item, writer, error, fault)
+
+    def audio_written(
+        self, item: Capture, writer: AssetWriter | None, error: BridgeError | None, fault: bool
+    ) -> None:
+        self.stop(item, error=error)
+        self.core.spawn(self.finish_audio(item, writer, error, fault))
+
+    def seal_audio(
+        self, item: Capture, writer: AssetWriter, error: BridgeError | None
+    ) -> tuple[dict[str, Any], BridgeError | None]:
+        frames = seal_pcm(writer.file)
+        with item.lock:
+            if error is None and item.had_gap:
+                error = BridgeError("recording_gaps", "Audio contains missing blocks", 503)
+            if error is None and not frames and not item.cancelled:
+                error = BridgeError("microphone_unavailable", "Recording captured no audio", 503)
+            gap = copy.deepcopy(item.gap)
+            if gap:
+                gap["dropped_blocks"] = gap.pop("dropped_samples")
+            metadata = {
+                "frame_count": frames,
+                "dropped_blocks": item.dropped + (len(item.queue) if error is not None else 0),
+                "first_block_bridge_time_ms": item.first_frame_ms,
+                "last_block_bridge_time_ms": item.last_frame_ms,
+                "gap": gap,
+            }
+            item.queue.clear()
+            item.queued_bytes = 0
+        asset = writer.finalize(
+            error=error.payload() if error else None,
+            finalized_metadata=metadata,
+        )
+        return asset, error
+
+    async def finish_audio(
+        self, item: Capture, writer: AssetWriter | None, error: BridgeError | None, fault: bool
+    ) -> None:
+        feed = item.microphone_feed
+        assert feed is not None
+        await feed.done.wait()
+        error = item.error or error
+        asset = None
+        if writer is not None:
+            try:
+                asset, error = await asyncio.to_thread(self.seal_audio, item, writer, error)
+            except Exception:
+                fault = True
+                error = BridgeError("storage_error", "Audio asset finalization failed", 503)
+                LOG.exception("Audio asset finalization failed id=%s", item.public["id"])
         self.finished(item, asset, error, fault)
 
     def finished(

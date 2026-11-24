@@ -245,7 +245,15 @@ for unsubscribe and unregister, and an unconfirmed cleanup blocks another
 capture on the same connection. The fixture checks exact PCM bytes and
 reacquisition while all four command workers are occupied.
 
-Public WAV recording and capability discovery are still pending. Robot
-testing needs to verify callback reachability from the default Docker
+Contract 1.19.0 adds `recordings.microphone` and the `microphone` recording
+source to HTTP and both Python clients. WAV assets use the recording quota,
+retention, checksums, ranged downloads, and partial-asset lifecycle. On
+restart, storage derives the header and frame count from the intact PCM.
+Both Python clients record through the public API in socket tests. Raw HTTP
+verifies the WAV header, checksum and byte ranges, and the native fixture
+recovers a playable partial WAV after killing the API process.
+See [microphone recording](http-api.md#microphone-recording).
+
+Robot testing needs to verify callback reachability from the default Docker
 deployment, sample timing, and native teardown on NAOqi 2.1 and 2.8.
 See the [NAOqi remote microphone example](https://doc.aldebaran.com/2-5/dev/python/examples/audio/audio_soundprocessing.html).

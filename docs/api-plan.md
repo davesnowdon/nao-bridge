@@ -269,7 +269,7 @@ Events are notifications; they do not automatically start expensive face/people/
 
 All activity creation returns 201 with status and owned resource IDs; finite capture uses 202 Operation. Recording creation returns immediately in `starting`, then `recording`, `stopping`, and `completed` or `failed`. The associated Operation carries the final outcome/asset IDs. Stop finalizes data before success. Partial results remain explicitly marked with errors and missing intervals. Each recording selects one source family; independent recordings are not promised sample-accurate synchronization.
 
-Recording `source` is an object tagged by `kind`: `samples`, `camera`, or `microphone`. Samples select `groups` and `rate_hz`; camera selects camera/resolution/frame rate/format; microphone selects supported channels/sample rate/format. Responses echo the accepted configuration and reject incompatible options. The delivered sample contract requires an explicit positive `duration`; the other source families remain later increments.
+Recording `source` is an object tagged by `kind`: `samples`, `camera`, or `microphone`. All require an explicit positive `duration` and return the accepted source and format. See the [recording reference](http-api.md#camera-video-recording) for the supported source options and partial asset behavior.
 
 For sample recordings, store NDJSON with a metadata header, schema version, observed joint/sensor units, connection generation, timestamps, and gaps. Audio/video formats and rate/channel limits are capability-gated by the actual backend. The plan requires audio recording and playback, camera capture, preview, and bounded video recording; live bidirectional microphone/speaker streaming is deferred.
 

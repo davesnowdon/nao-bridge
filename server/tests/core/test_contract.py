@@ -124,6 +124,27 @@ def test_guard_only_accepts_disjoint_recording_sources_with_existing_sources_unc
         compare(api, new_api, old, new)
 
 
+def test_guard_allows_new_binary_asset_media_without_changing_existing_responses():
+    api, new_api, old, new = bundles()
+    path = "/assets/{asset_id}/content"
+    binary = {"schema": {"type": "string", "format": "binary"}}
+    original = {
+        "get": {
+            "responses": {
+                status: {"content": {"application/x-ndjson": binary}} for status in ("200", "206")
+            }
+        }
+    }
+    api["paths"][path] = original
+    updated = new_api["paths"][path] = copy.deepcopy(original)
+    for response in updated["get"]["responses"].values():
+        response["content"]["audio/wav"] = binary
+    compare(api, new_api, old, new)
+    del updated["get"]["responses"]["206"]["content"]["application/x-ndjson"]
+    with pytest.raises(ValueError, match="major bump"):
+        compare(api, new_api, old, new)
+
+
 @pytest.mark.parametrize("change", ["required", "existing_type", "closed_response"])
 def test_guard_still_rejects_breaking_response_edits(change):
     api, new_api, schemas, new_schemas = bundles()

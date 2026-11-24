@@ -403,13 +403,20 @@ class CameraRecordingSource(WireModel):
     format: Literal["mjpeg-avi"]
 
 
+class MicrophoneRecordingSource(WireModel):
+    kind: Literal["microphone"]
+    sample_rate_hz: Literal[16000]
+    channels: Literal[1]
+    format: Literal["pcm-wav"]
+
+
 class RecordingData(WireModel):
     id: str
     session_id: str
     operation_id: str
     bridge_instance_id: str
     connection_generation: int
-    source: RecordingSource | CameraRecordingSource
+    source: RecordingSource | CameraRecordingSource | MicrophoneRecordingSource
     duration: float = Field(gt=0)
     max_bytes: int = Field(ge=65536)
     status: Literal["starting", "recording", "stopping", "completed", "failed"]

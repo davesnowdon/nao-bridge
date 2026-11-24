@@ -117,6 +117,21 @@ def recording_variant_addition(before, after):
     )
 
 
+def asset_media_addition(before, after):
+    reduced = shape(after)
+    binary = {"schema": {"type": "string", "format": "binary"}}
+    try:
+        for status in ("200", "206"):
+            previous = before["responses"][status]["content"]
+            current = reduced["responses"][status]["content"]
+            for media_type in current.keys() - previous.keys():
+                if current.pop(media_type) != binary:
+                    return False
+    except (KeyError, TypeError, AttributeError):
+        return False
+    return shape(before) == reduced
+
+
 def compare(previous, current, old_schemas, new_schemas):
     before = tuple(int(part) for part in previous["info"]["version"].split("."))
     after = tuple(int(part) for part in current["info"]["version"].split("."))
@@ -150,7 +165,12 @@ def compare(previous, current, old_schemas, new_schemas):
             changes.append("schema " + name)
     for path, methods in previous["paths"].items():
         for method, operation in methods.items():
-            if shape(operation) != shape(current["paths"].get(path, {}).get(method)):
+            updated = current["paths"].get(path, {}).get(method)
+            if shape(operation) != shape(updated) and not (
+                path == "/assets/{asset_id}/content"
+                and method == "get"
+                and asset_media_addition(operation, updated)
+            ):
                 changes.append(method + " " + path)
     if changes and after[0] == before[0]:
         raise ValueError("Existing wire shapes changed without a major bump: " + ", ".join(changes))

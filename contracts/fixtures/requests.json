@@ -2,6 +2,22 @@
   "version": "1.0.0",
   "cases": [
     {
+      "schema": "RecordingCreate",
+      "value": {
+        "source": {"kind": "microphone"},
+        "duration": 5
+      },
+      "valid": true
+    },
+    {
+      "schema": "RecordingCreate",
+      "value": {
+        "source": {"kind": "microphone", "sample_rate_hz": 48000},
+        "duration": 5
+      },
+      "valid": false
+    },
+    {
       "schema": "SpeechCreate",
       "value": {
         "text": "Hello"

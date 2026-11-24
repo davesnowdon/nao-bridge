@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.18.0",
+  "contract_version": "1.19.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -15,6 +15,23 @@
     "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "bounded microphone recording",
+      "steps": [
+        "Check recordings.microphone in robot capabilities",
+        "Start a microphone recording and await its operation",
+        "Read the asset and download the WAV and a byte range"
+      ],
+      "expected": [
+        "The accepted source identifies 16 kHz mono PCM WAV",
+        "The WAV frame count matches the retained asset metadata",
+        "The downloaded WAV matches the asset SHA-256 and byte range"
+      ],
+      "client_decisions": [
+        "Use the operation and asset status to identify partial audio.",
+        "Check the aggregate loss metadata before aligning audio to another timeline."
+      ]
+    },
     {
       "name": "bounded camera recording",
       "steps": [

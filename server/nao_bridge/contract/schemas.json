@@ -2490,6 +2490,30 @@
             "kind"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "microphone"
+            },
+            "sample_rate_hz": {
+              "const": 16000,
+              "default": 16000
+            },
+            "channels": {
+              "const": 1,
+              "default": 1
+            },
+            "format": {
+              "const": "pcm-wav",
+              "default": "pcm-wav"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
         }
       ]
     },

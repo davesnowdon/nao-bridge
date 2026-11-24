@@ -1076,6 +1076,35 @@ index or trailer is incomplete. A cancelled recording follows the existing
 recording ownership and close rules. Both Python clients expose
 `nao.recordings.camera(duration=..., frame_rate=...)`.
 
+## Microphone recording
+
+Check `recordings.microphone` in capabilities. It requires a discovered audio
+device and enabled asset storage. Create a recording through the same
+session-owned endpoint.
+
+```json
+{"source":{"kind":"microphone"},"duration":5,"max_bytes":262144}
+```
+
+The accepted source contains `sample_rate_hz: 16000`, `channels: 1` and
+`format: "pcm-wav"`. This format captures signed 16-bit PCM from the front
+microphone. Clients can omit those fixed fields and other values fail
+validation. One microphone recording can run at a time. Camera and sample
+recordings can run alongside it within the shared storage and recording limits.
+
+Wait for `recording.microphone` to finish before reading the `microphone.audio`
+asset. Content is `audio/wav`, with a `.wav` download name, SHA-256, and byte
+ranges. The duration bound starts at admission and caps the audio frame count.
+The asset metadata records the frame count and aggregate loss detected by the
+bridge. The WAV contains retained samples in order. A gap does not insert
+silence. Missing blocks, the byte limit, or an interrupted write can leave a
+playable partial asset. A storage restart reconstructs the header from the
+complete PCM samples and reports `recording_interrupted` for that asset.
+
+Stopping, cancelling, session close, and lease expiry release the microphone.
+An unconfirmed native stop blocks new recordings in the current connection
+generation. Both Python clients expose `nao.recordings.microphone(duration=...)`.
+
 ## Sample recordings and retained assets
 
 Recording storage is enabled by default in Docker; local runs need
