@@ -32,7 +32,7 @@ from .joint_controls import VELOCITY_KIND, JointControls, VelocityControls
 from .lights import LIGHT_KIND, transition_payload
 from .listeners import Listeners
 from .motion import compile_trajectory, stiffness_targets
-from .recordings import KIND as RECORDING_KIND
+from .recordings import KINDS as RECORDING_KINDS
 from .recordings import Recordings
 from .sensor_observers import SONAR_IDS, SensorObservers
 from .sequences import (
@@ -335,7 +335,7 @@ class Core:
                     )
                     continue
                 if op.public["status"] not in TERMINAL and op.public["kind"] not in {
-                    RECORDING_KIND,
+                    *RECORDING_KINDS,
                     CAPTURE_KIND,
                     SEQUENCE_KIND,
                     DELAY_KIND,
@@ -536,6 +536,7 @@ class Core:
                 "lights.groups": feature(available and bool(self.info.get("lights"))),
                 "lights.transitions": feature(available and bool(self.info.get("lights"))),
                 "recordings": feature(available and self.recordings.available()),
+                "recordings.camera": feature(self.recordings.video_available()),
                 "assets": feature(self.recordings.store is not None),
                 "vision.cameras": feature(available and bool(self.info.get("cameras"))),
                 "vision.observers": feature(self.face_observers.available()),
@@ -1837,7 +1838,7 @@ class Core:
             return copy.deepcopy(op.public)
         if not op.public["cancellable"]:
             raise BridgeError("unsupported", "This operation cannot be cancelled", 422)
-        if op.public["kind"] == RECORDING_KIND:
+        if op.public["kind"] in RECORDING_KINDS:
             for item in self.recordings.active():
                 if item.operation is op:
                     self.recordings.stop(item, reason="cancelled", cancelled=True)
@@ -2307,13 +2308,14 @@ class Core:
         stopped["unresolved_vision_observer_ids"] = self.face_observers.unresolved()
         unresolved_previews = await self.camera_previews.settled()
         stopped["unresolved_camera_preview_ids"] = unresolved_previews
+        stopped["unresolved_ids"].extend(await self.recordings.settle())
         if (
             preview_feed
             and preview_feed.id in stopped["unresolved_ids"]
-            and not unresolved_previews
+            and preview_feed.done.is_set()
+            and not preview_feed.cleanup_unconfirmed
         ):
             stopped["unresolved_ids"].remove(preview_feed.id)
-        stopped["unresolved_ids"].extend(await self.recordings.settle())
         stopped["unresolved_ids"].extend(await self.sequences.finish_interruption(sequences))
         if capture is not None:
             oid = capture.operation.public["id"]

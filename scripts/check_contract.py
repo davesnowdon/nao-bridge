@@ -91,6 +91,32 @@ def optional_addition(before, after, *, extensible):
     return shape(before) == shape(reduced)
 
 
+def recording_variant_addition(before, after):
+    def variants(definition):
+        branches = definition["oneOf"] if set(definition) == {"oneOf"} else [definition]
+        result = {}
+        for branch in branches:
+            tag = branch.get("properties", {}).get("kind", {}).get("const")
+            if (
+                not isinstance(tag, str)
+                or tag in result
+                or branch.get("type") != "object"
+                or "kind" not in branch.get("required", [])
+            ):
+                return {}
+            result[tag] = branch
+        return result
+
+    if not isinstance(after, dict):
+        return False
+    current, extended = variants(shape(before)), variants(shape(after))
+    return bool(
+        current
+        and current.keys() < extended.keys()
+        and all(extended[tag] == branch for tag, branch in current.items())
+    )
+
+
 def compare(previous, current, old_schemas, new_schemas):
     before = tuple(int(part) for part in previous["info"]["version"].split("."))
     after = tuple(int(part) for part in current["info"]["version"].split("."))
@@ -116,6 +142,9 @@ def compare(previous, current, old_schemas, new_schemas):
             or (
                 name in request_extensions
                 and optional_addition(definition, new_definition, extensible=False)
+            )
+            or (
+                name == "RecordingSource" and recording_variant_addition(definition, new_definition)
             )
         ):
             changes.append("schema " + name)

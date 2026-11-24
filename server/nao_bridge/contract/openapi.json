@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.17.0",
+    "version": "1.18.0",
     "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots. Increment 4 begins with discovered light groups and state. Speech options are discoverable and animated speech is available in fixtures. Installed behavior discovery and observed running sets are available. Built-in nod, shake and wave gestures are fixture-gated. Portable sequence documents can be validated without executing actions. Validated sequences reserve resources and expose each child operation."
   },
   "servers": [

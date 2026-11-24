@@ -213,5 +213,24 @@ waits for the native result. Both Python clients expose frame iterators.
 
 The raw HTTP fixture checks shared preview, conflicting settings and still
 capture while the stream is open. Socket tests exercise both SDKs and
-independent session cleanup. Durable video will use the same camera feed.
+independent session cleanup.
 See [managed JPEG preview](http-api.md#managed-jpeg-preview).
+
+### Durable camera video
+
+Contract 1.18.0 adds the `camera` recording source and the `recordings.camera`
+capability. The Linux runtime remuxes JPEG frames from the shared camera feed
+into seekable MJPEG AVI. Each recording reserves its maximum asset size,
+and the writer enforces it through both frame admission and a file size
+limit on FFmpeg. Finalization hashes the bytes after FFmpeg seals the file
+and its index. Preview, still capture, and matching recordings use the same
+acquisition. Frame gaps and size limits finalize the captured frames as
+partial assets with explicit error and gap metadata.
+
+The SDK fixture verifies decoding, seeking, and playable partial output
+after a missing frame or a size limit. Raw HTTP verifies the AVI signature,
+checksum, and range response. The native container fixture kills the API
+during sample and video recording and verifies recovery of both partial
+assets on restart. Camera rate, timing, and throughput on both robot
+generations remain unverified.
+See [camera video recording](http-api.md#camera-video-recording).

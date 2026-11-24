@@ -395,13 +395,21 @@ class RecordingSource(WireModel):
     rate_hz: float = Field(gt=0)
 
 
+class CameraRecordingSource(WireModel):
+    kind: Literal["camera"]
+    camera: Literal["top", "bottom"]
+    resolution: Literal["320x240", "640x480"]
+    frame_rate: int = Field(ge=1, le=5)
+    format: Literal["mjpeg-avi"]
+
+
 class RecordingData(WireModel):
     id: str
     session_id: str
     operation_id: str
     bridge_instance_id: str
     connection_generation: int
-    source: RecordingSource
+    source: RecordingSource | CameraRecordingSource
     duration: float = Field(gt=0)
     max_bytes: int = Field(ge=65536)
     status: Literal["starting", "recording", "stopping", "completed", "failed"]

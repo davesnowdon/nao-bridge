@@ -134,6 +134,8 @@ class CameraFeed:
     ending: asyncio.Event = field(default_factory=asyncio.Event)
     done: asyncio.Event = field(default_factory=asyncio.Event)
     latest: tuple[dict[str, Any], bytes, bytes] | None = None
+    recordings: set[str] = field(default_factory=set)
+    cleanup_unconfirmed: bool = False
 
 
 @dataclass
@@ -159,15 +161,13 @@ class CameraPreviews:
             and self.core.info.get("cameras")
         )
 
-    def create(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+    def check_feed(self, config: dict[str, Any]) -> None:
         if self.core.connection != "connected":
             raise BridgeError("robot_unavailable", "Robot is not connected", 503)
         if not self.encoder_path:
             raise BridgeError("unsupported", "JPEG encoding is unavailable", 422)
         if self.core.stop_pending():
             raise BridgeError("resource_busy", "Robot stop is in progress", 409)
-        config = {"camera": "top", "resolution": "320x240", "frame_rate": 5, **body}
-        config["frame_rate"] = int(config["frame_rate"])
         self.core.vision.require_camera(config)
         feed = self.feed
         if feed is not None and (feed.config != config or feed.ending.is_set()):
@@ -176,6 +176,26 @@ class CameraPreviews:
             )
         if feed is None and self.core.vision.active is not None:
             raise BridgeError("resource_busy", "Still capture is in progress", 409)
+
+    def acquire(self, config: dict[str, Any]) -> CameraFeed:
+        feed = self.feed
+        if feed is None:
+            feed = self.feed = CameraFeed(uuid.uuid4().hex, self.core.generation, config)
+            self.core.spawn(self.run(feed))
+        return feed
+
+    def end_if_unused(self, feed: CameraFeed) -> bool:
+        if feed.recordings or any(
+            item.feed is feed and item.public["status"] in ACTIVE for item in self.items.values()
+        ):
+            return False
+        feed.ending.set()
+        feed.changed.set()
+        return True
+
+    def create(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
+        config = camera_config(body)
+        self.check_feed(config)
         if (
             sum(item.public["status"] not in TERMINAL for item in self.items.values())
             >= MAX_PREVIEWS
@@ -189,9 +209,7 @@ class CameraPreviews:
             else:
                 raise BridgeError("limit_exceeded", "Camera preview history is full", 429)
         pid = uuid.uuid4().hex
-        if feed is None:
-            feed = self.feed = CameraFeed(uuid.uuid4().hex, self.core.generation, config)
-            self.core.spawn(self.run(feed))
+        feed = self.acquire(config)
         item = Preview(
             {
                 "id": pid,
@@ -225,15 +243,9 @@ class CameraPreviews:
 
     def stop(self, item: Preview) -> dict[str, Any]:
         if item.public["status"] in ACTIVE:
-            if any(
-                other is not item and other.feed is item.feed and other.public["status"] in ACTIVE
-                for other in self.items.values()
-            ):
+            item.public["status"] = "stopping"
+            if not self.end_if_unused(item.feed):
                 self.set_terminal(item, "stopped", None)
-            else:
-                item.public["status"] = "stopping"
-                item.feed.ending.set()
-                item.feed.changed.set()
         return copy.deepcopy(item.public)
 
     def stop_session(self, sid: str | None = None) -> None:
@@ -313,6 +325,7 @@ class CameraPreviews:
                 return
             sequence, stale = frame["sequence"], time.monotonic() + 3
             feed.latest = frame, rgb, jpeg
+            self.core.recordings.camera_frame(feed, frame, jpeg)
             for item in self.items.values():
                 if item.feed is feed and item.public["status"] == "starting":
                     item.public["status"] = "active"
@@ -355,8 +368,10 @@ class CameraPreviews:
                         await asyncio.gather(native, return_exceptions=True)
             if self.feed is feed and not uncertain:
                 self.feed = None
+            feed.cleanup_unconfirmed = uncertain
             feed.ending.set()
             feed.latest = None
+            self.core.recordings.camera_ended(feed, reason, uncertain)
             for item in self.items.values():
                 if item.feed is feed and item.public["status"] not in TERMINAL:
                     if uncertain:
@@ -407,3 +422,11 @@ class CameraPreviews:
             yield f"--{BOUNDARY}--\r\n".encode("ascii")
         finally:
             self.detach(item, token)
+
+
+def camera_config(body: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "camera": body.get("camera", "top"),
+        "resolution": body.get("resolution", "320x240"),
+        "frame_rate": int(body.get("frame_rate", 5)),
+    }

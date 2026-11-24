@@ -47,6 +47,32 @@ class AsyncRecordings:
             ),
         )
 
+    async def camera(
+        self,
+        camera: str | None = None,
+        *,
+        duration: float,
+        resolution: str | None = None,
+        frame_rate: int | None = None,
+        max_bytes: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncRecording:
+        source = {
+            "kind": "camera",
+            **{
+                name: value
+                for name, value in (
+                    ("camera", camera),
+                    ("resolution", resolution),
+                    ("frame_rate", frame_rate),
+                )
+                if value is not None
+            },
+        }
+        return await self.start(
+            source, duration=duration, max_bytes=max_bytes, idempotency_key=idempotency_key
+        )
+
     async def samples(
         self,
         groups: list[str],

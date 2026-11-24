@@ -2422,36 +2422,76 @@
       "additionalProperties": true
     },
     "RecordingSource": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "samples"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "samples"
+            },
+            "groups": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "joints",
+                  "sensors",
+                  "motion",
+                  "autonomy"
+                ]
+              }
+            },
+            "rate_hz": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "kind",
+            "groups"
+          ],
+          "additionalProperties": false
         },
-        "groups": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 4,
-          "uniqueItems": true,
-          "items": {
-            "enum": [
-              "joints",
-              "sensors",
-              "motion",
-              "autonomy"
-            ]
-          }
-        },
-        "rate_hz": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "maximum": 50
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "camera"
+            },
+            "camera": {
+              "enum": [
+                "top",
+                "bottom"
+              ],
+              "default": "top"
+            },
+            "resolution": {
+              "enum": [
+                "320x240",
+                "640x480"
+              ],
+              "default": "320x240"
+            },
+            "frame_rate": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 5
+            },
+            "format": {
+              "const": "mjpeg-avi",
+              "default": "mjpeg-avi"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "kind",
-        "groups"
-      ],
-      "additionalProperties": false
+      ]
     },
     "RecordingCreate": {
       "type": "object",

@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.17.0",
+  "contract_version": "1.18.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -15,6 +15,23 @@
     "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "bounded camera recording",
+      "steps": [
+        "Check recordings.camera in robot capabilities",
+        "Create a camera recording and await its operation",
+        "Read the asset and download its full content and a byte range"
+      ],
+      "expected": [
+        "The accepted source identifies MJPEG AVI",
+        "The retained asset contains the completed frames and frame-gap metadata",
+        "The downloaded AVI matches its asset SHA-256 and byte range"
+      ],
+      "client_decisions": [
+        "Read the operation and asset status before using the finalized media.",
+        "Use recording metadata to detect frame loss and compare acquisition time with playback duration."
+      ]
+    },
     {
       "name": "managed camera preview",
       "steps": [

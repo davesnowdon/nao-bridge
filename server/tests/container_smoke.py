@@ -1319,6 +1319,20 @@ try:
             == "recording"
         )
     )
+    interrupted_video = probe.request(
+        "POST",
+        "/api/recordings",
+        {"source": {"kind": "camera"}, "duration": 30, "max_bytes": 1048576},
+        status=201,
+        schema="Recording",
+    )
+    until(
+        lambda: (
+            probe.request("GET", "/api/recordings/" + interrupted_video["id"])["status"]
+            == "recording"
+        )
+    )
+    time.sleep(0.5)
     operation = probe.request(
         "POST", "/api/speech/utterances", {"text": "[fixture:block]"}, status=202
     )
@@ -1337,11 +1351,12 @@ try:
     diag = probe.request("GET", "/api/robot/diagnostics")
     assert not diag["quarantined_resources"] and diag["sessions"] == 0
     probe.request("GET", "/api/assets/" + retained_asset, schema="Asset")
-    interrupted_asset = next(
-        asset
+    recovered = {
+        asset["metadata"]["recording_id"]: asset
         for asset in probe.request("GET", "/api/assets", schema="Assets")["items"]
-        if asset["metadata"]["recording_id"] == interrupted_recording["id"]
-    )
+        if "recording_id" in asset["metadata"]
+    }
+    interrupted_asset = recovered[interrupted_recording["id"]]
     assert (
         interrupted_asset["status"] == "partial"
         and interrupted_asset["error"]["code"] == "recording_interrupted"
@@ -1359,8 +1374,22 @@ try:
             probe.validate("RecordingLine", json.loads(row))
     finally:
         connection.close()
+    video_asset = recovered[interrupted_video["id"]]
+    assert video_asset["kind"] == "camera.video" and video_asset["status"] == "partial"
+    assert video_asset["error"]["code"] == "recording_interrupted"
+    connection = probe.connection()
+    try:
+        connection.request("GET", "/api/assets/" + video_asset["id"] + "/content")
+        response = connection.getresponse()
+        content = response.read()
+        assert (
+            response.status == 200 and hashlib.sha256(content).hexdigest() == video_asset["sha256"]
+        )
+        assert content[:4] == b"RIFF" and content[8:12] == b"AVI "
+    finally:
+        connection.close()
     print(
-        "API restart: finalized asset retained and interrupted recording recovered as partial",
+        "API restart: retained finalized assets and recovered partial samples and video",
         flush=True,
     )
     probe.session = probe.request("POST", "/api/sessions", {}, status=201)["id"]

@@ -992,6 +992,30 @@ class Recordings:
             ),
         )
 
+    def camera(
+        self,
+        camera: str | None = None,
+        *,
+        duration: float,
+        resolution: str | None = None,
+        frame_rate: int | None = None,
+        max_bytes: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.camera(
+                    camera,
+                    duration=duration,
+                    resolution=resolution,
+                    frame_rate=frame_rate,
+                    max_bytes=max_bytes,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
     def samples(
         self,
         groups: list[str],

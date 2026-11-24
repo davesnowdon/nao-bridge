@@ -1044,6 +1044,38 @@ requires agent recovery and explicit release of old-generation ownership. After
 an SSE gap, query the observer's status and use future events. Reconnecting
 does not replay detections or recreate an observer.
 
+## Camera video recording
+
+Check `recordings.camera` in capabilities. It requires a discovered camera,
+the Linux FFmpeg runtime and enabled asset storage. Start a bounded
+recording through the session-owned `POST /api/recordings` route.
+
+```json
+{"source":{"kind":"camera","camera":"top","resolution":"320x240","frame_rate":5},"duration":4,"max_bytes":524288}
+```
+
+`source` uses the same camera, resolution, and integer frame rate as preview.
+The accepted source includes `format: "mjpeg-avi"`. Matching recordings
+and previews share the encoder and native camera feed. Different live
+configurations return `resource_busy`. A blocked writer drops frames once
+its bounded queue fills and records that loss.
+
+The recording follows the same `starting`, `recording`, `stopping`,
+`completed`, and `failed` lifecycle as samples and reports a
+`recording.camera` operation. A finalized `camera.video` asset uses
+`video/x-msvideo` and supports checksum verification and byte ranges.
+The asset metadata includes frame count, dropped frames, acquisition
+times in the bridge clock and an aggregate gap summary. AVI plays the
+retained frames at the selected constant rate. The metadata preserves
+loss information when playback duration is shorter than acquisition time.
+
+The duration limit starts at recording admission. A byte-limit or frame-gap
+failure keeps the frames already captured as a partial asset when the muxer
+can finalize them. A process crash can also leave a partial asset whose AVI
+index or trailer is incomplete. A cancelled recording follows the existing
+recording ownership and close rules. Both Python clients expose
+`nao.recordings.camera(duration=..., frame_rate=...)`.
+
 ## Sample recordings and retained assets
 
 Recording storage is enabled by default in Docker; local runs need

@@ -422,6 +422,10 @@ class AssetWriter:
         self.file = store._path(aid, ".part").open("xb", buffering=0)
         self.failed = False
 
+    @property
+    def storage_lease_fd(self) -> int:
+        return self.store._lease.fileno()
+
     def write(self, data: bytes) -> None:
         with self.store.lock:
             self.store._open()
@@ -442,7 +446,12 @@ class AssetWriter:
                 self.failed = True
                 raise
 
-    def finalize(self, *, error: dict[str, Any] | None = None) -> dict[str, Any]:
+    def finalize(
+        self,
+        *,
+        error: dict[str, Any] | None = None,
+        finalized_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         with self.store.lock:
             self.store._open()
             if self.file.closed:
@@ -457,10 +466,12 @@ class AssetWriter:
             trimmed = False
             if error and record["asset"]["content_type"] == "application/x-ndjson":
                 trimmed = self.store._trim_line(partial)
-            if self.failed or trimmed:
+            if self.failed or trimmed or finalized_metadata is not None:
                 size, digest = self.store._digest(partial)
             else:
                 size, digest = self.size, self.digest.hexdigest()
+            if size > self.max_bytes:
+                raise ValueError("Finalized asset exceeds its reservation")
             os.replace(partial, content)
             self.store._sync_directory()
             record["asset"].update(
@@ -471,6 +482,8 @@ class AssetWriter:
                 if error
                 else None,
             )
+            if finalized_metadata is not None:
+                record["asset"]["metadata"].update(copy.deepcopy(finalized_metadata))
             record.update(state="finalized", reserved_bytes=size)
             self.store._manifest(self.id, record)
             self.store.records[self.id] = record

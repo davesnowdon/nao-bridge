@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import logging
+import sys
 import threading
 import uuid
 from collections import deque
@@ -12,13 +13,18 @@ from typing import TYPE_CHECKING, Any
 
 from .asset_http import AssetHTTP
 from .assets import AssetStore, AssetWriter
+from .avi import AviMuxer
+from .camera_previews import camera_config
 from .errors import BridgeError
 
 if TYPE_CHECKING:
+    from .camera_previews import CameraFeed
     from .core import Core, Operation, Session
 
 LOG = logging.getLogger(__name__)
 KIND = "recording.samples"
+VIDEO_KIND = "recording.camera"
+KINDS = {KIND, VIDEO_KIND}
 END_RESERVE = 4096
 
 
@@ -48,6 +54,11 @@ class Capture:
     ended_ms: float = 0
     done: asyncio.Event = field(default_factory=asyncio.Event)
     retained_until: float | None = None
+    camera_feed: CameraFeed | None = None
+    wait_for_camera: bool = False
+    first_frame_ms: float | None = None
+    last_frame_ms: float | None = None
+    last_sequence: int | None = None
 
 
 class Recordings:
@@ -68,20 +79,30 @@ class Recordings:
         settings = self.core.settings
         if settings.asset_directory is not None:
             try:
-                self.store = await asyncio.to_thread(
-                    AssetStore,
-                    settings.asset_directory,
-                    quota_bytes=settings.asset_quota_bytes,
-                    max_assets=settings.max_assets,
-                    retention_seconds=settings.asset_retention_seconds,
-                )
+                for attempt in range(4):
+                    try:
+                        self.store = await asyncio.to_thread(
+                            AssetStore,
+                            settings.asset_directory,
+                            quota_bytes=settings.asset_quota_bytes,
+                            max_assets=settings.max_assets,
+                            retention_seconds=settings.asset_retention_seconds,
+                        )
+                        break
+                    except BlockingIOError:
+                        if attempt == 3:
+                            raise
+                        await asyncio.sleep(0.1 * 2**attempt)
             except Exception:
                 self.faulted = True
                 LOG.exception(
                     "Recording storage initialization failed; robot control remains available"
                 )
                 return
-            self.assets = {value["id"]: value for value in await asyncio.to_thread(self.store.list)}
+            if self.store is not None:
+                self.assets = {
+                    value["id"]: value for value in await asyncio.to_thread(self.store.list)
+                }
 
     def active(self) -> list[Capture]:
         return [item for item in self.items.values() if not item.done.is_set()]
@@ -91,6 +112,11 @@ class Recordings:
 
     def available(self) -> bool:
         return self.store is not None and not self.faulted
+
+    def video_available(self) -> bool:
+        return (
+            sys.platform == "linux" and self.available() and self.core.camera_previews.available()
+        )
 
     def create(self, session: Session, body: dict[str, Any]) -> dict[str, Any]:
         from .core import utc
@@ -103,13 +129,21 @@ class Recordings:
             raise BridgeError("resource_busy", "Robot stop is in progress", 409)
         settings = self.core.settings
         source = copy.deepcopy(body["source"])
-        source["rate_hz"] = source.get("rate_hz", settings.sample_rate_hz)
-        if source["rate_hz"] > settings.sample_rate_hz:
-            if not body.get("allow_lower_rate", False):
-                raise BridgeError("unsupported", "Requested sample rate is unavailable", 422)
-            source["rate_hz"] = settings.sample_rate_hz
+        camera = None
+        if source["kind"] == "camera":
+            if not self.video_available():
+                raise BridgeError("unsupported", "Camera recording is unavailable", 422)
+            camera = camera_config(source)
+            self.core.camera_previews.check_feed(camera)
+            source = {"kind": "camera", **camera, "format": "mjpeg-avi"}
+        else:
+            source["rate_hz"] = source.get("rate_hz", settings.sample_rate_hz)
+            if source["rate_hz"] > settings.sample_rate_hz:
+                if not body.get("allow_lower_rate", False):
+                    raise BridgeError("unsupported", "Requested sample rate is unavailable", 422)
+                source["rate_hz"] = settings.sample_rate_hz
         duration = body["duration"]
-        maximum = body.get("max_bytes", min(8388608, settings.max_recording_bytes))
+        maximum = int(body.get("max_bytes", min(8388608, settings.max_recording_bytes)))
         if duration > settings.max_recording_seconds or maximum > settings.max_recording_bytes:
             raise BridgeError("limit_exceeded", "Recording exceeds configured bounds", 422)
         active = self.active()
@@ -126,7 +160,7 @@ class Recordings:
             or len(self.assets) + len(active) >= settings.max_assets
         ):
             raise BridgeError("storage_full", "Asset capacity is exhausted", 507)
-        operation = self.core.new_operation(session, KIND, [])
+        operation = self.core.new_operation(session, VIDEO_KIND if camera else KIND, [])
         value = {
             "id": uuid.uuid4().hex,
             "session_id": session.public["id"],
@@ -150,24 +184,75 @@ class Recordings:
             "robot": self.core.robot(),
             "source": source,
             "created_at": value["created_at"],
-            "units": {
+        }
+        if camera is None:
+            header["units"] = {
                 "joints": {
                     joint["name"]: joint["unit"] for joint in self.core.info.get("joints", [])
                 },
                 "sensors": {
                     sensor["id"]: sensor["unit"] for sensor in self.core.sensors()["items"]
                 },
-            },
-        }
+            }
         item = Capture(value, operation, self.core.clock() + duration, self.core.clock(), header)
-        item.next_sample = item.last_sample + 1 / source["rate_hz"]
+        if camera:
+            item.camera_feed = self.core.camera_previews.acquire(camera)
+            item.camera_feed.recordings.add(value["id"])
+        else:
+            item.next_sample = item.last_sample + 1 / source["rate_hz"]
         self.items[value["id"]] = item
         self.changed(item)
-        self.capture(item)
+        if camera is None:
+            self.capture(item)
         threading.Thread(
-            target=self.write, args=(item,), name="recording-" + value["id"][:8], daemon=True
+            target=self.write_video if camera else self.write,
+            args=(item,),
+            name="recording-" + value["id"][:8],
+            daemon=True,
         ).start()
         return copy.deepcopy(value)
+
+    def camera_frame(self, feed: CameraFeed, frame: dict[str, Any], jpeg: bytes) -> None:
+        moment = max(0.0, (frame["acquisition_finished"] - self.core.origin) * 1000)
+        period = 1000 / feed.config["frame_rate"]
+        sequence = frame["sequence"]
+        for rid in tuple(feed.recordings):
+            item = self.items[rid]
+            if self.core.clock() >= item.deadline:
+                self.stop(item, reason="duration_elapsed")
+                continue
+            with item.lock:
+                if item.stopped:
+                    continue
+                if item.last_frame_ms is not None and item.last_sequence is not None:
+                    missing = max(
+                        0,
+                        sequence - item.last_sequence - 1,
+                        round((moment - item.last_frame_ms) / period) - 1,
+                    )
+                    if missing:
+                        self.add_gap(item, "camera_frame_gap", item.last_frame_ms, moment, missing)
+                item.last_sequence = sequence
+                item.last_frame_ms = moment
+                if item.first_frame_ms is None:
+                    item.first_frame_ms = moment
+                settings = self.core.settings
+                if (
+                    len(item.queue) >= settings.recording_queue_count
+                    or item.queued_bytes + len(jpeg) > settings.recording_queue_bytes
+                ):
+                    self.add_gap(item, "writer_overflow", moment, moment, 1)
+                    continue
+                item.queue.append(jpeg)
+                item.queued_bytes += len(jpeg)
+                item.wake.set()
+
+    def camera_ended(self, feed: CameraFeed, reason: str | None, uncertain: bool) -> None:
+        code = "camera_cleanup_unconfirmed" if uncertain else (reason or "camera_feed_ended")
+        for rid in tuple(feed.recordings):
+            self.stop(
+                self.items[rid], reason=code, error=BridgeError(code, "Camera feed ended", 503)
+            )
 
     def get(self, rid: str, sid: str) -> Capture:
         item = self.items.get(rid)
@@ -228,7 +313,11 @@ class Recordings:
     def sample(self, groups: set[str]) -> None:
         now = self.core.clock()
         for item in self.active():
-            if item.stopped or not groups.intersection(item.public["source"]["groups"]):
+            if (
+                item.camera_feed
+                or item.stopped
+                or not groups.intersection(item.public["source"]["groups"])
+            ):
                 continue
             if now >= item.deadline:
                 self.stop(item, reason="duration_elapsed")
@@ -250,6 +339,8 @@ class Recordings:
 
     def observation_gap(self) -> None:
         for item in self.active():
+            if item.camera_feed:
+                continue
             with item.lock:
                 if not item.stopped:
                     self.add_gap(item, "observation_gap", self.core.now_ms(), self.core.now_ms())
@@ -264,12 +355,13 @@ class Recordings:
     ) -> dict[str, Any]:
         if item.done.is_set():
             return copy.deepcopy(item.public)
+        feed = item.camera_feed
         with item.lock:
             if not item.stopped:
                 item.stopped = True
                 item.reason, item.error, item.cancelled = reason, error, cancelled
                 item.ended_ms = self.core.now_ms()
-                if (
+                if feed is None and (
                     self.core.clock() - item.last_sample
                     > 1 / item.public["source"]["rate_hz"] + 1.5 / self.core.settings.sample_rate_hz
                 ):
@@ -280,6 +372,9 @@ class Recordings:
                         item.ended_ms,
                     )
                 item.wake.set()
+        if feed is not None and item.public["id"] in feed.recordings:
+            feed.recordings.remove(item.public["id"])
+            item.wait_for_camera = self.core.camera_previews.end_if_unused(feed)
         item.public["status"] = "stopping"
         self.changed(item)
         if cancelled and item.operation.public["status"] not in {
@@ -306,15 +401,26 @@ class Recordings:
 
     async def settle(self, sid: str | None = None) -> list[str]:
         selected = [
-            item for item in self.active() if sid is None or item.public["session_id"] == sid
+            item for item in self.items.values() if sid is None or item.public["session_id"] == sid
         ]
-        if selected:
+        pending = [item for item in selected if not item.done.is_set()]
+        if pending:
             try:
                 async with asyncio.timeout(self.core.settings.backend_timeout_seconds):
-                    await asyncio.gather(*(item.done.wait() for item in selected))
+                    await asyncio.gather(*(item.done.wait() for item in pending))
             except TimeoutError:
                 pass
-        return [item.operation.public["id"] for item in selected if not item.done.is_set()]
+        return [
+            item.operation.public["id"]
+            for item in selected
+            if not item.done.is_set()
+            or (
+                item.wait_for_camera
+                and item.camera_feed is not None
+                and item.camera_feed.generation == self.core.generation
+                and item.camera_feed.cleanup_unconfirmed
+            )
+        ]
 
     def tick(self) -> None:
         self.http.tick()
@@ -421,6 +527,104 @@ class Recordings:
             error = BridgeError("storage_error", "Recording finalization failed", 503)
             LOG.exception("Recording finalization failed id=%s", item.public["id"])
         self.notify(self.finished, item, asset, error, fault)
+
+    def write_video(self, item: Capture) -> None:
+        writer = None
+        muxer = None
+        asset, error, fault = None, None, False
+        try:
+            assert self.store is not None
+            writer = self.store.begin(
+                kind="camera.video",
+                content_type="video/x-msvideo",
+                max_bytes=item.public["max_bytes"],
+                metadata=item.header,
+                expire=False,
+            )
+            encoder = self.core.camera_previews.encoder_path
+            assert encoder is not None
+            muxer = AviMuxer(encoder, writer, item.public["source"]["frame_rate"])
+            while True:
+                with item.lock:
+                    frame = item.queue.popleft() if item.queue else None
+                    if frame:
+                        item.queued_bytes -= len(frame)
+                    else:
+                        item.wake.clear()
+                    stopped = item.stopped
+                if frame:
+                    muxer.write(frame)
+                    if muxer.frames == 1:
+                        self.notify(self.started, item)
+                elif stopped:
+                    break
+                else:
+                    item.wake.wait(0.1)
+        except BridgeError as exc:
+            error = exc
+        except Exception as exc:
+            fault = writer is None
+            error = BridgeError(
+                "storage_error" if fault else "video_mux_failed",
+                "Video recording could not continue",
+                503,
+            )
+            LOG.warning("Video recording failed: %s", exc)
+        try:
+            if muxer is not None and not muxer.close() and error is None:
+                error = BridgeError("video_mux_failed", "AVI could not be finalized", 503)
+            frame_count = muxer.frames if muxer else 0
+            with item.lock:
+                if error is None:
+                    error = item.error
+                if error is None and item.had_gap:
+                    error = BridgeError("recording_gaps", "Video contains missing frames", 503)
+                if error is None and not frame_count:
+                    error = BridgeError("camera_frame_unavailable", "Video captured no frames", 503)
+                gap = copy.deepcopy(item.gap)
+                if gap:
+                    gap["dropped_frames"] = gap.pop("dropped_samples")
+                metadata = {
+                    "frame_count": frame_count,
+                    "dropped_frames": item.dropped
+                    + len(item.queue)
+                    + int(error is not None and error.code == "recording_size_limit"),
+                    "first_acquired_frame_bridge_time_ms": item.first_frame_ms,
+                    "last_acquired_frame_bridge_time_ms": item.last_frame_ms,
+                    "gap": gap,
+                }
+                item.queue.clear()
+                item.queued_bytes = 0
+                item.stopped = True
+            if writer is not None:
+                asset = writer.finalize(
+                    error=error.payload() if error else None,
+                    finalized_metadata=metadata,
+                )
+        except Exception:
+            fault = True
+            error = BridgeError("storage_error", "Video asset finalization failed", 503)
+            LOG.exception("Video finalization failed id=%s", item.public["id"])
+        self.notify(self.video_written, item, asset, error, fault)
+
+    def video_written(
+        self, item: Capture, asset: dict[str, Any] | None, error: BridgeError | None, fault: bool
+    ) -> None:
+        self.stop(item)
+        self.core.spawn(self.finish_video(item, asset, error, fault))
+
+    async def finish_video(
+        self, item: Capture, asset: dict[str, Any] | None, error: BridgeError | None, fault: bool
+    ) -> None:
+        if item.wait_for_camera:
+            feed = item.camera_feed
+            assert feed is not None
+            await feed.done.wait()
+            if feed.cleanup_unconfirmed:
+                error = BridgeError(
+                    "camera_cleanup_unconfirmed", "Camera cleanup could not be confirmed", 503
+                )
+        self.finished(item, asset, error, fault)
 
     def finished(
         self, item: Capture, asset: dict[str, Any] | None, error: BridgeError | None, fault: bool

@@ -178,6 +178,43 @@ class Probe:
             conn.close()
         return asset["id"]
 
+    def camera_recording(self):
+        result = self.request(
+            "POST",
+            "/api/recordings",
+            {"source": {"kind": "camera", "frame_rate": 5}, "duration": 1.2, "max_bytes": 262144},
+            status=201,
+            schema="Recording",
+        )
+        assert result["source"]["format"] == "mjpeg-avi"
+        operation = self.wait({"id": result["operation_id"]})
+        assert operation["kind"] == "recording.camera"
+        assert operation["status"] in {"succeeded", "failed"}, operation
+        if operation["status"] == "failed":
+            assert operation["error"]["code"] == "recording_gaps", operation
+        asset = self.request(
+            "GET", "/api/assets/" + operation["result"]["asset_id"], schema="Asset"
+        )
+        assert asset["kind"] == "camera.video" and asset["content_type"] == "video/x-msvideo"
+        assert asset["metadata"]["frame_count"] >= 2
+        path = "/api/assets/" + asset["id"] + "/content"
+        conn = self.connection()
+        try:
+            conn.request("GET", path)
+            result = conn.getresponse()
+            video = result.read()
+            assert result.status == 200 and hashlib.sha256(video).hexdigest() == asset["sha256"]
+            assert (
+                len(video) == asset["size_bytes"]
+                and video[:4] == b"RIFF"
+                and video[8:12] == b"AVI "
+            )
+            conn.request("GET", path, headers={"Range": "bytes=0-11"})
+            result = conn.getresponse()
+            assert result.status == 206 and result.read() == video[:12]
+        finally:
+            conn.close()
+
     def wait(self, operation, timeout=5):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -732,6 +769,7 @@ def run(url):
     capabilities = probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
     captures = capabilities["features"]["vision.captures"]["status"] == "available"
     previews = capabilities["features"]["vision.previews"]["status"] == "available"
+    video = capabilities["features"]["recordings.camera"]["status"] == "available"
     if robot["backend"] == "native-fixture":
         assert previews, "Native container preview must use the pinned FFmpeg encoder"
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
@@ -929,6 +967,8 @@ def run(url):
             == "available"
         ):
             probe.sample_recording()
+        if video:
+            probe.camera_recording()
         subscription = probe.request(
             "POST",
             "/api/events/subscriptions",
@@ -1001,6 +1041,7 @@ def run(url):
         ]
         + (["camera_capture_and_download"] if captures else [])
         + (["shared_camera_previews_and_still_capture"] if previews else [])
+        + (["camera_recording_asset"] if video else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])

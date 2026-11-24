@@ -107,6 +107,23 @@ def test_guard_allows_optional_fields_in_extensible_responses_with_version_bump(
         compare(api, new_api, schemas, new_schemas)
 
 
+def test_guard_only_accepts_disjoint_recording_sources_with_existing_sources_unchanged():
+    api, new_api, old, new = bundles()
+    samples = {"type": "object", "properties": {"kind": {"const": "samples"}}, "required": ["kind"]}
+    camera = copy.deepcopy(samples)
+    camera["properties"]["kind"]["const"] = "camera"
+    old["$defs"]["RecordingSource"] = samples
+    new["$defs"]["RecordingSource"] = {"oneOf": [copy.deepcopy(samples), camera]}
+    compare(api, new_api, old, new)
+    camera["properties"]["kind"]["const"] = "samples"
+    with pytest.raises(ValueError, match="major bump"):
+        compare(api, new_api, old, new)
+    camera["properties"]["kind"]["const"] = "camera"
+    new["$defs"]["RecordingSource"]["oneOf"][0]["properties"]["rate_hz"] = {"type": "integer"}
+    with pytest.raises(ValueError, match="major bump"):
+        compare(api, new_api, old, new)
+
+
 @pytest.mark.parametrize("change", ["required", "existing_type", "closed_response"])
 def test_guard_still_rejects_breaking_response_edits(change):
     api, new_api, schemas, new_schemas = bundles()
