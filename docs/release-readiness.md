@@ -34,9 +34,27 @@ files and metadata across container replacement, while session and operation
 state starts empty. [Build and deployment commands](../README.md#build-and-run-the-container)
 
 CI exports the versioned HTTP/SSE bundle with the canonical schemas and raw
-workflow runner. The SDK, Recorder and Wanderer wheels have been built and
-installed in a clean environment, and the installed Recorder UI was exercised
-in headless Chrome. The three tutorials use only public client methods.
+workflow runner. The `nao-bridge-python-distributions` CI artifact contains the
+SDK wheel and source distribution, Recorder and Wanderer wheels, and the
+presentation example. The staging step installs the wheels in a clean
+environment and checks the entry points and bundled Recorder browser assets.
+The installed Recorder UI was also exercised in headless Chrome.
 [Contract bundle](../contracts/README.md) · [Recorder tutorial](../examples/recorder/README.md) ·
 [Wanderer tutorial](../examples/wanderer/README.md) ·
 [Presentation tutorial](../examples/presentation/README.md)
+
+From the extracted Python artifact on Linux, install the candidate wheels and
+choose an example. Start the bridge first.
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python distributions/*.whl
+.venv/bin/nao-bridge-recorder --bridge http://127.0.0.1:3000
+.venv/bin/nao-bridge-wanderer --bridge http://127.0.0.1:3000
+.venv/bin/python examples/presentation/present.py --bridge http://127.0.0.1:3000
+```
+
+The installed Recorder serves its UI on `http://127.0.0.1:8123`. For a local
+staging rehearsal, run `uv run --project server --locked python
+scripts/stage_python_distributions.py /tmp/nao-bridge-python-distributions`
+from the source tree with a new output directory.

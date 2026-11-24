@@ -33,6 +33,13 @@ jobs:
           name: ${{ steps.contract.outputs.name }}
           path: ${{ steps.contract.outputs.path }}
           if-no-files-found: error
+      - name: Stage and test Python distributions
+        run: uv run --project server --locked python scripts/stage_python_distributions.py /tmp/python-distributions
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nao-bridge-python-distributions
+          path: /tmp/python-distributions
+          if-no-files-found: error
   native-container:
     runs-on: ubuntu-latest
     steps:
