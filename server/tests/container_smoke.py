@@ -706,9 +706,10 @@ async def check_native_controls():
             {**face_request, "revision": 2, "configuration": None}
         )
         assert stopped_faces["status"] == "stopped" and all(not task.done() for task in blocked)
-        last_face = state["faces.detections"]
+        confirmed_stop = time.monotonic()
         await asyncio.sleep(0.3)
-        assert state["faces.detections"] == last_face
+        # The event socket can deliver an earlier observation after the command reply.
+        assert state["faces.detections"]["observed"] <= confirmed_stop
         print(
             "Native face IPC: observations, concurrent stills and owned teardown passed", flush=True
         )
