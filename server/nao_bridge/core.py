@@ -11,6 +11,7 @@ from typing import Any
 
 from . import __version__
 from .backend import Backend
+from .camera_previews import MAX_PREVIEW_STREAMS, MAX_PREVIEWS, CameraPreviews
 from .config import Settings
 from .contract import CONTACTS, SCHEMAS, VERSION, canonical
 from .errors import BackendUnknown, BridgeError
@@ -223,6 +224,7 @@ class Core:
         self.face_observers = FaceObservers(self)
         self.recordings = Recordings(self)
         self.vision = Vision(self)
+        self.camera_previews = CameraPreviews(self)
         self.keys: dict[tuple[str, str], Idempotent] = {}
         self.samples: dict[str, dict[str, Any]] = {}
         self.sample_changed = asyncio.Event()
@@ -309,6 +311,7 @@ class Core:
             self.listeners.connection_changed()
             self.sensor_observers.connection_changed()
             self.face_observers.connection_changed()
+            self.camera_previews.connection_changed()
             self.samples.clear()
             self.sample_changed.set()
             self.emit(
@@ -536,6 +539,7 @@ class Core:
                 "assets": feature(self.recordings.store is not None),
                 "vision.cameras": feature(available and bool(self.info.get("cameras"))),
                 "vision.observers": feature(self.face_observers.available()),
+                "vision.previews": feature(self.camera_previews.available()),
                 "vision.captures": feature(
                     available and bool(self.info.get("cameras")) and self.recordings.available()
                 ),
@@ -586,6 +590,9 @@ class Core:
                 "max_vision_observers": MAX_OBSERVERS,
                 "max_vision_observer_history": MAX_HISTORY,
                 "max_thresholds_per_subscription": MAX_RULES,
+                "max_camera_previews": MAX_PREVIEWS,
+                "max_camera_preview_streams": MAX_PREVIEW_STREAMS,
+                "max_camera_preview_frame_rate": 5,
                 "max_joint_controls": 4,
                 "max_velocity_controls": 1,
                 "max_joint_control_ids": 4096,
@@ -955,6 +962,8 @@ class Core:
                     if result["id"] in self.sensor_observers.items
                     else "vision_observer"
                     if result["id"] in self.face_observers.items
+                    else "camera_preview"
+                    if result["id"] in self.camera_previews.items
                     else "recording"
                     if result["id"] in self.recordings.items
                     else "subscription"
@@ -1938,6 +1947,7 @@ class Core:
         self.face_observers.stop_session(session.public["id"])
         self.recordings.stop_session(session.public["id"], status)
         self.vision.stop(session.public["id"])
+        self.camera_previews.stop_session(session.public["id"])
         for sub in list(self.subscriptions.values()):
             if sub.public["session_id"] == session.public["id"]:
                 sub.close(graceful=True)
@@ -2121,6 +2131,7 @@ class Core:
         unresolved.extend(unresolved_recordings)
         unresolved_captures = await self.vision.settle(capture)
         unresolved.extend(unresolved_captures)
+        unresolved_previews = await self.camera_previews.settled(sid)
         unresolved.extend(
             await self.sequences.finish_interruption(sequences, force=force and fenced)
         )
@@ -2139,6 +2150,8 @@ class Core:
         vision_released = not self.face_observers.owns(sid)
         if not vision_released:
             unresolved_resources.append("vision.faces")
+        if unresolved_previews:
+            unresolved_resources.append("vision.camera_feed")
         return {
             "fenced": fenced,
             "unresolved_operation_ids": unresolved,
@@ -2146,6 +2159,7 @@ class Core:
             "unresolved_listener_ids": unresolved_listeners,
             "unresolved_sensor_observer_ids": unresolved_observers,
             "unresolved_vision_observer_ids": unresolved_vision,
+            "unresolved_camera_preview_ids": unresolved_previews,
             **({"autonomy_restoration": restoration} if restoration else {}),
             "force_release": force
             and fenced
@@ -2154,7 +2168,8 @@ class Core:
             and observers_released
             and vision_released
             and not unresolved_recordings
-            and not unresolved_captures,
+            and not unresolved_captures
+            and not unresolved_previews,
         }
 
     def close_session(
@@ -2234,6 +2249,8 @@ class Core:
         self.sensor_observers.stop_all()
         self.face_observers.stop_session()
         self.recordings.stop_all()
+        preview_feed = self.camera_previews.feed
+        self.camera_previews.stop_session()
         capture = self.vision.stop()
         for op in list(self.operations.values()):
             if op.public["kind"] in NATIVE_KINDS and op.public["status"] == "accepted":
@@ -2288,6 +2305,14 @@ class Core:
             item.public["id"] for item in self.listeners.items.values() if not item.released
         ]
         stopped["unresolved_vision_observer_ids"] = self.face_observers.unresolved()
+        unresolved_previews = await self.camera_previews.settled()
+        stopped["unresolved_camera_preview_ids"] = unresolved_previews
+        if (
+            preview_feed
+            and preview_feed.id in stopped["unresolved_ids"]
+            and not unresolved_previews
+        ):
+            stopped["unresolved_ids"].remove(preview_feed.id)
         stopped["unresolved_ids"].extend(await self.recordings.settle())
         stopped["unresolved_ids"].extend(await self.sequences.finish_interruption(sequences))
         if capture is not None:
@@ -2392,6 +2417,7 @@ class Core:
                 or result["unresolved_listener_ids"]
                 or result["unresolved_sensor_observer_ids"]
                 or result["unresolved_vision_observer_ids"]
+                or result["unresolved_camera_preview_ids"]
                 else "succeeded",
                 result,
             )
@@ -2629,6 +2655,8 @@ class Core:
             "listeners": len(self.listeners.items),
             "sensor_observers": len(self.sensor_observers.items),
             "vision_observers": len(self.face_observers.items),
+            "camera_previews": len(self.camera_previews.items),
+            "camera_preview_streams": self.camera_previews.streams,
             "recordings": len(self.recordings.items),
             "active_recordings": len(self.recordings.active()),
             "streams": len(self.streams),
@@ -2695,6 +2723,7 @@ class Core:
                 or self.listeners.owns(sid)
                 or self.sensor_observers.owns(sid)
                 or self.face_observers.owns(sid)
+                or self.camera_previews.owns(sid)
                 or self.recordings.owns(sid)
             ):
                 continue
@@ -2706,6 +2735,7 @@ class Core:
         self.listeners.sweep()
         self.sensor_observers.sweep()
         self.face_observers.sweep()
+        self.camera_previews.sweep()
         self.recordings.tick()
         for session in list(self.sessions.values()):
             if session.public["status"] == "active" and session.deadline <= now:
@@ -2717,6 +2747,7 @@ class Core:
                 and not self.listeners.owns(session.public["id"])
                 and not self.sensor_observers.owns(session.public["id"])
                 and not self.face_observers.owns(session.public["id"])
+                and not self.camera_previews.owns(session.public["id"])
                 and not self.recordings.owns(session.public["id"])
                 and not any(
                     o.public["session_id"] == session.public["id"] and not o.released
@@ -2767,6 +2798,10 @@ class Core:
                 if recording and (
                     not recording.done.is_set() or (recording.retained_until or 0) > now
                 ):
+                    continue
+            elif record.resource_kind == "camera_preview":
+                preview = self.camera_previews.items.get(rid)
+                if preview and (preview.retained_until is None or preview.retained_until > now):
                     continue
             elif rid in self.subscriptions:
                 record.expires = now + self.settings.history_seconds

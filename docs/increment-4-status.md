@@ -196,9 +196,22 @@ and reject data from an old feed.
 The pinned SDK fixture delivered successive VGA frames while all four ordinary
 command workers were occupied. Scoped cancellation ended the feed and a
 new still capture succeeded. These checks cover acquisition and handoff in
-the container. Managed JPEG preview and durable video recording still need
-their public lifecycles. Both supported robot generations still need camera
-rate, timestamp, and concurrent-use measurements.
+the container. Both supported robot generations still need camera rate,
+timestamp, and concurrent-use measurements.
 
 [NAOqi 2.1 video API](https://doc.aldebaran.com/2-1/naoqi/vision/alvideodevice-api.html)
 and [NAOqi 2.8 image acquisition](https://doc.aldebaran.com/2-8/dev/python/examples/vision/get_image.html).
+
+### Managed JPEG preview
+
+Contract 1.17.0 exposes session-owned previews over multipart HTTP. Identical
+settings share one camera feed and one JPEG encoder. A matching still can
+use the latest fresh RGB frame. Each stream advances independently and can
+skip frames. Separate stream limits and send timeouts bound slow readers.
+Session close and lease expiry release demand, and the last preview stop
+waits for the native result. Both Python clients expose frame iterators.
+
+The raw HTTP fixture checks shared preview, conflicting settings and still
+capture while the stream is open. Socket tests exercise both SDKs and
+independent session cleanup. Durable video will use the same camera feed.
+See [managed JPEG preview](http-api.md#managed-jpeg-preview).

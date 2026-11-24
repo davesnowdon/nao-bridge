@@ -109,7 +109,8 @@ class StreamWriteTimeout:
             nonlocal streaming
             if message["type"] == "http.response.start":
                 streaming = any(
-                    key.lower() == b"content-type" and value.startswith(b"text/event-stream")
+                    key.lower() == b"content-type"
+                    and value.startswith((b"text/event-stream", b"multipart/x-mixed-replace"))
                     for key, value in message.get("headers", [])
                 )
             if streaming:

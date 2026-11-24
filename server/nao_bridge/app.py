@@ -21,6 +21,7 @@ from starlette.responses import (
 )
 
 from .backend import Backend, FakeBackend
+from .camera_previews import BOUNDARY
 from .config import Settings
 from .contract import OPENAPI, SCHEMAS, parse_json, validate
 from .core import EVENT_TYPES, Core
@@ -316,6 +317,53 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             lambda: core.vision.capture(owner, value),
         )
         return created(result, "operations", 202)
+
+    @app.post("/api/vision/previews")
+    async def create_preview(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "CameraPreviewCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/previews",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.camera_previews.create(owner, value),
+        )
+        return created(result, "vision/previews", 201)
+
+    @app.get("/api/vision/previews/{preview_id}")
+    async def get_preview(request: Request, preview_id: str) -> dict[str, Any]:
+        query(request, set())
+        item = core.camera_previews.get(preview_id, session(request, False).public["id"])
+        return copy.deepcopy(item.public)
+
+    @app.get("/api/vision/previews/{preview_id}/content")
+    async def preview_content(request: Request, preview_id: str) -> Response:
+        query(request, set())
+        item = core.camera_previews.get(preview_id, session(request).public["id"])
+        token = core.camera_previews.attach(item)
+        request.scope["nao_stream_cleanup"] = lambda: core.camera_previews.detach(item, token)
+        return StreamingResponse(
+            core.camera_previews.stream(item, token),
+            media_type="multipart/x-mixed-replace; boundary=" + BOUNDARY,
+            headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/api/vision/previews/{preview_id}/stop")
+    async def stop_preview(request: Request, preview_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.camera_previews.get(preview_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/previews/" + preview_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.camera_previews.stop(item),
+        )
+        return created(result, "vision/previews", 202)
 
     @app.post("/api/vision/observers")
     async def create_vision_observer(request: Request) -> Response:

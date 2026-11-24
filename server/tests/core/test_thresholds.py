@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -212,13 +213,15 @@ async def test_invalid_rules_are_rejected_before_subscription_admission(rig, bod
 
 
 async def test_async_stream_delivers_crossing_and_sync_client_exposes_rule(socket_rig):
-    async with socket_rig() as (url, core, backend):
+    clock = time.monotonic()
+    async with socket_rig(clock=lambda: clock) as (url, core, backend):
         await pause_samples(backend)
         await sample(core, backend, charge=75)
         async with AsyncNao(url) as nao, await nao.events.subscribe(thresholds=[BATTERY]) as sub:
             async with asyncio.timeout(2):
                 assert (await anext(sub)).type == "stream.ready"
                 assert (await anext(sub)).type == "state.sample"
+                clock += 0.05
                 await sample(core, backend, charge=29)
                 event = await anext(sub)
             assert event.type == EVENT

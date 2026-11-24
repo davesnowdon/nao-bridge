@@ -209,6 +209,20 @@ class CamerasData(WireModel):
     connection_generation: int
 
 
+class CameraPreviewData(WireModel):
+    id: str
+    session_id: str
+    bridge_instance_id: str
+    connection_generation: int
+    camera: str
+    resolution: str
+    frame_rate: int
+    status: Literal["starting", "active", "stopping", "stopped", "failed", "unknown"]
+    reason: str | None
+    content_url: str
+    connected: bool
+
+
 class Joint(WireModel):
     name: str
     unit: Literal["rad", "ratio"]

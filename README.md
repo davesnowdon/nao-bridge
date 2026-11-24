@@ -16,7 +16,7 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.16.0 replaces the old API without compatibility
+remain available. Contract 1.17.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
@@ -25,6 +25,8 @@ ground-contact and joint-temperature observations to the shared sensor state, pl
 explicit sonar observers and battery/sonar thresholds with sync/async SDK support.
 It adds finite walking, local planar odometry, scoped motion stop, still
 camera capture as downloadable PNG assets, and managed face detection events.
+Managed previews stream live JPEG frames over HTTP, and matching previews and
+stills share camera acquisition.
 The [Wanderer reference app](examples/wanderer/README.md) demonstrates short
 finite moves, live stop handling, a local occupancy map and pose-associated stills.
 Velocity leases are available in software fixtures. Hardware velocity remains

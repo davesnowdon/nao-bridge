@@ -5249,6 +5249,106 @@
         }
       },
       "additionalProperties": true
+    },
+    "CameraPreviewCreate": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ],
+          "default": "320x240"
+        },
+        "frame_rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "CameraPreview": {
+      "type": "object",
+      "properties": {
+        "bridge_instance_id": {
+          "type": "string"
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ],
+          "default": "320x240"
+        },
+        "frame_rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 5
+        },
+        "id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "active",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_url": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bridge_instance_id",
+        "camera",
+        "resolution",
+        "frame_rate",
+        "id",
+        "session_id",
+        "connection_generation",
+        "status",
+        "reason",
+        "content_url",
+        "connected"
+      ],
+      "additionalProperties": true
     }
   }
 }

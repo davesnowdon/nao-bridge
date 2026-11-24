@@ -15,13 +15,15 @@ from .errors import (
     VisionObserverError,
     VisionObserverTimeout,
 )
-from .models import SensorObserverData, VisionObserverData
+from .models import CameraPreviewData, SensorObserverData, VisionObserverData
 
 if TYPE_CHECKING:
     from .async_client import AsyncNao
 
 TERMINAL = {"stopped", "failed", "unknown"}
-ObserverData = TypeVar("ObserverData", bound=SensorObserverData | VisionObserverData)
+ObserverData = TypeVar(
+    "ObserverData", bound=SensorObserverData | VisionObserverData | CameraPreviewData
+)
 Observer = TypeVar("Observer", bound="AsyncObserver[Any]")
 
 
@@ -36,12 +38,15 @@ class AsyncObserver(Generic[ObserverData]):
         domain: str,
         error: Callable[[ObserverData], Exception],
         timeout_error: type[TimeoutError],
+        *,
+        resource: str = "observers",
+        label: str | None = None,
     ):
         self._nao = nao
         self.data = data
         self._model = model
-        self._url = f"/api/{domain}/observers/" + data.id
-        self._label = "Sensor observer" if domain == "sensors" else "Vision observer"
+        self._url = f"/api/{domain}/{resource}/" + data.id
+        self._label = label or ("Sensor observer" if domain == "sensors" else "Vision observer")
         self._error, self._timeout_error = error, timeout_error
         self._id = data.id
         self._session_id = data.session_id

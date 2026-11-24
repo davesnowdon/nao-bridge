@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.16.0",
+  "contract_version": "1.17.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -11,9 +11,31 @@
     "sensor_observer_id",
     "threshold_id",
     "origin_id",
-    "control_id"
+    "control_id",
+    "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "managed camera preview",
+      "steps": [
+        "Create two previews with the same camera, resolution and frame rate",
+        "Open one multipart JPEG stream",
+        "Stop the other preview and read another frame",
+        "Capture a still from the same camera and resolution",
+        "Stop the last preview and read its final status"
+      ],
+      "expected": [
+        "Two preview IDs share the same live feed",
+        "Each part contains a complete JPEG and a rising frame sequence",
+        "The remaining preview continues after the first stop",
+        "Still capture succeeds while the preview is streaming",
+        "The last preview reports stopped after native cleanup"
+      ],
+      "client_decisions": [
+        "Treat gaps in frame sequence as missed preview frames.",
+        "Use the status resource to read final cleanup after closing a stream."
+      ]
+    },
     {
       "name": "autonomy profile discovery, application and observed changes",
       "steps": [

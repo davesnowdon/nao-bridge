@@ -3,6 +3,7 @@
 from . import actions
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
 from .client import (
+    CameraPreview,
     JointControl,
     Listener,
     Nao,
@@ -47,6 +48,7 @@ from .models import (
     BehaviorChangedData,
     BehaviorPage,
     Camera,
+    CameraPreviewData,
     CamerasData,
     Capabilities,
     Event,
@@ -87,6 +89,12 @@ from .models import (
     VisionObserverConfiguration,
     VisionObserverData,
 )
+from .previews import (
+    AsyncCameraPreview,
+    CameraPreviewError,
+    CameraPreviewFrame,
+    CameraPreviewTimeout,
+)
 from .recordings import AsyncRecording
 from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
 from .sequences import delay, parallel, sequence, sequence_document
@@ -114,6 +122,12 @@ __all__ = [
     "VisionObserverTimeout",
     "VisionDetections",
     "Camera",
+    "AsyncCameraPreview",
+    "CameraPreview",
+    "CameraPreviewData",
+    "CameraPreviewError",
+    "CameraPreviewFrame",
+    "CameraPreviewTimeout",
     "CamerasData",
     "AutonomyProfile",
     "AutonomyProfileCatalog",

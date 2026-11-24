@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Generator
 from typing import Any, Generic, Literal, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
@@ -14,6 +14,7 @@ from .models import (
     AssetsPage,
     AutonomyProfileCatalog,
     BehaviorPage,
+    CameraPreviewData,
     CamerasData,
     Capabilities,
     Event,
@@ -36,6 +37,7 @@ from .models import (
     SubscriptionData,
     VisionObserverData,
 )
+from .previews import AsyncCameraPreview, CameraPreviewFrame
 from .recordings import AsyncRecording
 from .sensor_observers import AsyncObserver, ObserverData
 from .trajectory import Trajectory
@@ -527,6 +529,26 @@ class Vision:
     def cameras(self) -> CamerasData:
         return self._nao._run(self._nao._async.vision.cameras())
 
+    def preview(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        frame_rate: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> CameraPreview:
+        return CameraPreview(
+            self._nao,
+            self._nao._run(
+                self._nao._async.vision.preview(
+                    camera,
+                    resolution=resolution,
+                    frame_rate=frame_rate,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
     def observe(
         self,
         *,
@@ -927,6 +949,21 @@ class SensorObserver(_Observer[SensorObserverData]):
 
 class VisionObserver(_Observer[VisionObserverData]):
     pass
+
+
+class CameraPreview(_Observer[CameraPreviewData]):
+    def frames(self) -> Generator[CameraPreviewFrame, None, None]:
+        assert isinstance(self._async, AsyncCameraPreview)
+        source = self._async.frames()
+        try:
+            while True:
+                try:
+                    yield self._nao._run(source.__anext__())
+                except StopAsyncIteration:
+                    return
+        finally:
+            if self._nao._loop is not None:
+                self._nao._run(source.aclose())
 
 
 class Recordings:

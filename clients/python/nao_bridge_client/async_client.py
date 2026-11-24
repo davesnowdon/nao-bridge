@@ -34,6 +34,7 @@ from .listeners import AsyncListener
 from .models import (
     AutonomyProfileCatalog,
     BehaviorPage,
+    CameraPreviewData,
     CamerasData,
     Capabilities,
     ErrorDetail,
@@ -59,6 +60,7 @@ from .models import (
     VisionObserverData,
     WireModel,
 )
+from .previews import AsyncCameraPreview
 from .recordings import AsyncRecordings
 from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
 from .sequences import sequence_document
@@ -528,6 +530,40 @@ class AsyncVision:
 
     async def cameras(self) -> CamerasData:
         return decode(CamerasData, await self._nao._request("GET", "/api/vision/cameras"))
+
+    async def preview(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        frame_rate: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncCameraPreview:
+        owner = await self._nao._ensure_session()
+        body = {
+            name: value
+            for name, value in (
+                ("camera", camera),
+                ("resolution", resolution),
+                ("frame_rate", frame_rate),
+            )
+            if value is not None
+        }
+        result = await self._nao._request(
+            "POST",
+            "/api/vision/previews",
+            body=body,
+            session_id=owner.id,
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        data = decode(CameraPreviewData, result)
+        if (
+            data.session_id != owner.id
+            or data.bridge_instance_id != owner.bridge_instance_id
+            or data.connection_generation != owner.connection_generation
+        ):
+            raise ProtocolError("Camera preview belongs to a different session or generation")
+        return AsyncCameraPreview(self._nao, data)
 
     async def observe(
         self,

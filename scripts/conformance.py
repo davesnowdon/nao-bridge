@@ -229,6 +229,67 @@ class Probe:
             assert error["error"]["code"] == "resource_busy" and time.monotonic() < deadline, error
             time.sleep(0.02)
 
+    def camera_previews(self, captures):
+        collection = "/api/vision/previews"
+        config = {"camera": "bottom", "resolution": "640x480", "frame_rate": 5}
+        first = self.request("POST", collection, config, status=201, schema="CameraPreview")
+        second = self.request("POST", collection, config, status=201, schema="CameraPreview")
+        assert first["id"] != second["id"]
+        conflict = self.request("POST", collection, {"camera": "top"}, status=409, schema="Error")
+        assert conflict["error"]["code"] == "resource_busy"
+
+        def part(response):
+            assert response.readline(256) == b"--nao-camera\r\n"
+            fields = {}
+            for line in iter(lambda: response.readline(256), b"\r\n"):
+                name, delimiter, value = line.partition(b":")
+                assert delimiter and name not in fields, line
+                fields[name] = value.strip()
+            assert fields[b"Content-Type"] == b"image/jpeg"
+            size = int(fields[b"Content-Length"])
+            assert 4 <= size <= 1048576
+            jpeg = response.read(size)
+            assert jpeg.startswith(b"\xff\xd8") and jpeg.endswith(b"\xff\xd9")
+            assert response.read(2) == b"\r\n"
+            return int(fields[b"X-Frame-Sequence"])
+
+        conn = self.connection(timeout=5)
+        try:
+            conn.request("GET", second["content_url"], headers={"X-Session-ID": self.session})
+            response = conn.getresponse()
+            assert response.status == 200
+            assert (
+                response.getheader("Content-Type")
+                == "multipart/x-mixed-replace; boundary=nao-camera"
+            )
+            sequence = part(response)
+            self.request("POST", f"{collection}/{first['id']}/stop", {}, status=202)
+            assert part(response) > sequence
+            if captures:
+                operation = self.wait(
+                    self.request(
+                        "POST",
+                        "/api/vision/captures",
+                        {"camera": "bottom", "resolution": "640x480"},
+                        status=202,
+                        schema="Operation",
+                    )
+                )
+                assert operation["status"] == "succeeded", operation
+                assert operation["result"]["capture"]["frame"] == "camera.bottom"
+                self.request("DELETE", "/api/assets/" + operation["result"]["asset_id"], status=204)
+            path = collection + "/" + second["id"]
+            self.request("POST", path + "/stop", {}, status=202)
+            deadline = time.monotonic() + 5
+            while True:
+                preview = self.request("GET", path, schema="CameraPreview")
+                if preview["status"] == "stopped":
+                    break
+                assert preview["status"] == "stopping" and time.monotonic() < deadline, preview
+                time.sleep(0.02)
+        finally:
+            conn.close()
+
     def vision_observers(self):
         collection = "/api/vision/observers"
         observers = [
@@ -670,6 +731,9 @@ def run(url):
         robot = probe.request("GET", "/api/robot", schema="Robot")
     capabilities = probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
     captures = capabilities["features"]["vision.captures"]["status"] == "available"
+    previews = capabilities["features"]["vision.previews"]["status"] == "available"
+    if robot["backend"] == "native-fixture":
+        assert previews, "Native container preview must use the pinned FFmpeg encoder"
     faces = capabilities["features"]["vision.observers"]["status"] == "available"
     velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
     behaviors = capabilities["features"]["behaviors.runs"]["status"] == "available"
@@ -731,6 +795,8 @@ def run(url):
             probe.velocity_control()
         if captures:
             probe.camera_capture()
+        if previews:
+            probe.camera_previews(captures)
         if faces:
             probe.vision_observers()
         if behaviors:
@@ -934,6 +1000,7 @@ def run(url):
             "cleanup",
         ]
         + (["camera_capture_and_download"] if captures else [])
+        + (["shared_camera_previews_and_still_capture"] if previews else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])

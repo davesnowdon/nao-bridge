@@ -11,6 +11,7 @@ from .contract import validate
 from .errors import BackendUnknown, BridgeError
 
 if TYPE_CHECKING:
+    from .camera_previews import CameraFeed
     from .core import Core, Operation, Session
 
 LOG = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ KIND = "vision.capture"
 @dataclass
 class StillCapture:
     operation: Operation
+    feed: CameraFeed | None
     done: asyncio.Event = field(default_factory=asyncio.Event)
     committing: bool = False
 
@@ -44,17 +46,29 @@ class Vision:
             raise BridgeError("storage_unavailable", "Camera asset storage is unavailable", 503)
         if self.active or self.core.stop_pending():
             raise BridgeError("resource_busy", "Camera capture or robot stop is in progress", 409)
-        camera = body.get("camera", "top")
-        resolution = body.get("resolution", "320x240")
+        config = {
+            "camera": body.get("camera", "top"),
+            "resolution": body.get("resolution", "320x240"),
+        }
+        self.require_camera(config)
+        feed = self.core.camera_previews.feed
+        if feed and (
+            feed.ending.is_set() or any(feed.config[key] != config[key] for key in config)
+        ):
+            raise BridgeError(
+                "resource_busy", "Camera feed has different settings or is stopping", 409
+            )
+        operation = self.core.new_operation(session, KIND, [])
+        item = self.active = StillCapture(operation, feed)
+        self.core.spawn(self.run(item, config))
+        return copy.deepcopy(operation.public)
+
+    def require_camera(self, config: dict[str, Any]) -> None:
         if not any(
-            item["id"] == camera and resolution in item["resolutions"]
+            item["id"] == config["camera"] and config["resolution"] in item["resolutions"]
             for item in self.core.info.get("cameras", [])
         ):
             raise BridgeError("unsupported", "Camera or resolution is unavailable", 422)
-        operation = self.core.new_operation(session, KIND, [])
-        item = self.active = StillCapture(operation)
-        self.core.spawn(self.run(item, {"camera": camera, "resolution": resolution}))
-        return copy.deepcopy(operation.public)
 
     def cancel(self, operation: Operation, *, notify_agent: bool = True) -> None:
         status = operation.public["status"]
@@ -62,7 +76,9 @@ class Vision:
             return
         if status in {"accepted", "running"}:
             self.core.update(operation, status="cancelling")
-            if status == "running" and notify_agent:
+            if status == "running" and self.active.feed:
+                self.active.feed.changed.set()
+            elif status == "running" and notify_agent:
                 self.core.spawn(self.request_native_stop(operation))
 
     async def request_native_stop(self, operation: Operation) -> None:
@@ -159,9 +175,12 @@ class Vision:
             return
         self.core.update(operation, status="running", started_at=utc())
         try:
-            frame, rgb = await self.core.backend.capture_image(
-                operation.public["id"], operation.public["session_id"], payload
-            )
+            if item.feed:
+                frame, rgb = await self.read_shared_frame(item, item.feed)
+            else:
+                frame, rgb = await self.core.backend.capture_image(
+                    operation.public["id"], operation.public["session_id"], payload
+                )
             if frame.get("cancelled") or operation.public["status"] == "cancelling":
                 self.finish(item, "cancelled", {"dispatched": frame.get("dispatched", True)})
                 return
@@ -184,6 +203,28 @@ class Vision:
         except Exception:
             LOG.exception("Camera capture failed")
             self.finish(item, "failed", error=BridgeError("capture_failed", "Capture failed", 503))
+
+    async def read_shared_frame(
+        self, item: StillCapture, feed: CameraFeed
+    ) -> tuple[dict[str, Any], bytes]:
+        try:
+            async with asyncio.timeout(3):
+                while not feed.ending.is_set():
+                    if item.operation.public["status"] == "cancelling":
+                        return {"cancelled": True, "dispatched": False}, b""
+                    feed.changed.clear()
+                    if feed.latest:
+                        frame, rgb, _ = feed.latest
+                        if 0 <= self.core.clock() - frame["acquisition_finished"] <= 1.5:
+                            return frame, rgb
+                    await feed.changed.wait()
+        except TimeoutError:
+            pass
+        if item.operation.public["status"] == "cancelling":
+            return {"cancelled": True, "dispatched": False}, b""
+        raise BridgeError(
+            "camera_frame_unavailable", "No fresh camera feed frame is available", 503
+        )
 
     def commit(
         self, item: StillCapture, metadata: dict[str, Any], width: int, height: int, rgb: bytes

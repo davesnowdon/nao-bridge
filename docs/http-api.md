@@ -964,6 +964,45 @@ after its native reply and cleanup. Once publication begins, `cancellable` is
 allows a capture to continue. Incomplete PNGs are discarded on restart. Completed
 images share the quota, retention and download routes with other assets.
 
+## Managed JPEG preview
+
+`POST /api/vision/previews` creates a leased preview and returns a status URL
+with HTTP 201. Send the session ID in `X-Session-ID`. The request can specify
+`camera` and `resolution` from camera discovery and an integer `frame_rate` from
+1 to 5. Defaults are `top`, `320x240`, and 5 fps. Check `vision.previews` in
+robot capabilities to discover encoder and camera availability.
+
+`GET /api/vision/previews/{id}` reports `starting`, `active`, `stopping`,
+`stopped`, `failed`, or `unknown`. Use the same session ID to open
+`GET /api/vision/previews/{id}/content`. The response uses
+`multipart/x-mixed-replace` with one `image/jpeg` per part and per-part
+`Content-Length` and `X-Frame-Sequence` headers. Frame sequence numbers
+increase within that feed and may skip when a viewer falls behind. A closed
+HTTP response detaches the viewer and allows reattachment to a live preview.
+
+Use `POST /api/vision/previews/{id}/stop` with `{}` to release its demand.
+Identical settings share a feed, and a matching still capture uses its
+latest fresh RGB frame. Incompatible camera settings return `resource_busy`.
+The last stop reaches `stopped` after native cleanup is confirmed, and a lost
+confirmation reports `unknown` with the camera held until the connection
+generation changes. Session cleanup also stops its previews.
+
+```python
+from contextlib import closing
+
+from nao_bridge_client import Nao
+
+with Nao() as nao, nao.vision.preview(frame_rate=5) as preview:
+    preview.wait_ready()
+    with closing(preview.frames()) as frames:
+        first_frame = next(frames)
+        print(first_frame.sequence, len(first_frame.jpeg))
+```
+
+With `AsyncNao`, use `async with await nao.vision.preview()`, await readiness,
+and consume `preview.frames()` with `async for`. Use `contextlib.aclosing`
+to close the iterator when you leave the loop early.
+
 ## Managed face observations
 
 Check `features.vision.observers` for availability. The `faces` capability
