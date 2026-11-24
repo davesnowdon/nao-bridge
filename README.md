@@ -16,7 +16,7 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.22.0 replaces the old API without compatibility
+remain available. Contract 1.23.0 replaces the old API without compatibility
 adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
@@ -25,7 +25,8 @@ ground-contact and joint-temperature observations to the shared sensor state, pl
 explicit sonar observers and battery/sonar thresholds with sync/async SDK support.
 It adds finite walking, local planar odometry, scoped motion stop, still
 camera capture as downloadable PNG assets, and managed face detection events.
-Managed vision observers also support NAOmark landmark events.
+Managed vision observers also support NAOmark landmarks and people detections
+when the native extractors are available.
 Managed previews stream live JPEG frames over HTTP, and matching previews and
 stills share camera acquisition with bounded MJPEG AVI recordings. The bridge
 also records the front microphone to WAV when the robot exposes its audio device

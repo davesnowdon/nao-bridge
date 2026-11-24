@@ -298,3 +298,17 @@ including face teardown while landmark events continue. Physical marker
 delivery, camera naming, and concurrent use still need NAOqi 2.1 and 2.8
 coverage. See [landmark observations](http-api.md#naomark-landmark-observations)
 and the [NAOqi landmark example](https://doc.aldebaran.com/2-8/dev/python/examples/vision/landmark.html).
+
+### People observation
+
+Contract 1.23.0 adds `vision.people` discovery and managed visible-person
+frames through the shared vision observer API. The adapter uses native
+camera selection and filters the reported camera when requested. It forwards
+native tracks, angles, and available range over SSE. Availability depends on
+the robot exposing `ALPeoplePerception`.
+
+The pinned fixture covers subscription, filtering, frame delivery without a
+fixed camera query, missing range, and teardown. Physical detections and range
+quality on both robot generations remain open. See
+[people observations](http-api.md#people-observations) and the
+[NAOqi 2.1 people perception API](https://doc.aldebaran.com/2-1/naoqi/peopleperception/alpeopleperception-api.html).

@@ -555,6 +555,7 @@ class Vision:
         *,
         faces: bool | None = None,
         landmarks: bool = False,
+        people: bool = False,
         camera: str | None = None,
         rate_hz: int | None = None,
         idempotency_key: str | None = None,
@@ -565,6 +566,7 @@ class Vision:
                 self._nao._async.vision.observe(
                     faces=faces,
                     landmarks=landmarks,
+                    people=people,
                     camera=camera,
                     rate_hz=rate_hz,
                     idempotency_key=idempotency_key,

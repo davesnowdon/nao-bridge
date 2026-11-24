@@ -358,7 +358,7 @@ class Core:
             self.listeners.observation(kind, data)
         elif kind == "sonar.state":
             self.sensor_observers.observation(data)
-        elif kind in {"faces.detections", "landmarks.detections"}:
+        elif kind in {"faces.detections", "landmarks.detections", "people.detections"}:
             self.vision_observers.observation(kind.split(".", 1)[0], data)
         elif kind == "velocity_control.changed":
             operation = self.operations.get(data.get("operation_id", ""))
@@ -555,6 +555,7 @@ class Core:
                 "vision.observers": feature(self.vision_observers.available()),
                 "vision.faces": feature(self.vision_observers.available("faces")),
                 "vision.landmarks": feature(self.vision_observers.available("landmarks")),
+                "vision.people": feature(self.vision_observers.available("people")),
                 "vision.previews": feature(self.camera_previews.available()),
                 "vision.captures": feature(
                     available and bool(self.info.get("cameras")) and self.recordings.available()
@@ -639,6 +640,7 @@ class Core:
             "sonar": copy.deepcopy(self.info.get("sonar", {})),
             "faces": copy.deepcopy(self.info.get("faces", {})),
             "landmarks": copy.deepcopy(self.info.get("landmarks", {})),
+            "people": copy.deepcopy(self.info.get("people", {})),
             "locomotion": copy.deepcopy(self.info.get("locomotion", {})),
             **(
                 {"velocity_control": copy.deepcopy(self.info["velocity_control"])}

@@ -578,14 +578,21 @@ class AsyncVision:
         *,
         faces: bool | None = None,
         landmarks: bool = False,
+        people: bool = False,
         camera: str | None = None,
         rate_hz: int | None = None,
         idempotency_key: str | None = None,
     ) -> AsyncVisionObserver:
         await self._nao._ensure_session()
-        body: dict[str, Any] = {"landmarks": True} if landmarks else {"faces": True}
+        body: dict[str, Any] = {
+            key: True
+            for key, selected in (("landmarks", landmarks), ("people", people))
+            if selected
+        }
         if faces is not None:
             body["faces"] = faces
+        if not body:
+            body["faces"] = True
         if camera is not None:
             body["camera"] = camera
         if rate_hz is not None:

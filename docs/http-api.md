@@ -1061,6 +1061,24 @@ observer only forwards frames whose reported camera matches the accepted
 configuration. `stream.ready` reports readiness for `vision.landmarks`
 separately from `vision.faces`.
 
+### People observations
+
+Check `vision.people` in capabilities. Create an observer with
+`POST /api/vision/observers` and `{"people":true}` or use
+`nao.vision.observe(people=True)` in either Python client. Compatible
+observers share native demand and can run alongside face or NAOmark
+observers.
+
+People observation follows the camera selected by the native perception
+service. The accepted configuration reports `camera: null` in automatic
+mode. Supplying `camera: "top"` or `camera: "bottom"` filters the events
+to that camera. Each `vision.detections` frame still identifies its actual
+camera and timestamp. A people frame includes `people` alongside the empty
+`faces` array. Each entry has a short-lived native tracking `id`, horizontal
+and vertical angles in radians, and `distance_m` when the SDK provides a
+positive range. IDs and range are observations scoped to the robot connection.
+`stream.ready` includes `vision.people` readiness.
+
 ## Camera video recording
 
 Check `recordings.camera` in capabilities. It requires a discovered camera,

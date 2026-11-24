@@ -630,6 +630,37 @@ async def check_native_controls():
                 await asyncio.sleep(0.01)
         marker = state["landmarks.detections"]
         assert marker["frame"] == "camera.top" and marker["landmarks"][0]["marker_id"] == 84
+        people_request = {
+            "producer_id": "blocked-workers-people",
+            "revision": 1,
+            "configuration": {"camera": "bottom", "rate_hz": 5},
+        }
+        assert info["people"]["available"] and info["people"]["camera"] is None
+        assert (await backend.configure_people(people_request))["status"] == "active"
+        await asyncio.sleep(0.25)
+        assert "people.detections" not in state
+        assert (
+            await backend.configure_people({**people_request, "revision": 2, "configuration": None})
+        )["status"] == "stopped"
+        assert (
+            await backend.configure_people(
+                {**people_request, "revision": 3, "configuration": {"camera": None, "rate_hz": 5}}
+            )
+        )["configuration"]["camera"] is None
+        async with asyncio.timeout(3):
+            while "people.detections" not in state:
+                await asyncio.sleep(0.01)
+        people = state["people.detections"]
+        assert people["frame"] == "camera.top" and people["revision"] == 3
+        assert people["people"][0]["distance_m"] == 1.3
+        assert "distance_m" not in people["people"][1]
+        assert (
+            await backend.configure_people({**people_request, "revision": 4, "configuration": None})
+        )["status"] == "stopped"
+        print(
+            "Native people observation: camera filter, optional range and owned teardown passed",
+            flush=True,
+        )
         assert [camera["id"] for camera in info["cameras"]] == ["top", "bottom"]
         for camera, size, color in (
             ("top", "320x240", b"\x00\x80\xff"),

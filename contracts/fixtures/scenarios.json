@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.22.0",
+  "contract_version": "1.23.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -15,6 +15,22 @@
     "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "managed people observation",
+      "steps": [
+        "Check vision.people and create compatible people observers",
+        "Attach vision.detections and inspect a people frame",
+        "Stop both observers and check the terminal status"
+      ],
+      "expected": [
+        "Automatic observation reports the native camera on each frame",
+        "Each track includes angular coordinates and includes range when supplied",
+        "The detector is released after its last observer stops"
+      ],
+      "client_decisions": [
+        "Scope person IDs to the robot connection and treat missing distance as unavailable."
+      ]
+    },
     {
       "name": "shared NAOmark observation",
       "steps": [

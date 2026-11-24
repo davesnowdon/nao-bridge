@@ -36,10 +36,12 @@ def valid_configuration(value):
 
 
 def camera_name(value):
+    if isinstance(value, string_type):
+        return {"CameraTop": "top", "CameraBottom": "bottom"}.get(value)
     return next((name for name, index in CAMERAS.items() if integer(value, index, index)), None)
 
 
-def detections(value):
+def frame_fields(value):
     if not isinstance(value, (tuple, list)) or len(value) < 5:
         return None
     stamp, items, camera = value[0], value[1], camera_name(value[4])
@@ -48,6 +50,16 @@ def detections(value):
             or not isinstance(items, (tuple, list))):
         return None
     secs, usecs = int(stamp[0]), int(stamp[1])
+    return {"camera": camera, "frame": "camera." + camera,
+            "source_time": {"clock": "naoqi_camera", "seconds": secs, "microseconds": usecs}}, items
+
+
+def detections(value):
+    parsed = frame_fields(value)
+    if parsed is None:
+        return None
+    frame, items = parsed
+    camera, stamp = frame["camera"], frame["source_time"]
     tail = items[-1] if items else None
     has_trailer = isinstance(tail, (tuple, list)) and (
         not tail or integer(tail[0], 2, 4))
@@ -66,17 +78,12 @@ def detections(value):
                         and 0 < width <= math.pi and 0 < height <= math.pi)):
             continue
         faces.append({
-            "id": "%s-%d-%d-%d" % (camera, secs, usecs, index),
+            "id": "%s-%d-%d-%d" % (camera, stamp["seconds"], stamp["microseconds"], index),
             "alpha_rad": alpha, "beta_rad": beta, "width_rad": width, "height_rad": height,
         })
     if count and not faces:
         return None
-    return {
-        "camera": camera,
-        "frame": "camera." + camera,
-        "source_time": {"clock": "naoqi_camera", "seconds": secs, "microseconds": usecs},
-        "faces": faces,
-    }
+    return dict(frame, faces=faces)
 
 
 class Subscription(object):
@@ -93,6 +100,8 @@ class Subscription(object):
 
 
 class Detector(object):
+    fixed_camera = True
+
     def __init__(self, session, memory, observe, clock, lock):
         self.memory, self.observe, self.clock, self.lock = memory, observe, clock, lock
         self.transition = threading.Lock()
@@ -104,10 +113,10 @@ class Detector(object):
                         "reason": "native_" + self.kind + "_detector_unavailable"}
         try:
             self.service = session.service(self.service_name, _async=True).value(500)
-            camera = self.active_camera()
+            camera = self.active_camera() if self.fixed_camera else None
         except Exception:
             return
-        if camera is not None:
+        if camera is not None or not self.fixed_camera:
             self.catalog.update(available=True, camera=camera, rates_hz=list(RATES), reason=None)
 
     def active_camera(self):
@@ -164,9 +173,11 @@ class Detector(object):
 
     def start(self, config, authority):
         try:
-            camera = self.active_camera()
-            if camera is None or config["camera"] not in (None, camera):
-                raise FaceError("unsupported", "Requested camera is not configured on the native detector")
+            camera = config["camera"]
+            if self.fixed_camera:
+                camera = self.active_camera()
+                if camera is None or config["camera"] not in (None, camera):
+                    raise FaceError("unsupported", "Requested camera is not configured on the native detector")
             subscriber = self.memory.subscriber(self.event, _async=True).value(500)
         except FaceError:
             raise
@@ -199,7 +210,7 @@ class Detector(object):
             if not self.enabled or self.current is not job or now < job.next_sample:
                 return
             observation = self.parse_frame(value)
-            if observation is None or observation["camera"] != job.camera:
+            if observation is None or job.camera is not None and observation["camera"] != job.camera:
                 return
             native = observation["source_time"]
             stamp = native["seconds"], native["microseconds"]
@@ -207,7 +218,7 @@ class Detector(object):
                 return
             job.last_stamp = stamp
             job.next_sample = now + 1.0 / job.rate
-            self.observe(self.kind + "s.detections", dict(
+            self.observe(self.topic + ".detections", dict(
                 observation, producer_id=self.producer_id, revision=self.revision, observed=now))
 
     def invalidate(self):
@@ -268,6 +279,7 @@ class Detector(object):
 
 class FaceDetector(Detector):
     kind = "face"
+    topic = "faces"
     service_name = "ALFaceDetection"
     event = EVENT
     parse_frame = staticmethod(detections)

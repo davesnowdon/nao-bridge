@@ -56,6 +56,7 @@ class Backend(Protocol):
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_landmarks(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def configure_people(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]: ...
@@ -134,6 +135,8 @@ class FakeBackend:
         self.landmarks: dict[str, Any] | None = None
         self.next_landmark = 0.0
         self.landmark_calls: list[dict[str, Any]] = []
+        self.people: dict[str, Any] | None = None
+        self.next_people = 0.0
         self.face_calls: list[dict[str, Any]] = []
         self.face_failure: str | None = None
         self.next_face = 0.0
@@ -255,6 +258,7 @@ class FakeBackend:
         self.connected = connected
         self.faces = None
         self.landmarks = None
+        self.people = None
         self.motion_state["odometry"] = {
             "origin_id": uuid.uuid4().hex,
             "origin_reason": "connection_started",
@@ -365,6 +369,11 @@ class FakeBackend:
                         "camera": "top" if connected else None,
                         "rates_hz": [1, 2, 5] if connected else [],
                     },
+                    "people": {
+                        "available": connected,
+                        "camera": None,
+                        "rates_hz": [1, 2, 5] if connected else [],
+                    },
                     "locomotion": {
                         "available": connected,
                         "reason": None if connected else "disconnected",
@@ -387,6 +396,9 @@ class FakeBackend:
                 if self.landmarks and now >= self.next_landmark:
                     self.next_landmark = now + 1 / self.landmarks["configuration"]["rate_hz"]
                     await self.sample_vision(now, "landmarks", self.landmarks)
+                if self.people and now >= self.next_people:
+                    self.next_people = now + 1 / self.people["configuration"]["rate_hz"]
+                    await self.sample_vision(now, "people", self.people)
                 if (
                     self.sonar["enabled"]
                     and self.sonar["status"] == "warming"
@@ -505,17 +517,25 @@ class FakeBackend:
         self.next_landmark = 0
         return value
 
+    async def configure_people(self, payload: dict[str, Any]) -> dict[str, Any]:
+        value = self.configure_vision(payload, auto_camera=True)
+        self.people = value if value["configuration"] else None
+        self.next_people = 0
+        return value
+
     def configure_vision(
-        self, payload: dict[str, Any], failure: str | None = None
+        self, payload: dict[str, Any], failure: str | None = None, *, auto_camera: bool = False
     ) -> dict[str, Any]:
         if not self.connected or failure == "unknown":
             raise BackendUnknown("Detector acknowledgement lost")
         config = payload["configuration"]
-        if config and (config["camera"] not in ("top", None) or failure == "rejected"):
+        if config and (
+            not auto_camera and config["camera"] not in ("top", None) or failure == "rejected"
+        ):
             raise BridgeError(
                 "unsupported", "Requested camera is not configured on the detector", 422
             )
-        accepted = {**config, "camera": "top"} if config is not None else None
+        accepted = {**config, "camera": "top"} if config is not None and not auto_camera else config
         return {
             **payload,
             "configuration": accepted,
@@ -531,6 +551,7 @@ class FakeBackend:
         if self.sink is None:
             return
         usecs = int((now % 1) * 1_000_000)
+        camera = detector["configuration"]["camera"] or "top"
         detection = {
             "id": f"top-{int(now)}-{usecs}-0",
             "alpha_rad": -0.15,
@@ -540,13 +561,15 @@ class FakeBackend:
         }
         if kind == "landmarks":
             detection.update(marker_id=84, heading_rad=0.2)
+        if kind == "people":
+            detection = {"id": "person-7", "alpha_rad": -0.15, "beta_rad": 0.05, "distance_m": 1.3}
         await self.sink(
             kind + ".detections",
             {
                 "producer_id": detector["producer_id"],
                 "revision": detector["revision"],
-                "camera": "top",
-                "frame": "camera.top",
+                "camera": camera,
+                "frame": "camera." + camera,
                 "source_time": {
                     "clock": "naoqi_camera",
                     "seconds": int(now),

@@ -170,6 +170,7 @@ class Capabilities(WireModel):
     sonar: dict[str, Any] = Field(default_factory=dict)
     faces: dict[str, Any] = Field(default_factory=dict)
     landmarks: dict[str, Any] = Field(default_factory=dict)
+    people: dict[str, Any] = Field(default_factory=dict)
     locomotion: dict[str, Any] = Field(default_factory=dict)
     velocity_control: dict[str, Any] = Field(default_factory=dict)
 
@@ -340,12 +341,13 @@ class SensorObserverData(WireModel):
 class VisionObserverConfiguration(WireModel):
     faces: Literal[True] | None = None
     landmarks: Literal[True] | None = None
+    people: Literal[True] | None = None
     camera: Literal["top", "bottom"] | None
     rate_hz: int = Field(ge=1, le=5)
 
     @model_validator(mode="after")
     def one_source(self) -> VisionObserverConfiguration:
-        if (self.faces is True) == (self.landmarks is True):
+        if sum(source is True for source in (self.faces, self.landmarks, self.people)) != 1:
             raise ValueError("Expected exactly one vision observer source")
         return self
 
@@ -379,6 +381,13 @@ class LandmarkBounds(FaceBounds):
     heading_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
 
 
+class PersonDetection(WireModel):
+    id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    alpha_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
+    beta_rad: float = Field(ge=-3.141592653589793, le=3.141592653589793)
+    distance_m: float | None = Field(default=None, gt=0)
+
+
 class VisionDetections(WireModel):
     observer_id: str = Field(min_length=1, max_length=128)
     camera: Literal["top", "bottom"]
@@ -386,6 +395,7 @@ class VisionDetections(WireModel):
     source_time: CameraTimestamp
     faces: list[FaceBounds] = Field(max_length=16)
     landmarks: list[LandmarkBounds] | None = Field(default=None, max_length=16)
+    people: list[PersonDetection] | None = Field(default=None, max_length=16)
 
     @model_validator(mode="after")
     def matching_frame(self) -> VisionDetections:

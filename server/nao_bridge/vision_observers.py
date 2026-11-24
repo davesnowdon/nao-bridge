@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -32,11 +33,23 @@ class VisionObserver:
 
 
 class DetectorObservers:
-    def __init__(self, core: Core, kind: str) -> None:
+    def __init__(
+        self,
+        core: Core,
+        kind: str,
+        name: str,
+        frame_schema: str,
+        configure: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+        *,
+        auto_camera: bool = False,
+    ) -> None:
         self.core = core
         self.kind = kind
-        self.name = "face" if kind == "faces" else "landmark"
+        self.name = name
         self.unknown_code = self.name + "_producer_unknown"
+        self.configure = configure
+        self.frame_schema = frame_schema
+        self.auto_camera = auto_camera
         self.items: dict[str, VisionObserver] = {}
         self.producer = uuid.uuid4().hex
         self.revision = 0
@@ -178,12 +191,7 @@ class DetectorObservers:
                 self.requested = config
                 self.revision += 1
                 try:
-                    configure = (
-                        self.core.backend.configure_faces
-                        if self.kind == "faces"
-                        else self.core.backend.configure_landmarks
-                    )
-                    result = await configure(
+                    result = await self.configure(
                         {
                             "producer_id": self.producer,
                             "revision": self.revision,
@@ -210,8 +218,15 @@ class DetectorObservers:
                         and (
                             config is None
                             or not isinstance(accepted, dict)
-                            or accepted.get("camera") not in {"top", "bottom"}
-                            or config["camera"] not in (None, accepted["camera"])
+                            or "camera" not in accepted
+                            or (self.auto_camera and accepted["camera"] != config["camera"])
+                            or (
+                                not self.auto_camera
+                                and (
+                                    accepted["camera"] not in ("top", "bottom")
+                                    or config["camera"] not in (None, accepted["camera"])
+                                )
+                            )
                             or accepted.get("rate_hz") != config["rate_hz"]
                         )
                     )
@@ -228,18 +243,20 @@ class DetectorObservers:
                 self.mark_unknown()
 
     def observation(self, value: dict[str, Any]) -> None:
+        camera = value.get("camera")
         if (
             self.unknown
             or self.configuration is None
             or value.get("producer_id") != self.producer
             or value.get("revision") != self.revision
-            or value.get("camera") != self.configuration["camera"]
-            or value.get("frame") != "camera." + self.configuration["camera"]
+            or camera not in ("top", "bottom")
+            or self.configuration["camera"] not in (None, camera)
+            or value.get("frame") != f"camera.{camera}"
         ):
             return
         try:
             data = {key: value[key] for key in ("camera", "frame", "source_time", self.kind)}
-            validate("FaceFrame" if self.kind == "faces" else "LandmarkFrame", data)
+            validate(self.frame_schema, data)
         except (KeyError, BridgeError):
             return
         for item in self.active():
@@ -304,7 +321,30 @@ class DetectorObservers:
 
 class VisionObservers:
     def __init__(self, core: Core) -> None:
-        self.detectors = {kind: DetectorObservers(core, kind) for kind in ("faces", "landmarks")}
+        self.detectors = {
+            "faces": DetectorObservers(
+                core,
+                "faces",
+                "face",
+                "FaceFrame",
+                lambda request: core.backend.configure_faces(request),
+            ),
+            "landmarks": DetectorObservers(
+                core,
+                "landmarks",
+                "landmark",
+                "LandmarkFrame",
+                lambda request: core.backend.configure_landmarks(request),
+            ),
+            "people": DetectorObservers(
+                core,
+                "people",
+                "people",
+                "PeopleFrame",
+                lambda request: core.backend.configure_people(request),
+                auto_camera=True,
+            ),
+        }
 
     @property
     def items(self) -> dict[str, VisionObserver]:
@@ -322,9 +362,8 @@ class VisionObservers:
             or sum(not item.released for item in items.values()) >= MAX_OBSERVERS
         ):
             raise BridgeError("limit_exceeded", "Vision observer capacity exhausted", 429)
-        return self.detectors["landmarks" if body.get("landmarks") else "faces"].create(
-            session, body
-        )
+        kind = next((kind for kind in self.detectors if body.get(kind) is True), "faces")
+        return self.detectors[kind].create(session, body)
 
     def get(self, oid: str, sid: str) -> VisionObserver:
         for detector in self.detectors.values():

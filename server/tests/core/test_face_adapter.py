@@ -42,6 +42,22 @@ def test_landmark_geometry_uses_the_reported_camera_and_bounds_the_frame(monkeyp
     assert module.detections(raw) is None
 
 
+def test_people_frames_keep_observed_camera_and_omit_unknown_distance(monkeypatch):
+    monkeypatch.syspath_prepend(str(AGENT))
+    spec = importlib.util.spec_from_file_location("people_under_test", AGENT / "people.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    raw = [[42, 12], [[7, 1.3, 0.05, -0.2], [8, -1.0, 0.04, 0.3], [7, 50, 0, 0]], [], [], 1]
+    frame = module.detections(raw)
+    assert frame["frame"] == "camera.bottom"
+    assert frame["people"] == [
+        {"id": "person-7", "distance_m": 1.3, "beta_rad": 0.05, "alpha_rad": -0.2},
+        {"id": "person-8", "beta_rad": 0.04, "alpha_rad": 0.3},
+    ]
+    raw[1] = [[7, 1.3, 0.05, float("nan")]]
+    assert module.detections(raw) is None
+
+
 class Native:
     def __init__(self, module):
         self.clock = 0

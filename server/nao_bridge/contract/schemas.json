@@ -522,6 +522,10 @@
           "type": "object",
           "additionalProperties": true
         },
+        "people": {
+          "type": "object",
+          "additionalProperties": true
+        },
         "locomotion": {
           "type": "object",
           "additionalProperties": true
@@ -3825,8 +3829,40 @@
         },
         {
           "$ref": "#/$defs/LandmarkObserverCreate"
+        },
+        {
+          "$ref": "#/$defs/PeopleObserverCreate"
         }
       ]
+    },
+    "PeopleObserverCreate": {
+      "type": "object",
+      "properties": {
+        "people": {
+          "const": true
+        },
+        "faces": {
+          "const": false
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ],
+          "default": 2
+        }
+      },
+      "required": [
+        "people"
+      ],
+      "additionalProperties": false
     },
     "LandmarkObserverCreate": {
       "type": "object",
@@ -3895,8 +3931,45 @@
         },
         {
           "$ref": "#/$defs/LandmarkObserverConfiguration"
+        },
+        {
+          "$ref": "#/$defs/PeopleObserverConfiguration"
         }
       ]
+    },
+    "PeopleObserverConfiguration": {
+      "type": "object",
+      "properties": {
+        "people": {
+          "const": true
+        },
+        "camera": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ]
+        }
+      },
+      "required": [
+        "people",
+        "camera",
+        "rate_hz"
+      ],
+      "additionalProperties": true
     },
     "LandmarkObserverConfiguration": {
       "type": "object",
@@ -4141,6 +4214,13 @@
             "$ref": "#/$defs/LandmarkBounds"
           },
           "maxItems": 16
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PersonDetection"
+          },
+          "maxItems": 16
         }
       },
       "required": [
@@ -4149,6 +4229,90 @@
         "frame",
         "source_time",
         "faces"
+      ],
+      "additionalProperties": true
+    },
+    "PeopleFrame": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PersonDetection"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "source_time",
+        "people"
+      ],
+      "additionalProperties": true
+    },
+    "PersonDetection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "alpha_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "beta_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "distance_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "alpha_rad",
+        "beta_rad"
       ],
       "additionalProperties": true
     },

@@ -128,6 +128,7 @@ async def test_async_faces_have_scoped_events_and_ready_sources(socket_rig):
             assert ready.data["source_readiness"] == {
                 "vision.faces": "inactive",
                 "vision.landmarks": "inactive",
+                "vision.people": "inactive",
             }
             assert not backend.face_calls
             async with await two.vision.observe() as peer:
@@ -170,6 +171,7 @@ async def test_landmarks_share_demand_and_keep_face_producer_independent(socket_
             assert ready.data["source_readiness"] == {
                 "vision.faces": "inactive",
                 "vision.landmarks": "ready",
+                "vision.people": "inactive",
             }
             detection = VisionDetections.model_validate(
                 (await event_of(sub, "vision.detections")).data
@@ -191,3 +193,20 @@ async def test_vision_observer_requires_a_single_detector(rig):
             OBSERVERS, json={"faces": True, "landmarks": True}, headers=headers
         )
         assert both.status_code == 400 and both.json()["error"]["code"] == "invalid_request"
+
+
+async def test_people_auto_camera_and_optional_observed_distance(socket_rig):
+    async with socket_rig() as (url, _, backend), AsyncNao(url) as noa:
+        async with await noa.vision.observe(people=True, rate_hz=5) as observer:
+            await observer.wait_ready()
+            assert observer.data.configuration.people is True
+            assert observer.data.configuration.camera is None
+            async with await noa.events.subscribe(events=["vision.detections"]) as sub:
+                ready = await event_of(sub, "stream.ready")
+                assert ready.data["source_readiness"]["vision.people"] == "ready"
+                event = await event_of(sub, "vision.detections")
+                detection = VisionDetections.model_validate(event.data)
+                assert detection.observer_id == observer.id
+                assert detection.camera == "top" and detection.people[0].id == "person-7"
+                assert detection.people[0].distance_m == 1.3
+        assert backend.people is None

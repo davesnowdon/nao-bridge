@@ -3,24 +3,19 @@ from __future__ import print_function
 
 import math
 
-from camera import finite, integer, string_type
-from faces import Detector, FixtureFaces, camera_name
+from camera import finite, integer
+from faces import Detector, FixtureFaces, frame_fields
 
 EVENT = "LandmarkDetected"
 MAX_LANDMARKS = 16
 
 
 def detections(value):
-    if not isinstance(value, (list, tuple)) or len(value) < 5:
+    parsed = frame_fields(value)
+    if parsed is None:
         return None
-    stamp, items, camera = value[0], value[1], value[4]
-    camera = ({"CameraTop": "top", "CameraBottom": "bottom"}.get(camera)
-              if isinstance(camera, string_type) else camera_name(camera))
-    if (camera is None or not isinstance(stamp, (list, tuple)) or len(stamp) != 2
-            or not integer(stamp[0], 0, 9007199254740991) or not integer(stamp[1], 0, 999999)
-            or not isinstance(items, (list, tuple))):
-        return None
-    secs, usecs = int(stamp[0]), int(stamp[1])
+    frame, items = parsed
+    camera, stamp = frame["camera"], frame["source_time"]
     markers = []
     for index, item in enumerate(items[:MAX_LANDMARKS]):
         if not isinstance(item, (list, tuple)) or len(item) != 2:
@@ -37,21 +32,19 @@ def detections(value):
                         and -math.pi <= heading <= math.pi)):
             continue
         markers.append({
-            "id": "%s-%d-%d-%d" % (camera, secs, usecs, index), "marker_id": int(extra[0]),
+            "id": "%s-%d-%d-%d" % (camera, stamp["seconds"], stamp["microseconds"], index),
+            "marker_id": int(extra[0]),
             "alpha_rad": alpha, "beta_rad": beta, "width_rad": width, "height_rad": height,
             "heading_rad": heading,
         })
     if items and not markers:
         return None
-    return {
-        "camera": camera, "frame": "camera." + camera,
-        "source_time": {"clock": "naoqi_camera", "seconds": secs, "microseconds": usecs},
-        "landmarks": markers,
-    }
+    return dict(frame, landmarks=markers)
 
 
 class LandmarkDetector(Detector):
     kind = "landmark"
+    topic = "landmarks"
     service_name = "ALLandMarkDetection"
     event = EVENT
     parse_frame = staticmethod(detections)

@@ -438,7 +438,7 @@ class Probe:
         for item in observers:
             assert wait(item, "active")["configuration"] == {
                 kind: True,
-                "camera": "top",
+                "camera": None if kind == "people" else "top",
                 "rate_hz": 5,
             }
         stop(observers[0])
@@ -854,6 +854,7 @@ def run(url):
         assert previews, "Native container preview must use the pinned FFmpeg encoder"
     faces = capabilities["features"]["vision.faces"]["status"] == "available"
     landmarks = capabilities["features"]["vision.landmarks"]["status"] == "available"
+    people = capabilities["features"]["vision.people"]["status"] == "available"
     velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
     behaviors = capabilities["features"]["behaviors.runs"]["status"] == "available"
     gestures = capabilities["features"]["motion.gestures"]["status"] == "available"
@@ -920,6 +921,8 @@ def run(url):
             probe.vision_observers()
         if landmarks:
             probe.vision_observers("landmarks")
+        if people:
+            probe.vision_observers("people")
         if behaviors:
             probe.behaviors()
         lights = probe.request("GET", "/api/lights", schema="LightCatalog")["support"]["status"]
@@ -1149,6 +1152,7 @@ def run(url):
         + (["wav_audio_playback"] if audio_upload and audio_playback else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
         + (["landmark_observer_sharing_and_detections"] if landmarks else [])
+        + (["people_observer_sharing_and_detections"] if people else [])
         + (["ordered_velocity_expiry"] if velocity else [])
         + (["light_transitions_and_readback"] if lights == "available" else [])
         + (["animated_speech"] if animated else [])

@@ -32,7 +32,7 @@ from velocity import VelocityControls
 from wire import VERSION, encode, frames, monotonic
 
 PRODUCERS = {"recognition": valid_configuration, "sonar": valid_sonar,
-             "faces": valid_faces, "landmarks": valid_faces}
+             "faces": valid_faces, "landmarks": valid_faces, "people": valid_faces}
 AUTONOMY_ACTIONS = ("autonomy", "restore_autonomy")
 CAPTURE_ACTIONS = {"camera_capture": "camera", "camera_feed": "camera", "microphone_feed": "microphone"}
 COMMANDS = dict(PRODUCERS, trajectory=valid_trajectory, motion_action=valid_motion_action,
@@ -79,6 +79,7 @@ class Agent(object):
         self.sonar_work = queue.Queue(1)
         self.faces_work = queue.Queue(1)
         self.landmarks_work = queue.Queue(1)
+        self.people_work = queue.Queue(1)
         self.camera_work = queue.Queue(1)
         self.microphone_work = queue.Queue(1)
         self.playback_work = queue.Queue(1)
@@ -91,6 +92,7 @@ class Agent(object):
         self.sonar_cleanup = None
         self.faces_cleanup = None
         self.landmarks_cleanup = None
+        self.people_cleanup = None
         self.description = {"connection": "connecting", "reason": "starting"}
         endpoint = "tcp://%s:%s" % (os.environ["NAO_ROBOT_ADDRESS"], os.environ["NAO_ROBOT_PORT"])
         self.driver = FixtureDriver(self.observe, self.lock) if os.environ.get("NAO_AGENT_BACKEND") == "native-fixture" else NativeDriver(endpoint, self.observe, self.lock)
