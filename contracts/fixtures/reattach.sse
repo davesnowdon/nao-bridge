@@ -1,0 +1,15 @@
+: reattached after a disconnected interval
+
+id: bridge:subscription:8
+event: stream.ready
+data: {"id":"bridge:subscription:8","type":"stream.ready","schema_version":"1.0","robot_id":"nao","bridge_instance_id":"bridge","connection_generation":1,"bridge_time_ms":20.0,"received_bridge_time_ms":20.0,"received_at":"2026-01-01T00:00:00Z","source_time":null,"data":{"subscription_id":"subscription","replay_supported":false}}
+
+id: bridge:subscription:9
+event: stream.reset
+data: {"id":"bridge:subscription:9","type":"stream.reset","schema_version":"1.0","robot_id":"nao","bridge_instance_id":"bridge","connection_generation":1,"bridge_time_ms":20.0,"received_bridge_time_ms":20.0,"received_at":"2026-01-01T00:00:00Z","source_time":null,"data":{"reason":"reattached_without_replay","recover":["state","operations"]}}
+
+id: bridge:subscription:10
+event: state.sample
+data: {"id":"bridge:subscription:10","type":"state.sample","schema_version":"1.0","robot_id":"nao","bridge_instance_id":"bridge","connection_generation":1,"bridge_time_ms":20.0,"received_bridge_time_ms":20.0,"received_at":"2026-01-01T00:00:00Z","source_time":null,"data":{"state":{"bridge_instance_id":"bridge","connection_generation":1,"bridge_time_ms":20.0,"acquisition_started_bridge_time_ms":null,"acquisition_finished_bridge_time_ms":null,"groups":{"sensors":{"value":null,"quality":"unavailable","reason":"not_sampled","sampled_at":null,"sampled_bridge_time_ms":null,"source_time":null,"age_ms":null}}},"skipped_samples":0}}
+
+: end of excerpt

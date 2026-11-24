@@ -23,15 +23,16 @@ jobs:
           uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock > /dev/null
           git diff --exit-code -- requirements.lock
       - name: Export contract bundle
+        id: contract
         run: |
-          mkdir -p /tmp/contract-bundle
-          cp server/nao_bridge/contract/*.json /tmp/contract-bundle/
-          cp -r contracts/fixtures /tmp/contract-bundle/
-          cp contracts/README.md docs/client-contract.md docs/http-api.md /tmp/contract-bundle/
+          archive=$(python scripts/export_contract.py /tmp/contract-bundle)
+          echo "path=$archive" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$archive" .zip)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: nao-bridge-contract
-          path: /tmp/contract-bundle
+          name: ${{ steps.contract.outputs.name }}
+          path: ${{ steps.contract.outputs.path }}
+          if-no-files-found: error
   native-container:
     runs-on: ubuntu-latest
     steps:

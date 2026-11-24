@@ -331,3 +331,25 @@ Real robot dispatch remains disabled until the hardware acceptance checks
 cover head motion, scoped stop, and hold on NAOqi 2.1 and 2.8. See
 [head-only face tracking](http-api.md#head-only-face-tracking) and the
 [NAOqi tracker API](https://doc.aldebaran.com/2-8/naoqi/trackers/altracker-api.html).
+
+### Reference applications
+
+Recorder displays and explicitly applies the bridge's manual autonomy profile.
+The browser can capture a camera AVI or microphone WAV alongside its existing
+joint-sample workflow, request early finalization, download a checksum-verified
+clip, and play a WAV through the robot's speaker operation.
+
+Wanderer can inspect and explicitly apply the same profile while idle. It saves
+a verified camera clip alongside its still-image workflow when recording is
+available. Both examples use the public Python SDK for all bridge calls. The
+integration tests exercise these paths through a fake bridge over HTTP/SSE.
+Recording quality, profile effects and audible playback remain hardware checks.
+
+### Client contract archive
+
+CI builds a ZIP named for the OpenAPI version. It preserves the schema and
+guide paths and includes a SHA-256 manifest, the direct HTTP/SSE runner,
+portable trajectory and sequence files, and an SSE reattachment transcript.
+Repeated exports from the same files produce identical bytes. The runner
+completed 33 checks against the fake backend from an extracted archive.
+See the [contract bundle](../contracts/README.md).
