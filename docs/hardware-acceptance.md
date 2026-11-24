@@ -90,15 +90,25 @@ listed as outside this run's scope.
 
 ## Optional hand and foot contacts
 
+To verify just the hands and feet, run:
+
+```bash
+uv run --project server python scripts/hardware_acceptance.py --hand-foot-only
+```
+
+The four prompts cover the back of each hand and the front of each foot bumper.
+Hold each contact for about two seconds. The report checks press and release in
+fresh state and two SSE subscriptions. This mode uses only discovery, state reads,
+and session and subscription requests.
+
+To include those checks in the full guided run:
+
 ```bash
 uv run --project server python scripts/hardware_acceptance.py --hand-foot
 ```
 
-After the head sensors, the script guides you through the back of each hand and
-the front of each foot bumper. Hold each contact for about two seconds. It
-checks the sensor IDs and state paths advertised by the bridge, then verifies
-press and release in fresh state and in both SSE subscriptions. The report
-identifies each of the four contacts by its public sensor ID.
+The four prompts follow the head sensors. Both modes use the sensor IDs and
+state paths advertised by the bridge, and report each contact by its public ID.
 
 For connection checks only, use `--inspect`. For a simulated backend, use
 `--rehearsal`; the report is prominently labelled as a rehearsal. `--output DIR`

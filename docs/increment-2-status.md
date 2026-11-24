@@ -6,8 +6,12 @@ the first contact-sensor change. Physical motion, controlled hold, and source
 sampling rates remain unverified until hardware acceptance; discovery retains
 `hardware_verified: false`.
 
-Use the guided `--hand-foot` checks to verify each hand-back and foot-bumper
-contact in fresh state and two simultaneous SSE streams on the candidate image.
+Use `--hand-foot-only` for a focused check of each hand back and foot bumper
+in fresh state and two simultaneous SSE streams on the candidate image, or
+`--hand-foot` to include those contacts in the full guided run.
+The focused CLI rehearsal passed all four contacts and session cleanup against
+the pinned native fixture. Integrated physical checks remain pending on both
+firmware generations.
 [Hardware acceptance runner](hardware-acceptance.md#optional-hand-and-foot-contacts)
 
 The direct HTTP Recorder scenario captures three measured `HeadYaw` and `LHand`

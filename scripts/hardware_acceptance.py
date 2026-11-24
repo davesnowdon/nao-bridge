@@ -127,30 +127,30 @@ class Evidence:
         summary = self.summary
         metadata = summary["metadata"]
         robot = summary.get("robot", {})
+        scope = "connection, speech and head touch"
+        if metadata.get("hand_foot_only"):
+            scope = "connection, hand-back and foot-bumper state and events"
+        elif metadata.get("hand_foot"):
+            scope += ", plus hand-back and foot-bumper state and events"
         lines = [
             "# Robot test report",
             "",
             "Result: **" + summary.get("result", "RUNNING") + "**",
             "",
-            "Scope: connection, speech and head touch"
-            + (
-                ", plus hand-back and foot-bumper state and events"
-                if metadata.get("hand_foot")
-                else ""
-            )
-            + ". Optional idle disconnect/restart results are listed below.",
+            "Scope: " + scope + ".",
             "",
             "| Check | Result |",
             "| --- | --- |",
         ]
         for check in summary["checks"]:
             lines.append(f"| {check['name']} | {check['result'].upper()} |")
-        lines += ["", "## What you observed", ""]
-        for item in summary["observations"]:
-            outcome = {"y": "PASS", "n": "FAIL", "s": "NOT OBSERVED"}[item["answer"].lower()]
-            lines.append(f"- {outcome}: {item['question']}")
-        if len(summary["observations"]) < 4:
-            lines.append("- Remaining listening checks: NOT TESTED.")
+        if not metadata.get("hand_foot_only"):
+            lines += ["", "## What you observed", ""]
+            for item in summary["observations"]:
+                outcome = {"y": "PASS", "n": "FAIL", "s": "NOT OBSERVED"}[item["answer"].lower()]
+                lines.append(f"- {outcome}: {item['question']}")
+            if len(summary["observations"]) < 4:
+                lines.append("- Remaining listening checks: NOT TESTED.")
         for field in ("error", "cleanup_error"):
             if field in summary:
                 lines += ["", "## " + field.replace("_", " ").title(), "", summary[field]]
@@ -521,29 +521,30 @@ class Runner:
         self.evidence.passed(label)
         self.evidence.summary.pop("active_check", None)
 
-    async def exercise(self, capabilities, *, hand_foot=False):
-        for name in ("speech.utterances", "touch.changed"):
-            require(capabilities["features"][name]["status"] == "available", name + " unavailable")
+    async def hand_foot_paths(self):
+        catalog = await self.request("GET", "/api/sensors", schema="Sensors")
+        sensors = {sensor["id"]: sensor for sensor in catalog["items"]}
         contact_paths = {}
-        if hand_foot:
-            catalog = await self.request("GET", "/api/sensors", schema="Sensors")
-            sensors = {sensor["id"]: sensor for sensor in catalog["items"]}
-            for sensor_id in HAND_FOOT_CONTACTS:
-                self.evidence.summary["active_check"] = contact_check(sensor_id)
-                entry = sensors.get(sensor_id)
-                require(
-                    entry is not None
-                    and entry["state"]["status"] == "available"
-                    and entry["events"]["status"] == "available"
-                    and entry.get("state_path"),
-                    sensor_id + " is unavailable in state or events",
-                )
-                contact_paths[sensor_id] = entry["state_path"]
-            self.evidence.summary.pop("active_check", None)
-        await self.ask(
-            "This run exercises speech and the robot-wide priority stop.\n"
-            "Start with the robot and bridge idle. Press Enter to begin or q to quit."
-        )
+        for sensor_id in HAND_FOOT_CONTACTS:
+            self.evidence.summary["active_check"] = contact_check(sensor_id)
+            entry = sensors.get(sensor_id)
+            require(
+                entry is not None
+                and entry["state"]["status"] == "available"
+                and entry["events"]["status"] == "available"
+                and entry.get("state_path"),
+                sensor_id + " is unavailable in state or events",
+            )
+            contact_paths[sensor_id] = entry["state_path"]
+        self.evidence.summary.pop("active_check", None)
+        return contact_paths
+
+    async def verify_hand_foot(self, streams, contact_paths):
+        for sensor_id, state_path in contact_paths.items():
+            await self.touch(streams, contact_check(sensor_id), sensor_id, state_path=state_path)
+
+    async def start_session(self):
+        await self.authority()
         sent = time.monotonic()
         self.session = await self.request(
             "POST",
@@ -555,6 +556,27 @@ class Runner:
         )
         self.lease_deadline = self.confirmed_deadline(self.session, sent)
         self.renewal = asyncio.create_task(self.renew())
+
+    async def exercise_hand_foot(self):
+        contact_paths = await self.hand_foot_paths()
+        await self.ask(
+            "This run checks four hand and foot contacts. Press Enter to begin or q to quit."
+        )
+        await self.start_session()
+        first = await self.open_stream(await self.subscription())
+        second = await self.open_stream(await self.subscription())
+        await self.verify_hand_foot([first, second], contact_paths)
+        await self.authority()
+
+    async def exercise(self, capabilities, *, hand_foot=False):
+        for name in ("speech.utterances", "touch.changed"):
+            require(capabilities["features"][name]["status"] == "available", name + " unavailable")
+        contact_paths = await self.hand_foot_paths() if hand_foot else {}
+        await self.ask(
+            "This run exercises speech and the robot-wide priority stop.\n"
+            "Start with the robot and bridge idle. Press Enter to begin or q to quit."
+        )
+        await self.start_session()
         first_sub, second_sub = await self.subscription(), await self.subscription()
         first = await self.open_stream(first_sub)
         second = await self.open_stream(second_sub)
@@ -613,10 +635,7 @@ class Runner:
             await self.touch(
                 [first, second], "two independent touch subscribers: " + sensor, sensor
             )
-        for sensor_id, state_path in contact_paths.items():
-            await self.touch(
-                [first, second], contact_check(sensor_id), sensor_id, state_path=state_path
-            )
+        await self.verify_hand_foot([first, second], contact_paths)
         await first.close()
         self.streams.remove(first)
         await self.request("DELETE", "/api/events/subscriptions/" + first_sub["id"], status=204)
@@ -818,7 +837,8 @@ async def execute(args, *, ask=prompt):
         inspect_only=args.inspect,
         fault_checks=args.faults,
         rehearsal=args.rehearsal,
-        hand_foot=args.hand_foot,
+        hand_foot=args.hand_foot or args.hand_foot_only,
+        hand_foot_only=args.hand_foot_only,
     )
     evidence = Evidence(directory, metadata)
     print("Results will be saved to " + str(directory.resolve()), flush=True)
@@ -826,7 +846,9 @@ async def execute(args, *, ask=prompt):
         runner = Runner(http, evidence, ask=ask, rehearsal=args.rehearsal)
         try:
             capabilities = await runner.preflight()
-            if not args.inspect:
+            if args.hand_foot_only:
+                await runner.exercise_hand_foot()
+            elif not args.inspect:
                 await runner.exercise(capabilities, hand_foot=args.hand_foot)
                 await runner.cleanup()
                 if args.faults:
@@ -847,10 +869,9 @@ async def execute(args, *, ask=prompt):
                 evidence.mark("session cleanup", "failed")
             answers = [item["answer"].lower() for item in evidence.summary["observations"]]
             failed = evidence.summary["automation"] == "failed" or "n" in answers
-            complete = (
-                evidence.summary["automation"] == "passed"
-                and len(answers) == 4
-                and all(answer == "y" for answer in answers)
+            complete = evidence.summary["automation"] == "passed" and (
+                args.hand_foot_only
+                or (len(answers) == 4 and all(answer == "y" for answer in answers))
             )
             result = "FAIL" if failed else "PASS" if complete else "INCOMPLETE"
             if args.inspect and not failed:
@@ -880,16 +901,22 @@ def main():
     parser.add_argument(
         "url", nargs="?", default="http://127.0.0.1:3000", help="Bridge HTTP origin"
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--inspect", action="store_true", help="Read-only preflight instead of guided tests"
     )
     parser.add_argument(
         "--faults", action="store_true", help="Also guide idle network/restart checks"
     )
-    parser.add_argument(
+    mode.add_argument(
         "--hand-foot",
         action="store_true",
         help="Also verify hand-back and foot-bumper state and events",
+    )
+    mode.add_argument(
+        "--hand-foot-only",
+        action="store_true",
+        help="Verify only hand-back and foot-bumper state and events",
     )
     parser.add_argument(
         "--container", default="nao-bridge", help="Local Docker container name for evidence/restart"
@@ -901,10 +928,8 @@ def main():
         "--output", type=Path, help="Optional new results directory; default is automatic"
     )
     args = parser.parse_args()
-    if args.inspect and (args.faults or args.hand_foot):
-        parser.error(
-            "--inspect runs preflight only. Use --faults or --hand-foot with a guided run."
-        )
+    if args.faults and (args.inspect or args.hand_foot_only):
+        parser.error("--faults requires the full guided run.")
     origin = httpx.URL(args.url)
     if (
         origin.scheme not in {"http", "https"}

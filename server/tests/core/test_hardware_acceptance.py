@@ -33,6 +33,7 @@ def options(url, output=None, **overrides):
                 "inspect": False,
                 "faults": False,
                 "hand_foot": False,
+                "hand_foot_only": False,
                 "container": "nao-bridge",
                 "rehearsal": True,
             }
@@ -132,6 +133,42 @@ async def test_changed_identity_prevents_speech(socket_rig, tmp_path):
             assert not backend.calls
     finally:
         evidence.file.close()
+
+
+async def test_hand_foot_only_rehearsal(socket_rig, tmp_path):
+    touches = []
+    output = tmp_path / "hand-foot"
+    async with socket_rig() as (url, core, backend):
+
+        async def touch(sensor):
+            await asyncio.sleep(0.05)
+            await backend.touch_changed(sensor, True)
+            await asyncio.sleep(0.35)
+            await backend.touch_changed(sensor, False)
+
+        async def ask(message):
+            if "release the selected contact" in message:
+                sensor = next(sensor for sensor in hardware.HAND_FOOT_CONTACTS if sensor in message)
+                touches.append(asyncio.create_task(touch(sensor)))
+            else:
+                assert "checks four hand and foot contacts" in message
+            return ""
+
+        try:
+            assert await hardware.execute(options(url, output, hand_foot_only=True), ask=ask) == 0
+        finally:
+            await asyncio.gather(*touches)
+        assert not backend.calls and not core.subscriptions and not core.streams
+        assert all(s.public["status"] == "closed" for s in core.sessions.values())
+
+    summary = json.loads((output / "summary.json").read_text())
+    checks = {check["name"]: check["result"] for check in summary["checks"]}
+    assert summary["result"] == "REHEARSAL PASS" and not summary["observations"]
+    assert all(
+        checks[hardware.contact_check(sensor)] == "passed" for sensor in hardware.HAND_FOOT_CONTACTS
+    )
+    assert checks["session cleanup"] == "passed"
+    assert checks["stop protocol outcome"] == "not tested"
 
 
 async def test_failed_request_is_recorded_and_never_retried(tmp_path):

@@ -393,7 +393,25 @@ the new point gesture and direct measured-pose playback workflow.
 | Resident memory | API 63,548 / 70,060 / 70,016 KiB at baseline/peak/after cleanup. Agent 33,208 / 96,708 / 95,176 KiB. |
 | Cleanup | The native callback count returned to the baseline of 15. No stream, recording, or operation remained active. Bridge and connection identity stayed the same during the workload. |
 
-The agent's RSS stayed within the soak's growth threshold and continued rising
-near the end, so this run leaves its longer-duration memory behavior open. The
-times describe the local SDK fixture. Physical stop time, media timing and the
-measured hold remain hardware checks.
+The agent's RSS continued rising near the end of this initial run. Repeated
+speech with an active vocabulary listener reproduced much of that growth.
+[Recognition follow-up](increment-2-status.md)
+
+The repeat passed on contract 1.25.0 from `556dfe8`, image
+`sha256:d955a02bd7d53d158ee135961e05436a5f8975a51bf2e04e7d1c1b3860d06d4d`.
+Both runs verified 210 recordings, admitted 1,327 speech commands, and confirmed
+266 scoped stops. Native callback counts returned to 15, and the slow SSE viewer
+detached while the live viewer and preview stayed active.
+
+| Measurement | Initial run | Repeat with subscriber reuse |
+| --- | ---: | ---: |
+| Agent RSS baseline | 33,208 KiB | 32,960 KiB |
+| Agent RSS peak | 96,708 KiB | 66,256 KiB |
+| Agent RSS after cleanup | 95,176 KiB | 63,520 KiB |
+| Agent peak RSS growth above baseline | 63,500 KiB | 33,296 KiB |
+| Speech admission p95 | 7.54 ms | 7.63 ms |
+| Scoped stop completion p95 | 110.10 ms | 117.62 ms |
+
+The repeat's agent RSS high-water mark rose 1,280 KiB over approximately the
+last ten minutes. These measurements cover the local SDK fixture. Physical
+stop time, media timing and measured hold remain hardware checks.
