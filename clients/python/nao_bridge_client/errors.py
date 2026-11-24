@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .models import (
@@ -9,6 +9,7 @@ from .models import (
     RecordingData,
     SensorObserverData,
     VisionObserverData,
+    VisionTrackerData,
 )
 
 
@@ -84,6 +85,25 @@ class VisionObserverError(BridgeError):
             details=error.details
             if error
             else {"observer_id": observer.id, "status": observer.status},
+        )
+
+
+class VisionTrackerTimeout(TimeoutError):
+    def __init__(self, tracker_id: str):
+        self.tracker_id = tracker_id
+        super().__init__("Local wait timed out; vision tracker was not stopped: " + tracker_id)
+
+
+class VisionTrackerError(BridgeError):
+    def __init__(self, tracker: VisionTrackerData):
+        self.tracker = tracker
+        error = tracker.error
+        super().__init__(
+            error.code if error else "vision_tracker_ended",
+            error.message if error else "Vision tracker ended before readiness",
+            details=error.details
+            if error
+            else {"tracker_id": tracker.id, "status": tracker.status},
         )
 
 
@@ -173,6 +193,7 @@ class PendingRequest:
     bridge_instance_id: str
     connection_generation: int
     expires_monotonic: float
+    binary: bytes | None = field(default=None, repr=False)
 
 
 class AmbiguousRequest(BridgeError):

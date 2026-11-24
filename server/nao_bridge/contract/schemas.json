@@ -47,6 +47,15 @@
       ],
       "additionalProperties": false
     },
+    "AudioPlaybackCreate": {
+      "type": "object",
+      "properties": {
+        "asset_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 }
+      },
+      "required": ["asset_id"],
+      "additionalProperties": false
+    },
     "SpeechCreate": {
       "type": "object",
       "properties": {
@@ -452,6 +461,27 @@
           "type": "object",
           "additionalProperties": true
         },
+        "audio": {
+          "type": "object",
+          "properties": {
+            "upload_formats": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "content_type": { "type": "string" },
+                  "codec": { "type": "string" },
+                  "channels": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+                  "sample_rates_hz": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+                },
+                "required": ["content_type", "codec", "channels", "sample_rates_hz"],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": ["upload_formats"],
+          "additionalProperties": true
+        },
         "autonomy": {
           "type": "object",
           "additionalProperties": {
@@ -485,6 +515,14 @@
           "additionalProperties": true
         },
         "sonar": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "landmarks": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "people": {
           "type": "object",
           "additionalProperties": true
         },
@@ -696,6 +734,20 @@
         },
         "control": {
           "$ref": "#/$defs/JointControlStatus"
+        },
+        "parent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sequence_path": {
+          "type": "array",
+          "maxItems": 7,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
       "required": [
@@ -1962,7 +2014,7 @@
         "restore_on_close": {
           "type": "boolean",
           "default": false,
-          "description": "True is currently unsupported; settings remain applied on session close."
+          "description": "Opt into guarded restoration on orderly session close or lease expiry."
         }
       },
       "required": [
@@ -2408,36 +2460,100 @@
       "additionalProperties": true
     },
     "RecordingSource": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "samples"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "samples"
+            },
+            "groups": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "joints",
+                  "sensors",
+                  "motion",
+                  "autonomy"
+                ]
+              }
+            },
+            "rate_hz": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "kind",
+            "groups"
+          ],
+          "additionalProperties": false
         },
-        "groups": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 4,
-          "uniqueItems": true,
-          "items": {
-            "enum": [
-              "joints",
-              "sensors",
-              "motion",
-              "autonomy"
-            ]
-          }
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "camera"
+            },
+            "camera": {
+              "enum": [
+                "top",
+                "bottom"
+              ],
+              "default": "top"
+            },
+            "resolution": {
+              "enum": [
+                "320x240",
+                "640x480"
+              ],
+              "default": "320x240"
+            },
+            "frame_rate": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 5
+            },
+            "format": {
+              "const": "mjpeg-avi",
+              "default": "mjpeg-avi"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
         },
-        "rate_hz": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "maximum": 50
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "microphone"
+            },
+            "sample_rate_hz": {
+              "const": 16000,
+              "default": 16000
+            },
+            "channels": {
+              "const": 1,
+              "default": 1
+            },
+            "format": {
+              "const": "pcm-wav",
+              "default": "pcm-wav"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "kind",
-        "groups"
-      ],
-      "additionalProperties": false
+      ]
     },
     "RecordingCreate": {
       "type": "object",
@@ -3685,12 +3801,144 @@
       ],
       "additionalProperties": true
     },
-    "VisionObserverCreate": {
+    "VisionTrackerCreate": {
       "type": "object",
       "properties": {
+        "target": {
+          "const": "face",
+          "default": "face"
+        }
+      },
+      "additionalProperties": false
+    },
+    "VisionTracker": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "bridge_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "const": "face"
+        },
+        "mode": {
+          "const": "head"
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "searching",
+            "tracking",
+            "lost",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "head_hold": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "confirmed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "confirmed"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "bridge_instance_id",
+        "connection_generation",
+        "error",
+        "target",
+        "mode",
+        "status",
+        "head_hold"
+      ],
+      "additionalProperties": true
+    },
+    "VisionObserverCreate": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "faces": {
+              "const": true,
+              "default": true
+            },
+            "camera": {
+              "enum": [
+                "top",
+                "bottom"
+              ]
+            },
+            "rate_hz": {
+              "enum": [
+                1,
+                2,
+                5
+              ],
+              "default": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/LandmarkObserverCreate"
+        },
+        {
+          "$ref": "#/$defs/PeopleObserverCreate"
+        }
+      ]
+    },
+    "PeopleObserverCreate": {
+      "type": "object",
+      "properties": {
+        "people": {
+          "const": true
+        },
         "faces": {
-          "const": true,
-          "default": true
+          "const": false
         },
         "camera": {
           "enum": [
@@ -3707,12 +3955,88 @@
           "default": 2
         }
       },
+      "required": [
+        "people"
+      ],
+      "additionalProperties": false
+    },
+    "LandmarkObserverCreate": {
+      "type": "object",
+      "properties": {
+        "landmarks": {
+          "const": true
+        },
+        "faces": {
+          "const": false
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ],
+          "default": 2
+        }
+      },
+      "required": [
+        "landmarks"
+      ],
       "additionalProperties": false
     },
     "VisionObserverConfiguration": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "faces": {
+              "const": true
+            },
+            "camera": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "top",
+                    "bottom"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rate_hz": {
+              "enum": [
+                1,
+                2,
+                5
+              ]
+            }
+          },
+          "required": [
+            "faces",
+            "camera",
+            "rate_hz"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "$ref": "#/$defs/LandmarkObserverConfiguration"
+        },
+        {
+          "$ref": "#/$defs/PeopleObserverConfiguration"
+        }
+      ]
+    },
+    "PeopleObserverConfiguration": {
       "type": "object",
       "properties": {
-        "faces": {
+        "people": {
           "const": true
         },
         "camera": {
@@ -3737,7 +4061,41 @@
         }
       },
       "required": [
-        "faces",
+        "people",
+        "camera",
+        "rate_hz"
+      ],
+      "additionalProperties": true
+    },
+    "LandmarkObserverConfiguration": {
+      "type": "object",
+      "properties": {
+        "landmarks": {
+          "const": true
+        },
+        "camera": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_hz": {
+          "enum": [
+            1,
+            2,
+            5
+          ]
+        }
+      },
+      "required": [
+        "landmarks",
         "camera",
         "rate_hz"
       ],
@@ -3802,7 +4160,7 @@
         "error"
       ],
       "additionalProperties": true,
-      "description": "Session-owned demand for shared sensor producers. Active means the native subscription is confirmed and its software settling interval elapsed; it does not guarantee valid readings or a new native producer update. Stop removes this observer only."
+      "description": "Session-owned demand for one shared vision detector. Active confirms the native subscription. Stop removes this observer only."
     },
     "FaceBounds": {
       "type": "object",
@@ -3945,6 +4303,20 @@
             "$ref": "#/$defs/FaceBounds"
           },
           "maxItems": 16
+        },
+        "landmarks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LandmarkBounds"
+          },
+          "maxItems": 16
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PersonDetection"
+          },
+          "maxItems": 16
         }
       },
       "required": [
@@ -3955,6 +4327,169 @@
         "faces"
       ],
       "additionalProperties": true
+    },
+    "PeopleFrame": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PersonDetection"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "source_time",
+        "people"
+      ],
+      "additionalProperties": true
+    },
+    "PersonDetection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "alpha_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "beta_rad": {
+          "type": "number",
+          "minimum": -3.141592653589793,
+          "maximum": 3.141592653589793
+        },
+        "distance_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "alpha_rad",
+        "beta_rad"
+      ],
+      "additionalProperties": true
+    },
+    "LandmarkFrame": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ]
+        },
+        "frame": {
+          "type": "string",
+          "pattern": "^camera\\.(top|bottom)$"
+        },
+        "source_time": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "const": "naoqi_camera"
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "microseconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999999
+            }
+          },
+          "required": [
+            "clock",
+            "seconds",
+            "microseconds"
+          ],
+          "additionalProperties": true
+        },
+        "landmarks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LandmarkBounds"
+          },
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "camera",
+        "frame",
+        "source_time",
+        "landmarks"
+      ],
+      "additionalProperties": true
+    },
+    "LandmarkBounds": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/FaceBounds"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "marker_id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "heading_rad": {
+              "type": "number",
+              "minimum": -3.141592653589793,
+              "maximum": 3.141592653589793
+            }
+          },
+          "required": [
+            "marker_id",
+            "heading_rad"
+          ]
+        }
+      ]
     },
     "VelocitySetpoint": {
       "type": "object",
@@ -4046,6 +4581,1293 @@
         "default_ttl",
         "max_translation_m_s",
         "max_rotation_rad_s"
+      ],
+      "additionalProperties": true
+    },
+    "LightGroup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z.]*$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "rgb",
+            "mono"
+          ]
+        },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "mode",
+        "resources"
+      ],
+      "additionalProperties": true
+    },
+    "LightCatalog": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LightGroup"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "support": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation",
+        "support"
+      ],
+      "additionalProperties": true
+    },
+    "LightReading": {
+      "type": "object",
+      "properties": {
+        "quality": {
+          "type": "string",
+          "enum": [
+            "observed",
+            "mixed",
+            "unavailable"
+          ]
+        },
+        "channels": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "red": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "green": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "blue": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "red",
+                "green",
+                "blue"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "intensity": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "intensity"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "quality",
+        "channels"
+      ],
+      "additionalProperties": true
+    },
+    "LightStateValue": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/LightReading"
+          }
+        }
+      },
+      "required": [
+        "groups"
+      ],
+      "additionalProperties": true
+    },
+    "LightTransitionCreate": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z.]*$"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "minLength": 7,
+          "maxLength": 7
+        },
+        "brightness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "color"
+          ]
+        },
+        {
+          "required": [
+            "brightness"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "SpeechRange": {
+      "type": "object",
+      "properties": {
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "default": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum",
+        "default"
+      ],
+      "additionalProperties": true
+    },
+    "SpeechOptions": {
+      "type": "object",
+      "properties": {
+        "support": {
+          "$ref": "#/$defs/Feature"
+        },
+        "animated": {
+          "$ref": "#/$defs/Feature"
+        },
+        "animated_languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "voices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "default_language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_voice": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "volume": {
+          "$ref": "#/$defs/SpeechRange"
+        },
+        "rate": {
+          "$ref": "#/$defs/SpeechRange"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "support",
+        "animated",
+        "animated_languages",
+        "languages",
+        "voices",
+        "default_language",
+        "default_voice",
+        "volume",
+        "rate",
+        "connection_generation"
+      ],
+      "additionalProperties": true
+    },
+    "BehaviorName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "not": {
+        "pattern": "[\\x00-\\x1f\\x7f]"
+      }
+    },
+    "InstalledBehavior": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/BehaviorName"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "BehaviorPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/InstalledBehavior"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BehaviorName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "running": {
+          "anyOf": [
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/BehaviorName"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "support": {
+          "$ref": "#/$defs/Feature"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "running",
+        "support",
+        "truncated",
+        "connection_generation"
+      ],
+      "additionalProperties": true
+    },
+    "BehaviorRunCreate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/BehaviorName"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "BehaviorChanged": {
+      "type": "object",
+      "properties": {
+        "running": {
+          "anyOf": [
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/BehaviorName"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "additionalProperties": true
+    },
+    "GestureVariant": {
+      "type": "object",
+      "properties": {
+        "side": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "left",
+                "right"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "support": {
+          "$ref": "#/$defs/Feature"
+        }
+      },
+      "required": [
+        "side",
+        "resources",
+        "support"
+      ],
+      "additionalProperties": true
+    },
+    "GestureDefinition": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "required_posture": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/GestureVariant"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "required_posture",
+        "variants"
+      ],
+      "additionalProperties": true
+    },
+    "GestureCatalog": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GestureDefinition"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation"
+      ],
+      "additionalProperties": true
+    },
+    "GestureRunCreate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "side": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right"
+          ]
+        },
+        "repetitions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "default": 1
+        },
+        "strength": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 1,
+          "default": 0.65
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "SequenceDocument": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "root": {
+          "$ref": "#/$defs/SequenceNode"
+        }
+      },
+      "required": [
+        "schema_version",
+        "root"
+      ],
+      "additionalProperties": false
+    },
+    "SequenceNode": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "sequence",
+                "parallel"
+              ]
+            },
+            "steps": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/SequenceNode"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "steps"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "delay"
+            },
+            "duration": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 30
+            }
+          },
+          "required": [
+            "type",
+            "duration"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "say"
+            },
+            "arguments": {
+              "$ref": "#/$defs/SpeechCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "lights"
+            },
+            "arguments": {
+              "$ref": "#/$defs/LightTransitionCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "gesture"
+            },
+            "arguments": {
+              "$ref": "#/$defs/GestureRunCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "behavior"
+            },
+            "arguments": {
+              "$ref": "#/$defs/BehaviorRunCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "autonomy"
+            },
+            "arguments": {
+              "$ref": "#/$defs/AutonomyTransitionCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "wake"
+            },
+            "arguments": {
+              "$ref": "#/$defs/MotionTransitionCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "rest"
+            },
+            "arguments": {
+              "$ref": "#/$defs/MotionTransitionCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "stiffness"
+            },
+            "arguments": {
+              "$ref": "#/$defs/StiffnessCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "posture"
+            },
+            "arguments": {
+              "$ref": "#/$defs/PostureCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "move"
+            },
+            "arguments": {
+              "$ref": "#/$defs/MoveCreate"
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "joints"
+            },
+            "arguments": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/JointMoveCreate"
+                },
+                {
+                  "not": {
+                    "required": [
+                      "replace_operation_id"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "trajectory"
+            },
+            "arguments": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/TrajectoryRunCreate"
+                },
+                {
+                  "not": {
+                    "required": [
+                      "replace_operation_id"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "arguments"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SequenceTimelineStep": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "array",
+          "maxItems": 7,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "start_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_feature": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "type",
+        "kind",
+        "resources",
+        "start_seconds",
+        "duration_seconds",
+        "required_feature"
+      ],
+      "additionalProperties": true
+    },
+    "SequenceDiagnostic": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/ErrorDetail"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "array",
+              "maxItems": 7,
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "SequenceValidation": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "normalized": {
+          "$ref": "#/$defs/SequenceDocument"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "resources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required_features": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "estimated_duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maximum_parallel_commands": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SequenceTimelineStep"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SequenceDiagnostic"
+          }
+        }
+      },
+      "required": [
+        "valid",
+        "normalized",
+        "connection_generation",
+        "resources",
+        "required_features",
+        "estimated_duration_seconds",
+        "maximum_parallel_commands",
+        "timeline",
+        "diagnostics"
+      ],
+      "additionalProperties": true
+    },
+    "SequenceResult": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failed_path": {
+          "anyOf": [
+            {
+              "type": "array",
+              "maxItems": 7,
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "children": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "array",
+                "maxItems": 7,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "operation_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "accepted",
+                  "running",
+                  "cancelling",
+                  "succeeded",
+                  "failed",
+                  "cancelled",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "operation_id",
+              "status"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "reason",
+        "failed_path",
+        "children"
+      ],
+      "additionalProperties": true
+    },
+    "AutonomyProfile": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/AutonomySettings"
+        },
+        "unavailable_settings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "settings",
+        "unavailable_settings"
+      ],
+      "additionalProperties": true
+    },
+    "AutonomyProfileCatalog": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AutonomyProfile"
+          }
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "items",
+        "connection_generation"
+      ],
+      "additionalProperties": true
+    },
+    "AutonomyProfileRunCreate": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "allow_partial": {
+          "type": "boolean",
+          "default": false
+        },
+        "restore_on_close": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt into guarded restoration on orderly session close or lease expiry."
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "additionalProperties": false
+    },
+    "AutonomyRestoration": {
+      "type": "object",
+      "required": [
+        "status",
+        "settings",
+        "operation_id"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "restored",
+            "partial",
+            "skipped",
+            "unknown"
+          ]
+        },
+        "operation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "settings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "setting",
+              "before",
+              "applied",
+              "observed",
+              "status",
+              "reason"
+            ],
+            "properties": {
+              "setting": {
+                "type": "string"
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "applied": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              },
+              "observed": {
+                "type": [
+                  "string",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "restored",
+                  "skipped",
+                  "unknown"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "CameraPreviewCreate": {
+      "type": "object",
+      "properties": {
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ],
+          "default": "320x240"
+        },
+        "frame_rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "CameraPreview": {
+      "type": "object",
+      "properties": {
+        "bridge_instance_id": {
+          "type": "string"
+        },
+        "camera": {
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "default": "top"
+        },
+        "resolution": {
+          "enum": [
+            "320x240",
+            "640x480"
+          ],
+          "default": "320x240"
+        },
+        "frame_rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 5
+        },
+        "id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "active",
+            "stopping",
+            "stopped",
+            "failed",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_url": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bridge_instance_id",
+        "camera",
+        "resolution",
+        "frame_rate",
+        "id",
+        "session_id",
+        "connection_generation",
+        "status",
+        "reason",
+        "content_url",
+        "connected"
       ],
       "additionalProperties": true
     }

@@ -91,6 +91,58 @@ def optional_addition(before, after, *, extensible):
     return shape(before) == shape(reduced)
 
 
+def recording_variant_addition(before, after):
+    def variants(definition):
+        branches = definition["oneOf"] if set(definition) == {"oneOf"} else [definition]
+        result = {}
+        for branch in branches:
+            tag = branch.get("properties", {}).get("kind", {}).get("const")
+            if (
+                not isinstance(tag, str)
+                or tag in result
+                or branch.get("type") != "object"
+                or "kind" not in branch.get("required", [])
+            ):
+                return {}
+            result[tag] = branch
+        return result
+
+    if not isinstance(after, dict):
+        return False
+    current, extended = variants(shape(before)), variants(shape(after))
+    return bool(
+        current
+        and current.keys() < extended.keys()
+        and all(extended[tag] == branch for tag, branch in current.items())
+    )
+
+
+def asset_media_addition(before, after):
+    reduced = shape(after)
+    binary = {"schema": {"type": "string", "format": "binary"}}
+    try:
+        for status in ("200", "206"):
+            previous = before["responses"][status]["content"]
+            current = reduced["responses"][status]["content"]
+            for media_type in current.keys() - previous.keys():
+                if current.pop(media_type) != binary:
+                    return False
+    except (KeyError, TypeError, AttributeError):
+        return False
+    return shape(before) == reduced
+
+
+def vision_observer_variant_addition(before, after):
+    if not isinstance(after, dict) or set(after) != {"anyOf"}:
+        return False
+    previous = before["anyOf"] if set(before) == {"anyOf"} else [before]
+    return (
+        isinstance(after["anyOf"], list)
+        and len(after["anyOf"]) > len(previous)
+        and all(shape(branch) in shape(after["anyOf"]) for branch in previous)
+    )
+
+
 def compare(previous, current, old_schemas, new_schemas):
     before = tuple(int(part) for part in previous["info"]["version"].split("."))
     after = tuple(int(part) for part in current["info"]["version"].split("."))
@@ -117,11 +169,23 @@ def compare(previous, current, old_schemas, new_schemas):
                 name in request_extensions
                 and optional_addition(definition, new_definition, extensible=False)
             )
+            or (
+                name == "RecordingSource" and recording_variant_addition(definition, new_definition)
+            )
+            or (
+                name in {"VisionObserverCreate", "VisionObserverConfiguration"}
+                and vision_observer_variant_addition(definition, new_definition)
+            )
         ):
             changes.append("schema " + name)
     for path, methods in previous["paths"].items():
         for method, operation in methods.items():
-            if shape(operation) != shape(current["paths"].get(path, {}).get(method)):
+            updated = current["paths"].get(path, {}).get(method)
+            if shape(operation) != shape(updated) and not (
+                path == "/assets/{asset_id}/content"
+                and method == "get"
+                and asset_media_addition(operation, updated)
+            ):
                 changes.append(method + " " + path)
     if changes and after[0] == before[0]:
         raise ValueError("Existing wire shapes changed without a major bump: " + ", ".join(changes))

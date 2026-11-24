@@ -1,4 +1,4 @@
-# HTTP/SSE contract 1.6.0
+# HTTP/SSE contract
 
 The authoritative artifacts are [OpenAPI](../server/nao_bridge/contract/openapi.json)
 and [named JSON schemas](../server/nao_bridge/contract/schemas.json). The server
@@ -8,28 +8,39 @@ and `/docs` are infrastructure routes outside that prefix. `/` redirects to the
 bundled Swagger UI at `/docs`. Session-owned routes require `X-Session-ID` to
 associate work with its lifecycle and resource ownership.
 
-CI publishes the schemas, this directory's fixtures and the client lifecycle guide
-as one artifact. The [wire guide](../docs/http-api.md) gives complete requests. The
-[client contract](../docs/client-contract.md) explains lifecycle rules independently
-of any Python client. Later delivery increments are design scope, not capabilities
-of this bundle.
+Read `info.version` in OpenAPI for the contract version. CI builds a
+`nao-bridge-contract-<version>.zip` artifact for each checked revision. Its
+`manifest.json` records the contract version and every bundled file's SHA-256.
+From a checkout, create the same archive with
+`python3 scripts/export_contract.py /tmp/contract-bundle`.
+
+After extracting the archive, open `contracts/README.md`. The
+[wire guide](../docs/http-api.md) gives complete requests. The
+[client contract](../docs/client-contract.md) explains lifecycle rules for any
+client implementation.
 
 ## Fixtures and execution
 
 - `fixtures/requests.json`: valid/invalid named request schemas, including omitted,
   nullable and incorrectly typed fields.
+- `fixtures/trajectory.json`, `fixtures/presentation-sequence.json`: portable
+  examples of native timed poses and a server-side sequence with parallel actions.
 - `fixtures/canonicalization.json`: request identity, numeric and Unicode cases.
 - `fixtures/sensor-readings.json`: valid zero/false values, explicit unavailability,
   signed axes and response extensions without string-to-number coercion.
 - `fixtures/touch.sse`, `unknown-event.sse`, `mismatched-id.sse`: normal, additive
   unknown-event and invalid framing cases. Split these byte streams at arbitrary
   offsets, including inside UTF-8 characters, when testing another client.
+- `fixtures/reattach.sse`: reattachment reports a reset, followed by a current
+  state snapshot. Its sensor group is explicitly unavailable.
 - `fixtures/scenarios.json`: language-neutral sequences, symbolic IDs, expected
   outcomes, fixture deadlines and permitted nondeterminism.
-- `scripts/conformance.py`: direct HTTP/SSE checks using `http.client` and JSON
-  Schema; it imports neither the Python client nor server implementation. It refuses
-  to dispatch against a physical-robot backend. Run with the server uv environment:
-  `uv run --project server python scripts/conformance.py http://127.0.0.1:3000`.
+- `scripts/conformance.py`: direct HTTP/SSE checks against the fake or native
+  fixture backend. In the extracted bundle, install `jsonschema` in a Python
+  environment and run `python scripts/conformance.py http://127.0.0.1:3000`
+  from the archive root. In a checkout, use `uv run --project server python`
+  in place of `python`. The checks dispatch fixture motion, audio and media and
+  refuse physical-robot backends.
 
 The fake-server integration tests add expiry, resource conflicts, ambiguity,
 backpressure, retained history and explicit recovery. The production-container
@@ -43,10 +54,11 @@ shared feed. Optional additions to closed schemas used only as direct request
 bodies are compatible when existing fields and their constraints are unchanged.
 The guard checks references and requires a version bump.
 
-With recording storage enabled, the direct runner also captures bounded shared
-joint/sensor samples and verifies NDJSON schemas, checksum and byte-range download.
-`RecordingCreate` requires an explicit samples source and positive duration; the
-request/scenario fixtures include missing bounds and invalid selections. The
+With recording storage enabled, the direct runner captures media and verifies
+checksums and byte-range downloads where supported. `RecordingCreate` requires an
+explicit source and positive duration. The source can be state samples (NDJSON),
+camera video (MJPEG AVI) or microphone audio (PCM WAV). The request and scenario
+fixtures include missing bounds and invalid selections. The
 production container suite additionally kills the API during recording, then checks
 that finalized assets survive and interrupted files become partial without restoring
 sessions or operations. `RecordingLine` describes metadata/sample/gap/end rows;

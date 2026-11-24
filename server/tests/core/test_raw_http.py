@@ -15,4 +15,9 @@ async def test_sdk_independent_http_conformance(socket_rig, tmp_path):
         assert "vision_observer_sharing_and_detections" in result["checks"]
         assert "ordered_velocity_expiry" in result["checks"]
         assert "observation_freshness" in result["checks"]
+        assert "light_transitions_and_readback" in result["checks"]
+        assert "animated_speech" in result["checks"]
+        assert "installed_behavior_run_and_stop" in result["checks"]
+        assert "parallel_wave_speech_and_lights" in result["checks"]
+        assert "server_side_presentation_sequence" in result["checks"]
         assert not core.resources

@@ -12,7 +12,8 @@ def finite(value):
 
 
 def valid_trajectory(payload):
-    if not isinstance(payload, dict) or set(payload) != set(["names", "angles", "times"]):
+    fields = {"names", "angles", "times"}
+    if not isinstance(payload, dict) or set(payload) not in (fields, fields | {"gesture"}):
         return False
     names, angles, times = payload["names"], payload["angles"], payload["times"]
     if not isinstance(names, list) or not 0 < len(names) <= 32 or not all(isinstance(n, type(u"")) and n for n in names):
@@ -25,6 +26,14 @@ def valid_trajectory(payload):
         if not all(finite(value) for value in positions) or not all(finite(at) and 0 < at <= 600 for at in stamps):
             return False
         if any(right <= left for left, right in zip(stamps, stamps[1:])):
+            return False
+    if "gesture" in payload:
+        gesture = payload["gesture"]
+        if not isinstance(gesture, dict) or set(gesture) != {"measured_start", "required_posture"}:
+            return False
+        start = gesture["measured_start"]
+        if (not isinstance(start, list) or len(start) != len(names) or not all(finite(v) for v in start)
+                or gesture["required_posture"] not in (None, "StandInit")):
             return False
     return True
 
@@ -120,9 +129,12 @@ class FixtureMotion(object):
         self.commanded = {}
         self.calls = []
         self.setpoints = []
-        self.names = ["HeadYaw", "HeadPitch", "LShoulderPitch", "RShoulderPitch", "LHand", "RHand", "LHipYawPitch", "RHipYawPitch"]
-        self.chains = {"Head": self.names[:2], "LArm": ["LShoulderPitch", "LHand"],
-                       "RArm": ["RShoulderPitch", "RHand"], "LLeg": ["LHipYawPitch"], "RLeg": ["RHipYawPitch"]}
+        arms = ("ShoulderPitch", "ShoulderRoll", "ElbowYaw", "ElbowRoll", "Hand")
+        self.chains = {"Head": ["HeadYaw", "HeadPitch"],
+                       "LArm": ["L" + joint for joint in arms],
+                       "RArm": ["R" + joint for joint in arms],
+                       "LLeg": ["LHipYawPitch"], "RLeg": ["RHipYawPitch"]}
+        self.names = sum((self.chains[chain] for chain in ("Head", "LArm", "RArm", "LLeg", "RLeg")), [])
         self.stiffness = dict((name, 0.5) for name in self.names)
         self.awake = True
         self.posture = "StandInit"

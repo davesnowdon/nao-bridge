@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "root": {
+    "type": "sequence",
+    "steps": [
+      {"type": "wake", "arguments": {}},
+      {"type": "posture", "arguments": {"name": "StandInit"}},
+      {
+        "type": "parallel",
+        "steps": [
+          {"type": "say", "arguments": {"text": "Hello from NAO Bridge."}},
+          {"type": "gesture", "arguments": {"name": "wave", "side": "right"}},
+          {"type": "lights", "arguments": {"group": "eyes", "color": "#0080ff", "duration": 0.5}}
+        ]
+      },
+      {"type": "posture", "arguments": {"name": "Sit"}},
+      {"type": "rest", "arguments": {}}
+    ]
+  }
+}

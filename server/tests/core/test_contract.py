@@ -1,7 +1,9 @@
 import copy
+import hashlib
 import json
 import runpy
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -23,6 +25,9 @@ def test_openapi_resolves_all_canonical_schema_references():
 
 def test_portable_canonicalization_and_request_fixtures():
     VALIDATORS["Trajectory"].validate(json.loads((FIXTURES / "trajectory.json").read_text()))
+    VALIDATORS["SequenceDocument"].validate(
+        json.loads((FIXTURES / "presentation-sequence.json").read_text())
+    )
     for case in json.loads((FIXTURES / "canonicalization.json").read_text())["cases"]:
         a, b = canonical(json.loads(case["a"])), canonical(json.loads(case["b"]))
         assert a == case["fingerprint_a"] and b == case["fingerprint_b"]
@@ -32,6 +37,41 @@ def test_portable_canonicalization_and_request_fixtures():
     readings = json.loads((FIXTURES / "sensor-readings.json").read_text())
     for case in readings["cases"]:
         assert VALIDATORS[readings["schema"]].is_valid(case["value"]) == case["valid"], case["name"]
+
+
+def test_exported_contract_preserves_schema_paths_and_file_digests(tmp_path):
+    export = runpy.run_path(str(FIXTURES.parents[1] / "scripts" / "export_contract.py"))[
+        "export_contract"
+    ]
+    archive = export(tmp_path / "bundle")
+    assert archive.name == f"nao-bridge-contract-{OPENAPI['info']['version']}.zip"
+    assert archive.read_bytes() == export(tmp_path / "repeat").read_bytes()
+    with ZipFile(archive) as bundle:
+        manifest = json.loads(bundle.read("manifest.json"))
+        assert manifest["contract_version"] == OPENAPI["info"]["version"]
+        assert set(manifest["sha256"]) == set(bundle.namelist()) - {"manifest.json"}
+        for name, digest in manifest["sha256"].items():
+            assert hashlib.sha256(bundle.read(name)).hexdigest() == digest
+        assert json.loads(bundle.read("server/nao_bridge/contract/openapi.json")) == OPENAPI
+        assert json.loads(bundle.read("server/nao_bridge/contract/schemas.json")) == SCHEMAS
+        assert "contracts/fixtures/presentation-sequence.json" in bundle.namelist()
+        assert "scripts/conformance.py" in bundle.namelist()
+
+
+def test_reattach_transcript_has_reset_and_current_state():
+    transcript = (FIXTURES / "reattach.sse").read_text().strip().split("\n\n")
+    frames = (frame for frame in transcript if not frame.startswith(":"))
+    names = ["StreamReady", "StreamReset", "StateSample"]
+    kinds = ["stream.ready", "stream.reset", "state.sample"]
+    for frame, name, kind in zip(frames, names, kinds, strict=True):
+        event_id, event_type, encoded = frame.splitlines()
+        event = json.loads(encoded.removeprefix("data: "))
+        VALIDATORS["Event"].validate(event)
+        VALIDATORS[name].validate(event["data"])
+        assert event_id == f"id: {event['id']}"
+        assert event_type == f"event: {kind}" and event["type"] == kind
+        if kind == "stream.reset":
+            assert event["data"]["reason"] == "reattached_without_replay"
 
 
 async def test_every_public_domain_route_and_response_is_documented(rig):
@@ -102,6 +142,44 @@ def test_guard_allows_optional_fields_in_extensible_responses_with_version_bump(
     new_api["info"]["version"] = "1.0.0"
     with pytest.raises(ValueError, match="version bump"):
         compare(api, new_api, schemas, new_schemas)
+
+
+def test_guard_only_accepts_disjoint_recording_sources_with_existing_sources_unchanged():
+    api, new_api, old, new = bundles()
+    samples = {"type": "object", "properties": {"kind": {"const": "samples"}}, "required": ["kind"]}
+    camera = copy.deepcopy(samples)
+    camera["properties"]["kind"]["const"] = "camera"
+    old["$defs"]["RecordingSource"] = samples
+    new["$defs"]["RecordingSource"] = {"oneOf": [copy.deepcopy(samples), camera]}
+    compare(api, new_api, old, new)
+    camera["properties"]["kind"]["const"] = "samples"
+    with pytest.raises(ValueError, match="major bump"):
+        compare(api, new_api, old, new)
+    camera["properties"]["kind"]["const"] = "camera"
+    new["$defs"]["RecordingSource"]["oneOf"][0]["properties"]["rate_hz"] = {"type": "integer"}
+    with pytest.raises(ValueError, match="major bump"):
+        compare(api, new_api, old, new)
+
+
+def test_guard_allows_new_binary_asset_media_without_changing_existing_responses():
+    api, new_api, old, new = bundles()
+    path = "/assets/{asset_id}/content"
+    binary = {"schema": {"type": "string", "format": "binary"}}
+    original = {
+        "get": {
+            "responses": {
+                status: {"content": {"application/x-ndjson": binary}} for status in ("200", "206")
+            }
+        }
+    }
+    api["paths"][path] = original
+    updated = new_api["paths"][path] = copy.deepcopy(original)
+    for response in updated["get"]["responses"].values():
+        response["content"]["audio/wav"] = binary
+    compare(api, new_api, old, new)
+    del updated["get"]["responses"]["206"]["content"]["application/x-ndjson"]
+    with pytest.raises(ValueError, match="major bump"):
+        compare(api, new_api, old, new)
 
 
 @pytest.mark.parametrize("change", ["required", "existing_type", "closed_response"])

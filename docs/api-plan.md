@@ -166,7 +166,12 @@ Do not automatically relax motors, stand, sit, or replay a pose on cleanup. Stif
 
 ## 5. Public domain API
 
-Every row is part of the planned public contract. Resource identifiers and optional hardware support come from discovery. Routes for individual resources provide GET; activity stop routes return cleanup Operations. The delivery column assigns the first increment that supplies the usable feature.
+Resource identifiers and optional hardware support come from discovery. GET
+provides resource read-back. Managed activities return their resource status
+on stop. Finite command and session cleanup endpoints return Operations. The
+delivery column assigns the first increment that supplies the feature. The
+[API coverage map](api-coverage.md) links these domains to schemas, Python
+methods, events, and verification.
 
 ### Robot, joints, and motion
 
@@ -204,25 +209,12 @@ Python supplies scoped `motion.joint_control(...)` and `motion.velocity(...)` he
 
 ### Trajectories and pose capture
 
-Recorder saves portable JSON, independent of its UI. A trajectory has `schema_version`, optional name, `interpolation: "native"`, and `keyframes` containing strictly increasing `time` values and joint `positions`:
-
-```json
-{
-  "schema_version": "1.0",
-  "name": "look-left-and-center",
-  "interpolation": "native",
-  "keyframes": [
-    {"time": 1.0, "positions": {"HeadYaw": 0.3, "HeadPitch": 0.0}},
-    {"time": 2.0, "positions": {"HeadYaw": 0.0, "HeadPitch": 0.0}}
-  ]
-}
-```
-
-All values are absolute in discovered joint units. Capture is `motion.state(require_fresh=True)` filtered to selected joints by the client. File editing, selection, undo, keyframe naming, and animation libraries belong in the application.
-
-Each used joint has its own timeline, formed from frames that mention it. Its first point must have positive time, reached from the measured position at start. An omitted joint at an intermediate frame receives no new waypoint; interpolation continues to its next specified point. After its last point it holds its target for the remaining trajectory. To hold at a particular time, repeat that joint's value explicitly. Joints absent from the entire trajectory are unaffected.
-
-`native` means NAOqi's timed interpolation, not a promise of linear or cubic motion. Report the execution backend in the result. Validate all frames before any movement; submit the complete per-joint time/angle arrays near the robot. Do not implement playback as a client loop of HTTP joint commands. Continuous sample recordings preserve their original timestamps/gaps; converting them to a playable trajectory requires explicit selection and resampling, never treating missing samples as a smooth path automatically.
+Recorder saves [portable trajectory JSON](../contracts/fixtures/trajectory.json).
+Capture filters fresh measured state to selected joints. Editing, selection,
+undo, keyframe naming, and animation libraries belong in the application.
+The bridge validates the document and submits its full sparse joint timelines
+using native interpolation. Converting sampled recordings requires an explicit
+selection from a continuous segment. See the [joint and trajectory reference](http-api.md#absolute-joint-moves-and-trajectories).
 
 ### Speech, sound, and lights
 
@@ -262,24 +254,23 @@ Events are notifications; they do not automatically start expensive face/people/
 | --- | --- | --- | --- |
 | `GET /vision/cameras` | `vision.cameras()` | Camera names, resolutions, color formats, intrinsic/extrinsic metadata where available. | 3 |
 | `POST /vision/captures` | `vision.capture(camera="top", ...)` | Operation producing an image Asset and capture timestamps/metadata. | 3 |
-| `POST /vision/previews`; `GET /vision/previews/{id}`; `GET /vision/previews/{id}/content`; `POST /vision/previews/{id}/stop` | `vision.preview(...)` | Managed JPEG multipart preview, latest frames, bounded rate; not durable recording. | 4 |
+| `POST /vision/previews`; `GET /vision/previews/{id}`; `GET /vision/previews/{id}/content`; `POST /vision/previews/{id}/stop` | `vision.preview(...)`, `.get_preview(id)` | Managed JPEG multipart preview, latest frames and bounded rate. | 4 |
 | `POST /recordings`; `GET /recordings/{id}`; `POST /recordings/{id}/stop` | `recordings.start(source=..., duration=...)` | Bounded recording of joint/sensor samples, camera video, or microphone audio; returns Recording and operation ID. | 2 samples; 4 media |
 | `GET /assets`; `GET /assets/{id}`; `GET /assets/{id}/content`; `DELETE /assets/{id}` | `assets.list()`, `.get()`, `.download()`, `.delete()` | Typed metadata and binary download; recordings remain after session closure. | 2 samples; 3–4 media |
 | `POST /assets` | `assets.upload(file)` | Bounded audio upload with validated type/format; no robot paths or remote URL fetching. | 4 |
 
-All activity creation returns 201 with status and owned resource IDs; finite capture uses 202 Operation. Recording creation returns immediately in `starting`, then `recording`, `stopping`, and `completed` or `failed`. The associated Operation carries the final outcome/asset IDs. Stop finalizes data before success. Partial results remain explicitly marked with errors and missing intervals. Each recording selects one source family; independent recordings are not promised sample-accurate synchronization.
+Each bounded recording selects one source and uses an explicit duration. Joint
+and sensor samples come from shared state acquisition independently of SSE
+viewer queues. The bridge marks partial results and preserves usable bytes.
+Media uses binary HTTP with separate capacity from commands and stop. Preview
+can skip frames and durable recording reports loss. Live bidirectional audio
+and sample-accurate synchronization between recordings are outside this scope.
+See the [recording and asset reference](http-api.md#sample-recordings-and-retained-assets).
 
-Recording `source` is an object tagged by `kind`: `samples`, `camera`, or `microphone`. Samples select `groups` and `rate_hz`; camera selects camera/resolution/frame rate/format; microphone selects supported channels/sample rate/format. Responses echo the accepted configuration and reject incompatible options. The delivered sample contract requires an explicit positive `duration`; the other source families remain later increments.
-
-For sample recordings, store NDJSON with a metadata header, schema version, observed joint/sensor units, connection generation, timestamps, and gaps. Audio/video formats and rate/channel limits are capability-gated by the actual backend. The plan requires audio recording and playback, camera capture, preview, and bounded video recording; live bidirectional microphone/speaker streaming is deferred.
-
-The modern process writes sample recordings from the same shared acquisition feed as `/state` and `state.sample`, independently of any viewer's queue/coalescing. Video/audio acquisition location and initial formats are explicit experiments in the [runtime design](runtime-design.md#recording-acquisition-and-asset-storage); public clients do not acquire robot filesystem access.
-
-Media bytes never travel inside SSE or base64 JSON. Stream and download routes have separate capacity from command/stop handling. Preview clients may skip frames; durable recording reports loss rather than hiding it.
-
-Assets use opaque IDs, declared content type, byte count, checksum, creation/expiry times, and partial/completed status. Persist them in a mounted data volume. Default retention target: seven days with a configurable quota; do not silently evict unexpired assets to make space. Admission reserves capacity for a bounded recording and fails clearly when insufficient. Active/referenced assets cannot be deleted. Local bridge paths and native robot filenames are implementation details.
-
-Finalized asset content is immutable, including retained partial recordings; in-progress files are not served. `GET /assets/{id}/content` advertises `Accept-Ranges: bytes`, supports single byte-range requests with 206/`Content-Range`, and returns 416 for unsatisfiable ranges. Expose a strong ETag derived from the finalized content checksum and honor `If-Range`; a mismatched validator returns the full representation. Checksums are computed while writing; asset metadata storage is chosen when recordings are implemented. Finalization and interrupted-file handling are described in the runtime design.
+Assets use opaque IDs and immutable finalized content. Reserve quota before
+accepting recordings and keep unexpired assets until explicit deletion or
+expiry. Active readers and playback pin the asset. A volume is optional and
+retains files across container replacement. See the [runtime design](runtime-design.md#recording-acquisition-and-asset-storage).
 
 ### Autonomy and installed behaviors
 
@@ -419,7 +410,10 @@ The modern process owns public HTTP/SSE, schemas, sessions, resource arbitration
 
 On robot/agent loss, keep diagnostics available, mark uncertain operations unknown, invalidate old control generations/sessions, and reconcile native handles before permitting affected work. API restart must also fence its former control generation at the agent before enabling new commands. Rebuild capabilities/state after reconnect; never continue scripts or restore actuator setpoints automatically.
 
-Keep one container per robot with robot address, stable ID, callback address if needed, a data volume when recordings are implemented, and numeric resource limits. No required MQTT, WebSocket service, database service, or second container. Preserve the working legacy SDK dependencies during the split; Ubuntu Flask can be removed when it no longer serves HTTP. Do not replace legacy dependencies with unavailable PyPI packages to make the modern process fit.
+Use one container per robot with its robot address, stable ID, callback address
+where needed, and numeric resource limits. Mount an asset volume when files
+need to outlive the container. The modern API serves HTTP/SSE in the same image
+as the private pinned Python 2 and NAOqi bundle. See the [container instructions](../README.md#build-and-run-the-container).
 
 Browser apps can connect from any origin without per-application bridge configuration. Serve permissive CORS responses for requests and errors, handle preflight, and expose response headers used by clients. Browser SSE clients use fetch streaming to send the session header. The bundled API explorer runs from the bridge origin without additional setup.
 

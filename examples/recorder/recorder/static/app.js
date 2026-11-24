@@ -83,6 +83,30 @@ function renderPoses(s) {
     item.append(row, element('small', Object.keys(pose.positions).join(', '))); $('poses').append(item);
   });
 }
+function renderMedia(s) {
+  const recording = s.media_recording;
+  const active = Boolean(recording && !['completed', 'failed'].includes(recording.status));
+  const source = $('media-source');
+  const available = feature => s.capabilities?.features?.[feature]?.status === 'available';
+  $('media-duration').max = s.capabilities?.limits?.max_recording_seconds ?? '';
+  for (const option of source.options) option.disabled = !available(`recordings.${option.value}`);
+  if (source.selectedOptions[0]?.disabled || !source.value) {
+    source.value = [...source.options].find(option => !option.disabled)?.value || '';
+  }
+  source.disabled = !s.connected || active || !source.value;
+  $('media-record').disabled = source.disabled || s.uncertain;
+  $('media-stop').disabled = !s.connected || !active || recording.status === 'stopping';
+  $('media-play').disabled = !s.connected || s.busy || !recording?.asset_id ||
+    recording.source.kind !== 'microphone' || !available('audio.playback');
+  const download = $('media-download');
+  const downloadable = s.connected && Boolean(recording?.asset_id);
+  download.classList.toggle('disabled-link', !downloadable);
+  if (downloadable) download.href = `/media/${encodeURIComponent(recording.id)}`;
+  else download.removeAttribute('href');
+  $('media-status').textContent = recording ? JSON.stringify({
+    status:recording.status, source:recording.source, asset_id:recording.asset_id, error:recording.error
+  }, null, 2) : (source.value ? 'No clip yet.' : 'Media recording is unavailable.');
+}
 function render(s) {
   state = s; renderCatalog(s); renderPoses(s);
   if (controlId !== s.control_id) { controlId = s.control_id; pendingTargets = null; renderSliders(s); }
@@ -92,12 +116,20 @@ function render(s) {
   $('freshness').textContent = `Joints: ${group?.quality || 'unavailable'} · source age ${group?.age_ms === null ? '?' : Math.round(group?.age_ms || 0)} ms · last app observation ${(s.observation_age_seconds ?? 0).toFixed(1)} s ago`;
   const values = {}; for (const j of s.selected) values[j] = {measured:jointValue(j),commanded:group?.value?.commanded?.[j],stiffness:group?.value?.stiffness?.[j]};
   $('measured').textContent = JSON.stringify(values,(key,value) => typeof value === 'number' ? Number(value.toFixed(3)) : value,2);
-  $('manual-settings').textContent = JSON.stringify(s.manual_settings,null,2);
+  const profile = s.manual_profile;
+  $('manual-settings').textContent = profile ? JSON.stringify({
+    settings:profile.settings, unavailable_settings:profile.unavailable_settings
+  },null,2) : 'Manual profile is unavailable.';
+  $('manual-partial-option').hidden = !s.connected || !profile?.unavailable_settings.length;
+  if ($('manual-partial-option').hidden) $('manual-partial').checked = false;
   $('operation').textContent = s.operation ? JSON.stringify({kind:s.operation.kind,status:s.operation.status,result:s.operation.result,error:s.operation.error},null,2) : 'No operation yet.';
   $('input-status').textContent = `${s.armed ? 'Capture inputs armed' : 'Capture inputs disarmed'}${s.listener ? ' · voice ' + s.listener.status : ''}`;
   const support = s.capabilities?.features?.['motion.joint_setpoints'];
   $('control-support').textContent = support?.status === 'available' ? 'Latest targets only. Switching away or losing the browser heartbeat ends this control.' : `Unavailable: ${support?.reason || 'controlled hold has not been verified'}`;
   for (const id of ['select','capture','arm','manual','wake','set-stiffness','play','convert']) $(id).disabled = !s.connected || s.busy;
+  $('manual').disabled ||= !profile || !Object.keys(profile.settings).some(name =>
+    !profile.unavailable_settings.includes(name)
+  );
   $('arm').disabled ||= !s.stream_ready;
   $('play').disabled ||= !s.document.poses.length;
   $('convert').disabled ||= !s.samples?.segments?.length;
@@ -109,6 +141,7 @@ function render(s) {
   $('inspect').disabled = !s.recording?.asset_id;
   $('download').classList.toggle('disabled-link', !s.recording?.asset_id);
   $('record-status').textContent = s.recording ? JSON.stringify({status:s.recording.status,source:s.recording.source,asset_id:s.recording.asset_id,error:s.recording.error},null,2) : 'No recording yet.';
+  renderMedia(s);
   $('gaps').textContent = s.samples ? JSON.stringify(s.samples.gaps,null,2) : '';
   const options = JSON.stringify(s.samples?.segments || []);
   if ($('segment').dataset.options !== options) {
@@ -118,13 +151,22 @@ function render(s) {
   $('notices').replaceChildren(...s.notices.slice().reverse().map(n => element('li',n)));
 }
 bind('connect', () => { latestError = ''; return action('connect'); }); bind('disconnect', () => action('disconnect'));
-for (const id of ['cancel','stop','wake','manual','play','disarm','record-stop','inspect']) bind(id, () => action(id.replace('-','_')));
+for (const id of ['cancel','stop','wake','play','disarm','record-stop','inspect']) bind(id, () => action(id.replace('-','_')));
+bind('manual', () => action('manual',{allow_partial:$('manual-partial').checked}));
 bind('select', () => action('select',{joints:selectedInputs()}));
 bind('capture', () => action('capture',{name:$('pose-name').value,duration:Number($('pose-duration').value)}));
 bind('arm', () => action('arm',{voice:$('voice').checked}));
 bind('set-stiffness', () => action('stiffness',{value:Number($('stiffness').value)}));
 bind('control-start', async () => { const result = await action('control_start'); ownedControlId = result.control_id; renderSliders(result); }); bind('control-end', () => action('control_end',{control_id:controlId}));
 bind('record', () => action('record',{duration:Number($('record-duration').value),rate_hz:Number($('record-rate').value)}));
+bind('media-record', () => {
+  const duration = $('media-duration');
+  if (duration.reportValidity()) return action('record_media',{
+    source:$('media-source').value,duration:duration.valueAsNumber
+  });
+});
+bind('media-stop', () => action('media_stop',{recording_id:state.media_recording.id}));
+bind('media-play', () => action('media_play',{recording_id:state.media_recording.id}));
 bind('convert', () => action('convert',{segment:Number($('segment').value),spacing:Number($('spacing').value),first_duration:Number($('first-duration').value)}));
 $('motion-name').onchange = () => edit(state.document.poses,$('motion-name').value).catch(message);
 $('load').onchange = async () => { try { const file = $('load').files[0]; if (!file) return; if (file.size > 1048576) throw new Error('Trajectory file exceeds 1 MiB'); await action('load',{json:await file.text()}); } catch(error) { message(error); } finally { $('load').value = ''; } };

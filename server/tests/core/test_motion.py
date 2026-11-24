@@ -249,8 +249,7 @@ async def test_unconfirmed_fence_preserves_configuration_and_session_until_expli
         result = await wait_operation(client, close.json()["id"], owner)
         assert result["status"] == "unknown"
         assert set(result["result"]["unresolved_resources"]) == {
-            "joint.LHand",
-            "joint.LShoulderPitch",
+            "joint." + name for name in backend.chains["LArm"]
         }
         await asyncio.sleep(0.25)
         core.sweep()

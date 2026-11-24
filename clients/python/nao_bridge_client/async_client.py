@@ -9,7 +9,7 @@ import uuid
 import warnings
 from collections import deque
 from typing import Any, Literal, TypeVar
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 from pydantic import ValidationError
@@ -32,11 +32,17 @@ from .errors import (
 from .json_wire import loads
 from .listeners import AsyncListener
 from .models import (
+    AutonomyProfileCatalog,
+    BehaviorPage,
+    CameraPreviewData,
     CamerasData,
     Capabilities,
     ErrorDetail,
     Event,
+    GestureCatalog,
     JointCatalog,
+    LightCatalog,
+    LightSample,
     ListenerData,
     OdometrySample,
     OperationData,
@@ -45,15 +51,20 @@ from .models import (
     Sensor,
     SensorObserverData,
     SensorsData,
+    SequenceValidation,
     SessionData,
+    SpeechOptions,
     State,
     StreamNotice,
     SubscriptionData,
     VisionObserverData,
+    VisionTrackerData,
     WireModel,
 )
+from .previews import AsyncCameraPreview
 from .recordings import AsyncRecordings
-from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver
+from .sensor_observers import AsyncSensorObserver, AsyncVisionObserver, AsyncVisionTracker
+from .sequences import sequence_document
 from .sse import SSEParser
 from .trajectory import Trajectory
 
@@ -114,12 +125,17 @@ class AsyncNao:
         self._controls: set[AsyncControlScope] = set()
         self.last_pending_request: PendingRequest | None = None
         self.cleanup_error: Exception | None = None
+        self.cleanup_result: OperationData | None = None
         self.robot = AsyncRobot(self)
         self.sensors = AsyncSensors(self)
         self.vision = AsyncVision(self)
         self.motion = AsyncMotion(self)
         self.autonomy = AsyncAutonomy(self)
+        self.lights = AsyncLights(self)
+        self.behaviors = AsyncBehaviors(self)
+        self.sequences = AsyncSequences(self)
         self.speech = AsyncSpeech(self)
+        self.audio = AsyncAudio(self)
         self.operations = AsyncOperations(self)
         self.events = AsyncEvents(self)
         self.recordings = AsyncRecordings(self)
@@ -132,6 +148,7 @@ class AsyncNao:
         self._session_lock = asyncio.Lock()
         self._pending_session = None
         self.cleanup_error = None
+        self.cleanup_result = None
         self._http = httpx.AsyncClient(
             base_url=self.url,
             timeout=self.timeout,
@@ -189,10 +206,13 @@ class AsyncNao:
         path: str,
         *,
         body: dict[str, Any] | None = None,
+        binary: bytes | None = None,
         key: str | None = None,
         session_id: str | None = None,
     ) -> Any:
         headers = self._headers(session_id)
+        if binary is not None:
+            headers["Content-Type"] = "audio/wav"
         if key is not None:
             headers["Idempotency-Key"] = key
         pending = None
@@ -206,11 +226,14 @@ class AsyncNao:
                 self._identity.bridge_instance_id,
                 self._identity.connection_generation,
                 time.monotonic() + self._history_seconds,
+                binary,
             )
             self.last_pending_request = pending
         for attempt in range(3 if method == "GET" else 1):
             try:
-                response = await self._client().request(method, path, json=body, headers=headers)
+                response = await self._client().request(
+                    method, path, json=body, content=binary, headers=headers
+                )
                 break
             except httpx.TransportError as exc:
                 if method == "GET" and attempt < 2:
@@ -361,7 +384,8 @@ class AsyncNao:
             result = await self._request(
                 request.method,
                 request.path,
-                body=request.body,
+                body=request.body if request.binary is None else None,
+                binary=request.binary,
                 key=request.key,
                 session_id=request.session_id,
             )
@@ -427,7 +451,10 @@ class AsyncNao:
                         ),
                     )
                     op = AsyncOperation(self, data)
-                    await op.wait(timeout=self.cleanup_timeout, observe=False)
+                    try:
+                        await op.wait(timeout=self.cleanup_timeout, observe=False)
+                    finally:
+                        self.cleanup_result = op.data
                 except (OperationUnknown, OperationFailed, OperationCancelled) as exc:
                     failure = CleanupError(exc.operation)
                 except Exception as exc:
@@ -513,16 +540,76 @@ class AsyncVision:
     async def cameras(self) -> CamerasData:
         return decode(CamerasData, await self._nao._request("GET", "/api/vision/cameras"))
 
+    async def preview(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        frame_rate: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncCameraPreview:
+        owner = await self._nao._ensure_session()
+        body = {
+            name: value
+            for name, value in (
+                ("camera", camera),
+                ("resolution", resolution),
+                ("frame_rate", frame_rate),
+            )
+            if value is not None
+        }
+        result = await self._nao._request(
+            "POST",
+            "/api/vision/previews",
+            body=body,
+            session_id=owner.id,
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        return self._preview_handle(result, owner)
+
+    async def get_preview(self, preview_id: str) -> AsyncCameraPreview:
+        owner = self._nao._session
+        if owner is None:
+            raise SessionLost("A camera preview must belong to the current client session")
+        result = await self._nao._request(
+            "GET", "/api/vision/previews/" + quote(preview_id, safe=""), session_id=owner.id
+        )
+        return self._preview_handle(result, owner, preview_id)
+
+    def _preview_handle(
+        self, value: Any, owner: SessionData, preview_id: str | None = None
+    ) -> AsyncCameraPreview:
+        data = decode(CameraPreviewData, value)
+        if (
+            data.session_id != owner.id
+            or data.bridge_instance_id != owner.bridge_instance_id
+            or data.connection_generation != owner.connection_generation
+        ):
+            raise ProtocolError("Camera preview belongs to a different session or generation")
+        if preview_id is not None and data.id != preview_id:
+            raise ProtocolError("Camera preview ID does not match the request")
+        return AsyncCameraPreview(self._nao, data)
+
     async def observe(
         self,
         *,
-        faces: bool = True,
+        faces: bool | None = None,
+        landmarks: bool = False,
+        people: bool = False,
         camera: str | None = None,
         rate_hz: int | None = None,
         idempotency_key: str | None = None,
     ) -> AsyncVisionObserver:
         await self._nao._ensure_session()
-        body: dict[str, Any] = {"faces": faces}
+        body: dict[str, Any] = {
+            key: True
+            for key, selected in (("landmarks", landmarks), ("people", people))
+            if selected
+        }
+        if faces is not None:
+            body["faces"] = faces
+        if not body:
+            body["faces"] = True
         if camera is not None:
             body["camera"] = camera
         if rate_hz is not None:
@@ -534,6 +621,29 @@ class AsyncVision:
             key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
         )
         return AsyncVisionObserver(self._nao, decode(VisionObserverData, value))
+
+    async def track(
+        self, target: str = "face", *, idempotency_key: str | None = None
+    ) -> AsyncVisionTracker:
+        await self._nao._ensure_session()
+        result = await self._nao._request(
+            "POST",
+            "/api/vision/trackers",
+            body={"target": target},
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        return AsyncVisionTracker(self._nao, decode(VisionTrackerData, result))
+
+    async def get_tracker(self, tracker_id: str) -> AsyncVisionTracker:
+        if self._nao.session_id is None:
+            raise SessionLost("A tracker must belong to the current client session")
+        data = decode(
+            VisionTrackerData,
+            await self._nao._request("GET", "/api/vision/trackers/" + quote(tracker_id, safe="")),
+        )
+        if data.id != tracker_id or data.session_id != self._nao.session_id:
+            raise ProtocolError("Tracker identity changed")
+        return AsyncVisionTracker(self._nao, data)
 
     async def get_observer(self, observer_id: str) -> AsyncVisionObserver:
         if self._nao.session_id is None:
@@ -815,6 +925,30 @@ class AsyncMotion:
             "joint_moves", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
         )
 
+    async def gestures(self) -> GestureCatalog:
+        return decode(GestureCatalog, await self._nao._request("GET", "/api/motion/gestures"))
+
+    async def gesture(
+        self,
+        name: str,
+        *,
+        side: Literal["left", "right"] | None = None,
+        repetitions: int | None = None,
+        strength: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        body: dict[str, Any] = {"name": name}
+        body.update(
+            (key, value)
+            for key, value in (("side", side), ("repetitions", repetitions), ("strength", strength))
+            if value is not None
+        )
+        return await self._submit(
+            "gesture_runs", body, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+        )
+
     async def play(
         self,
         trajectory: Trajectory | dict[str, Any],
@@ -943,9 +1077,156 @@ class AsyncSensors:
         )
 
 
+class AsyncSequences:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def schema(self) -> dict[str, Any]:
+        return await self._nao._request("GET", "/api/sequences/schema")
+
+    async def validate(self, script: dict[str, Any]) -> SequenceValidation:
+        result = await self._nao._request(
+            "POST", "/api/sequences/validate", body=sequence_document(script)
+        )
+        return decode(SequenceValidation, result)
+
+    async def run(
+        self,
+        script: dict[str, Any],
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST",
+            "/api/sequences/runs",
+            body=sequence_document(script),
+            key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+        )
+        operation = AsyncOperation(self._nao, decode(OperationData, data))
+        return await operation.wait(timeout=timeout) if wait else operation
+
+
+class AsyncBehaviors:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def list(self, *, cursor: str | None = None, limit: int = 12) -> BehaviorPage:
+        fields = {"limit": str(limit)}
+        if cursor is not None:
+            fields["cursor"] = cursor
+        return decode(
+            BehaviorPage,
+            await self._nao._request("GET", "/api/behaviors?" + str(httpx.QueryParams(fields))),
+        )
+
+    async def run(
+        self,
+        name: str,
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        result = await self._nao._request(
+            "POST",
+            "/api/behaviors/runs",
+            body={"name": name},
+            key=idempotency_key or uuid.uuid4().hex,
+        )
+        operation = AsyncOperation(self._nao, decode(OperationData, result))
+        return await operation.wait(timeout=timeout) if wait else operation
+
+
+class AsyncLights:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def groups(self) -> LightCatalog:
+        return decode(LightCatalog, await self._nao._request("GET", "/api/lights"))
+
+    async def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> LightSample:
+        state = await self._nao.robot.state(
+            include=["lights"],
+            max_age_ms=max_age_ms,
+            wait_for_fresh_ms=wait_for_fresh_ms,
+            require_fresh=require_fresh,
+        )
+        return decode(
+            LightSample,
+            {
+                **state.groups["lights"].model_dump(),
+                "bridge_instance_id": state.bridge_instance_id,
+                "connection_generation": state.connection_generation,
+            },
+        )
+
+    async def set(
+        self,
+        group: str,
+        *,
+        color: str | None = None,
+        brightness: float | None = None,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"group": group}
+        body.update(
+            (field, value)
+            for field, value in (
+                ("color", color),
+                ("brightness", brightness),
+                ("duration", duration),
+            )
+            if value is not None
+        )
+        result = await self._nao._request(
+            "POST", "/api/lights/transitions", body=body, key=idempotency_key or uuid.uuid4().hex
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, result))
+        return await op.wait(timeout=timeout) if wait else op
+
+
 class AsyncAutonomy:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def profiles(self) -> AutonomyProfileCatalog:
+        return decode(
+            AutonomyProfileCatalog, await self._nao._request("GET", "/api/autonomy/profiles")
+        )
+
+    async def apply(
+        self,
+        profile: str,
+        *,
+        allow_partial: bool = False,
+        restore_on_close: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        data = await self._nao._request(
+            "POST",
+            "/api/autonomy/profile_runs",
+            body={
+                "profile": profile,
+                "allow_partial": allow_partial,
+                **({"restore_on_close": True} if restore_on_close else {}),
+            },
+            key=idempotency_key or uuid.uuid4().hex,
+        )
+        op = AsyncOperation(self._nao, decode(OperationData, data))
+        return await op.wait(timeout=timeout) if wait else op
 
     async def state(
         self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
@@ -985,6 +1266,9 @@ class AsyncAutonomy:
 class AsyncSpeech:
     def __init__(self, nao: AsyncNao):
         self._nao = nao
+
+    async def options(self) -> SpeechOptions:
+        return decode(SpeechOptions, await self._nao._request("GET", "/api/speech/options"))
 
     async def listen(
         self,
@@ -1065,6 +1349,38 @@ class AsyncSpeech:
                 await self._nao._request(
                     "POST",
                     "/api/speech/utterances",
+                    body=body,
+                    key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
+                ),
+            ),
+        )
+        return await op.wait(timeout=timeout) if wait else op
+
+
+class AsyncAudio:
+    def __init__(self, nao: AsyncNao):
+        self._nao = nao
+
+    async def play(
+        self,
+        asset_id: str,
+        *,
+        volume: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> AsyncOperation:
+        await self._nao._ensure_session()
+        body: dict[str, Any] = {"asset_id": asset_id}
+        if volume is not None:
+            body["volume"] = volume
+        op = AsyncOperation(
+            self._nao,
+            decode(
+                OperationData,
+                await self._nao._request(
+                    "POST",
+                    "/api/audio/playbacks",
                     body=body,
                     key=idempotency_key if idempotency_key is not None else uuid.uuid4().hex,
                 ),

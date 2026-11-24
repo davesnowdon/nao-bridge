@@ -16,8 +16,8 @@ assets with range downloads and sync/async recording/download helpers. A small
 editing, playback, sliders and explicit sample conversion using the public SDK.
 Plain speech,
 leased sessions, cancellation, priority stop, resource conflicts and recovery
-remain available. Contract 1.9.0 replaces the old API without compatibility
-adapters. [Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
+remain available. The [HTTP/SSE contract](contracts/README.md) replaces the old API.
+[Increment-2 progress](docs/increment-2-status.md) distinguishes delivered
 software from the remaining physical acceptance gates.
 
 [Increment-3 work](docs/increment-3-status.md) adds passive inertial, foot-load,
@@ -25,11 +25,27 @@ ground-contact and joint-temperature observations to the shared sensor state, pl
 explicit sonar observers and battery/sonar thresholds with sync/async SDK support.
 It adds finite walking, local planar odometry, scoped motion stop, still
 camera capture as downloadable PNG assets, and managed face detection events.
+Managed vision observers also support NAOmark landmarks and people detections
+when the native extractors are available.
+Managed previews stream live JPEG frames over HTTP, and matching previews and
+stills share camera acquisition with bounded MJPEG AVI recordings. The bridge
+also records the front microphone to WAV when the robot exposes its audio device
+and plays retained PCM WAV uploads or recordings through the robot speaker.
 The [Wanderer reference app](examples/wanderer/README.md) demonstrates short
 finite moves, live stop handling, a local occupancy map and pose-associated stills.
 Velocity leases are available in software fixtures. Hardware velocity remains
 disabled pending measured stop and expiry tests. Physical walking, stopping,
 camera and sensor acceptance remain pending.
+
+[Increment-4 work](docs/increment-4-status.md) starts with RGB and monochrome
+light groups, session-owned fades, and actuator read-back via shared state and SSE.
+Speech options, installed behaviors, and built-in gestures are discoverable.
+Software fixtures support animated speech, installed behavior runs, and gestures.
+Server-side sequences coordinate finite actions, with child operations and
+fail-fast cancellation. The contract bundle includes a
+[portable presentation sequence](contracts/fixtures/presentation-sequence.json).
+The [presentation example](examples/presentation/README.md) preflights and runs
+the choreography using the public Python API.
 
 Robot-free tests cover real SDK loopback services and injected process failures.
 Increment-2 physical motion/hold behavior and Apple Silicon remain unverified; see the
@@ -52,6 +68,7 @@ invent user touches. Browse `http://127.0.0.1:3000/` for interactive Swagger UI.
 uv run --project clients/python python clients/python/example_usage.py
 uv run --project clients/python python clients/python/examples/events.py
 uv run --project examples/recorder nao-bridge-recorder
+uv run --project clients/python python examples/presentation/present.py
 ```
 
 The Recorder example opens a local UI at `http://127.0.0.1:8123`; its assets are
@@ -85,6 +102,10 @@ establish its outcome. The container records to `/var/lib/nao-bridge/assets` by
 default. A volume is optional: mount that directory to retain recording assets
 when replacing/removing a container. Its metadata stores files, never sessions or
 operations. Without a mount, assets last only as long as the container filesystem.
+
+For persistent recordings, add `--mount type=volume,source=nao-bridge-assets,target=/var/lib/nao-bridge/assets`
+before the image name. Reuse the same volume for that robot when replacing the
+container. Docker creates the named volume on first use.
 
 For a local fake server with recording enabled:
 
@@ -166,6 +187,9 @@ those locks requires rerunning the native/container checks.
 
 The [API plan](docs/api-plan.md), [delivery plan](docs/delivery-plan.md) and
 [runtime design](docs/runtime-design.md) describe the complete intended system.
+The [API coverage map](docs/api-coverage.md) links the public surfaces to SDK
+methods and verification. The [release evidence](docs/release-readiness.md)
+records which workflows have been exercised on each robot generation.
 Maintained build inputs live in [server/packaging](server/packaging/README.md).
 Historical findings and archived sources are linked from the
 [packaging decision](docs/inverted-packaging-experiment.md).

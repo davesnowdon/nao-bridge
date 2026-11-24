@@ -383,6 +383,33 @@ typed terminal outcomes as speech. Use `Trajectory.from_json(text)` / `.to_json(
 for portable file validation and round-tripping; runtime joint constraints are
 validated by the server. See [the example trajectory](../contracts/fixtures/trajectory.json).
 
+### Built-in gestures
+
+`GET /motion/gestures` lists `wave`, `point`, `nod`, and `shake` with their required
+posture, available variants, and joint resources. Both arm gestures have left and
+right variants. `point` extends the selected arm forward, briefly holds the pose,
+and returns to the measured start for each repetition. Each head gesture reserves
+both head joints. The catalog is
+session-free and includes the connection generation.
+
+`POST /motion/gesture_runs` returns a `motion.gesture_run` Operation.
+Choose a `name` and optionally specify `repetitions` from 1 to 3 (default 1)
+and `strength` from 0.25 to 1 (default 0.65). The arm gestures also accept `side`
+`left` or `right`, with a default of `right`. Both Python clients expose
+`motion.gestures()` and `motion.gesture("wave", side="right")`.
+
+A gesture requires fresh measured joint angles, an awake robot, stiff
+target joints, and idle locomotion. The arm gestures require `StandInit`. The bridge
+compiles a bounded trajectory from the observed pose, plans a return to that
+pose on normal completion, and checks joint limits and the head gesture
+envelope. The agent rechecks the starting angles and required posture before
+dispatch. A completed operation reports the planned trajectory duration.
+
+Cancellation requests scoped joint stop and checks that the interpolation
+has ended. The robot can stop at an intermediate pose. An unconfirmed stop
+retains the joint resources. Physical gesture execution stays gated pending
+hardware acceptance.
+
 ### Replacing a finite move
 
 Joint moves and trajectory runs accept `replace_operation_id`, naming a standalone
@@ -447,8 +474,9 @@ each setting's requested, before and observed values, status and reason. Life st
 is applied first, followed by the other settings in name order. `result.state_refreshed`
 reports whether a subsequent shared autonomy sample arrived.
 
-Transitions temporarily reserve all discovered joints, locomotion and speech output,
-as well as autonomy configuration. Completed settings keep autonomy configuration
+Transitions temporarily reserve all discovered joints, locomotion, speech output,
+and recognition, as well as autonomy configuration. A change to life or autonomous
+blinking also reserves lights. Completed settings keep autonomy configuration
 owned by the session. Other commands can then use released actuator resources;
 another session cannot change autonomy until ownership ends. Native external
 activities are outside bridge ownership. Life transitions can stop those activities
@@ -464,21 +492,172 @@ unknown outcomes retain resource quarantine. This is not an atomic transaction.
 Cancellation prevents later setters, but cannot undo a setting already applied or
 guarantee interruption of a native life transition.
 
-Session close releases confirmed ownership and leaves the settings in place.
-`restore_on_close` defaults to false; true currently returns `unsupported`.
-Guarded automatic restoration and named profiles belong to increment 4.
 Python provides `nao.autonomy.state(...)` and
 `nao.autonomy.configure({"life_state":"disabled","basic_awareness":False})`, with
 matching sync/async methods and the usual `wait`, timeout and operation handles.
 
+### Guarded restoration
+
+`restore_on_close` defaults to false on transitions and profile runs. Set it
+to true to request restoration on session close or lease expiry. The bridge
+fences the session's commands, settles its work, and reserves the resources
+needed for restoration. On the same connection generation, the agent reads each
+setting again and writes its saved value only while the current value matches
+the last confirmed write by the session. For consecutive opted-in changes, the
+bridge keeps the original before-value as long as the settings match across
+writes. An explicitly applied setting with restoration disabled clears its
+previous request to restore.
+
+The cleanup operation's `result.autonomy_restoration` reports `restored`,
+`partial`, `skipped`, or `unknown`, including each setting's observed outcome.
+The report links to the `autonomy.restore` operation when the bridge created one.
+Both Python clients expose the close operation through
+`nao.cleanup_result` after leaving the context. An unknown native write retains
+resource quarantine. External changes, unavailable read-back, competing
+ownership, or a native safeguard can cause a setting to be skipped.
+
+Restoring a life state can start autonomous activity. The bridge restores
+`disabled` and `solitary` through the usual life setter. Recreating an interactive
+activity needs the activity's original context. Explicit revoke uses recovery
+without restoring settings. An API restart drops pending restoration requests.
+[NAOqi 2.1 life API](https://doc.aldebaran.com/2-1/naoqi/core/autonomouslife-api.html)
+and [NAOqi 2.8 life states](https://doc.aldebaran.com/2-8/ref/life/state_machine_management.html).
+
+## Lights
+
+`GET /lights` returns the groups discovered on the connected robot, their
+`rgb` or `mono` mode, and the resource IDs used to arbitrate overlapping
+groups. The common IDs are `eyes`, `eyes.left`, `eyes.right`, `chest`,
+`feet.left`, `feet.right`, `ears`, `ears.left`, `ears.right` and `head`.
+The catalog only contains groups confirmed by that connection's discovery.
+
+`POST /lights/transitions` requires a session and returns a `lights.transition`
+Operation. For example, this body fades both eyes to half-strength blue over
+half a second.
+
+```json
+{"group": "eyes", "color": "#0000ff", "brightness": 0.5, "duration": 0.5}
+```
+
+Send `color`, `brightness`, or both for RGB. An RGB brightness-only request
+sets white at that level. With a color, brightness scales each normalized
+channel and defaults to 1. Monochrome groups accept brightness alone. Brightness
+is a ratio from 0 to 1, and duration is 0–10 seconds with a default of 0.
+Concurrent transitions need disjoint resources. After a successful transition,
+the session holds the affected resources until it ends. Cleanup releases
+ownership and leaves the applied light levels in place.
+
+`GET /state?include=lights` and optional `lights` groups in `state.sample`
+provide read-back independently of operation status. The group value conforms
+to `LightStateValue`. Each RGB reading contains normalized red, green and blue
+levels; each monochrome reading contains `intensity`. Uniform, valid native
+actuator values produce `observed`. Differing values within a channel produce
+a null channel and `mixed`. An absent or invalid native value yields a null
+channel and `unavailable`. The enclosing sample still carries its own age
+and freshness. Read-back describes the actuator registers, so robot-side
+controllers can change values after a bridge command completes.
+
+Cancellation fences queued work. An already dispatched native fade may continue
+to completion. The bridge can report `unknown` while retaining the resource,
+then reconcile the same operation when native completion arrives. Wait for
+that result and take a fresh state sample before deciding what to apply next.
+
+Both Python clients offer `lights.groups()`, `lights.state()`, and
+`lights.set("eyes", color="#0000ff", brightness=0.5, duration=0.5)`.
+
 ## Speech
 
-Speech capabilities expose the discovered supported language/default voice. Native
-non-default voice selection and Japanese per-utterance controls are unavailable in
-this slice. Animated speech is unsupported. Speech text must be plain text without
-backslash control markup; defaults are volume `0.5`, rate `1.0`, and the discovered
-language/voice. Volume is 0–1; rate is 0.5–2.0. The rate maps to native percentage,
-not a promise of physical speech duration.
+`GET /speech/options` reports available languages and voices, defaults,
+volume and rate bounds, and availability of animated speech for the current
+connection generation. Both Python clients expose this as `speech.options()`
+without creating a session. The native backend currently exposes the discovered
+default voice. It can speak in the reported plain-speech languages with local
+volume and rate controls.
+
+`POST /speech/utterances` defaults to plain speech, volume `0.5`, rate `1.0`,
+and the discovered language and voice. Volume ranges from 0 to 1. Rate ranges
+from 0.5 to 2 and maps to the native speed percentage. Text is unannotated.
+The bridge rejects backslash control markup and rejects caret markup in
+animated utterances.
+
+To use contextual gestures, pass `animated: true` in HTTP or
+`animated=True` in `speech.say()`. Check the `animated` availability and
+`animated_languages` list in speech options. Animated speech also needs fresh
+state showing an awake robot and stiff joints. It requests neither wake nor
+stiffness. The resulting `speech.animated_utterance` Operation owns speech
+output, locomotion, and all discovered joint and light resources.
+
+Cancel and all-motion stop can target animated speech. Confirmation requires
+audio stop, native motion stop and a settled utterance. The bridge reports an
+unknown outcome and retains resources if confirmation is missing. The
+animated mode is enabled in the fixtures and remains gated on physical
+robots pending acceptance.
+
+## Autonomy profiles
+
+`GET /autonomy/profiles` is session-free. It returns each profile's desired
+settings and the settings unavailable on the current connection. Read it again
+after a connection generation change. When discovery exposes the older
+awareness start/stop control, profiles use `awareness_running` in place of
+`basic_awareness`.
+
+| Profile | Settings |
+| --- | --- |
+| `manual` | Disable life, awareness, background movement, listening movement and speaking movement for manual capture. |
+| `presentation` | Apply the same settings before scripted speech, gestures and lights. |
+| `interactive` | Set life to solitary, enable awareness and listening/speaking movement, and disable background movement. |
+
+Send `{"profile": "manual"}` to `POST /autonomy/profile_runs` with an active
+session, or call `nao.autonomy.apply("manual")` in either Python client. The
+default validates every setting before dispatch. Set `allow_partial: true`
+to apply the available settings and include skipped entries in the returned
+`autonomy.transition` operation's per-setting results. At least one setting
+must be available. A profile run can use an idempotency key.
+
+Life transitions can themselves change the robot's physical state. Verify
+observations before starting a pose or trajectory. The bridge issues no
+additional wake, posture or stiffness commands when applying a profile.
+
+Subscribe to `autonomy.changed` for changes to the shared observation, including
+changes made outside the bridge. Event data has the same shape as the autonomy
+state value, including unavailability reasons. Read
+`GET /state?include=autonomy` for initial state and after a stream reset.
+
+## Installed behaviors
+
+`GET /behaviors` is session-free. It returns installed names sorted by name,
+a `next_cursor` for the next page, and the connection generation. Send the
+cursor back with `limit` between 1 and 12. Start a new listing after a generation
+change. Discovery is refreshed when the native connection opens. The catalog
+can expose up to 512 names and marks larger inventories as truncated.
+
+The response also reports whether execution is available and the last
+observed list of running native behaviors. The `behavior.changed` SSE event
+carries a replacement running list whenever the native source reports a
+change. An empty list means the observed set is empty. A null list means
+observation is unavailable. These observations include runs started outside
+the bridge and carry no bridge operation ID. After a stream reset, read the
+catalog again before relying on the running list.
+
+When execution is available, send `{"name": "installed-package/behavior"}`
+to `POST /behaviors/runs` with an active session. The agent rechecks the
+installation and refuses to take over a behavior already running on the
+robot. Runs require fresh awake and stiff motion state. The
+`behavior.run` Operation reserves behavior execution, speech output,
+locomotion, and all discovered joint and light resources. Policies that
+pause vocabulary listening during output also apply to an installed behavior.
+Native completion establishes that the named run has returned and is no
+longer running.
+
+Cancel or issue an all-motion or robot stop to request a scoped native stop
+of bridge-owned behavior work. Confirmation requires that the native stop
+returns, the run call settles, and the named behavior is reported inactive.
+An unresolved run retains its resources. Physical execution stays gated
+pending hardware verification. Discovery and running-set observations can
+still be available.
+
+Both Python clients expose `behaviors.list(cursor=..., limit=...)` and
+`behaviors.run(name)`.
 
 ## Vocabulary listeners
 
@@ -576,7 +755,7 @@ attaching and after every reset; polling also works. Terminal outcomes are
 and does not cancel. Cancellation is idempotent but may be unconfirmable. Resource
 conflicts return `resource_busy`, including while an uncertain outcome quarantines
 `speech.output`. Listing is session-scoped with `status`, `parent_id`, `limit` and
-`cursor` parameters; child operations arrive in a later increment.
+`cursor` parameters.
 
 For a lost creation response, retain the same key, route, body, bridge instance and
 session. An identical retry within advertised retention returns the original ID;
@@ -585,6 +764,45 @@ defaults. Never retry after instance/session loss or retention expiry. Recovery
 routes have separate bounded history/key budgets. Finished cleanup records can be
 evicted early; priority stop uses a dedicated per-session slot. See the
 [retention rules](../contracts/README.md#request-fingerprints). Limits are returned by capabilities.
+
+## Sequences
+
+`GET /sequences/schema` returns a self-contained JSON Schema for sequence
+documents. A document has `schema_version: "1.0"` and a `root` node. Use
+`sequence` for ordered children, `parallel` for concurrent branches, and
+`delay` for a bounded wait in seconds. Supported actions include speech,
+lights, gestures, installed behaviors, autonomy transitions, wake/rest,
+stiffness, postures, displacement, joint moves and trajectories.
+See the [hand-authored presentation](../contracts/fixtures/presentation-sequence.json).
+
+`POST /sequences/validate` needs no session. It checks the complete script
+without dispatching any actions. The result includes normalized arguments,
+required features, reserved resources, and a timeline keyed by zero-based
+paths through the tree. An unknown start or duration is null. Parallel
+branches must have disjoint resources. Runtime checks still apply when a
+child starts, so an earlier wake or posture can prepare a later action.
+The bridge accepts up to 32 actions or delays, eight levels, and four
+concurrent native actions. It rejects estimated minimum duration above
+600 seconds and requests cancellation at a 600-second run deadline.
+
+`POST /sequences/runs` requires a session and returns a `sequence.run`
+Operation. Admission reserves the required resources, command capacity and
+child history for the run. Every child has an Operation with `parent_id`
+and `sequence_path`, including accepted children waiting to start. Read
+children with `GET /operations?parent_id=...` and subscribe to
+`operation.changed` for updates.
+
+Cancel the parent to stop the sequence. Failure stops pending actions and
+requests cancellation of running siblings. The parent result carries the
+failing path and each child’s status. Completed actions keep their effects.
+If a stop is unconfirmed, the parent reports `unknown` and holds its
+reservation until reconciliation or explicit fenced recovery. Session
+cleanup and priority stop also stop or quarantine affected runs.
+
+Python clients can build JSON with `actions`, `sequence`, `parallel` and
+`delay`, then call `sequences.validate()` and `sequences.run()`. Both clients
+also accept a hand-authored document. Read the completed parent result with
+`SequenceResult.model_validate(operation.data.result)`.
 
 ## Events and reconnect
 
@@ -748,6 +966,47 @@ after its native reply and cleanup. Once publication begins, `cancellable` is
 allows a capture to continue. Incomplete PNGs are discarded on restart. Completed
 images share the quota, retention and download routes with other assets.
 
+## Managed JPEG preview
+
+`POST /api/vision/previews` creates a leased preview and returns a status URL
+with HTTP 201. Send the session ID in `X-Session-ID`. The request can specify
+`camera` and `resolution` from camera discovery and an integer `frame_rate` from
+1 to 5. Defaults are `top`, `320x240`, and 5 fps. Check `vision.previews` in
+robot capabilities to discover encoder and camera availability.
+
+`GET /api/vision/previews/{id}` reports `starting`, `active`, `stopping`,
+`stopped`, `failed`, or `unknown`. Use the same session ID to open
+`GET /api/vision/previews/{id}/content`. The response uses
+`multipart/x-mixed-replace` with one `image/jpeg` per part and per-part
+`Content-Length` and `X-Frame-Sequence` headers. Frame sequence numbers
+increase within that feed and may skip when a viewer falls behind. A closed
+HTTP response detaches the viewer and allows reattachment to a live preview.
+
+Use `POST /api/vision/previews/{id}/stop` with `{}` to release its demand.
+Identical settings share a feed, and a matching still capture uses its
+latest fresh RGB frame. Incompatible camera settings return `resource_busy`.
+The last stop reaches `stopped` after native cleanup is confirmed, and a lost
+confirmation reports `unknown` with the camera held until the connection
+generation changes. Session cleanup also stops its previews.
+
+```python
+from contextlib import closing
+
+from nao_bridge_client import Nao
+
+with Nao() as nao, nao.vision.preview(frame_rate=5) as preview:
+    preview.wait_ready()
+    with closing(preview.frames()) as frames:
+        first_frame = next(frames)
+        print(first_frame.sequence, len(first_frame.jpeg))
+```
+
+With `AsyncNao`, use `async with await nao.vision.preview()`, await readiness,
+and consume `preview.frames()` with `async for`. Use `contextlib.aclosing`
+to close the iterator when you leave the loop early.
+Both clients can read an existing preview with `vision.get_preview(preview_id)`
+while using its owning session.
+
 ## Managed face observations
 
 Check `features.vision.observers` for availability. The `faces` capability
@@ -789,6 +1048,171 @@ requires agent recovery and explicit release of old-generation ownership. After
 an SSE gap, query the observer's status and use future events. Reconnecting
 does not replay detections or recreate an observer.
 
+### NAOmark landmark observations
+
+Check `vision.landmarks` in capabilities. Start an observer with
+`POST /api/vision/observers` and `{"landmarks":true,"rate_hz":2}`.
+Both Python clients expose `nao.vision.observe(landmarks=True)`.
+Each observer selects one detector. To use faces and landmarks together,
+create one observer for each. Each detector shares compatible demand and
+stops when its last observer releases it.
+
+Landmark events use `vision.detections`. A landmark frame includes a
+`landmarks` array and an empty `faces` array. The landmark entries carry
+`marker_id`, the NAOmark code, along with angular centre, width, height,
+and heading in radians. `id` identifies a detection in one frame. The
+observer only forwards frames whose reported camera matches the accepted
+configuration. `stream.ready` reports readiness for `vision.landmarks`
+separately from `vision.faces`.
+
+### People observations
+
+Check `vision.people` in capabilities. Create an observer with
+`POST /api/vision/observers` and `{"people":true}` or use
+`nao.vision.observe(people=True)` in either Python client. Compatible
+observers share native demand and can run alongside face or NAOmark
+observers.
+
+People observation follows the camera selected by the native perception
+service. The accepted configuration reports `camera: null` in automatic
+mode. Supplying `camera: "top"` or `camera: "bottom"` filters the events
+to that camera. Each `vision.detections` frame still identifies its actual
+camera and timestamp. A people frame includes `people` alongside the empty
+`faces` array. Each entry has a short-lived native tracking `id`, horizontal
+and vertical angles in radians, and `distance_m` when the SDK provides a
+positive range. IDs and range are observations scoped to the robot connection.
+`stream.ready` includes `vision.people` readiness.
+
+### Head-only face tracking
+
+Check `vision.face_tracking` in capabilities. When enabled, use
+`POST /api/vision/trackers` with `{"target":"face"}` to start a managed
+head tracker. The robot must be awake with both head joints stiff.
+The tracker reserves `joint.HeadYaw` and `joint.HeadPitch`. Both Python
+clients expose `nao.vision.track()` as a context manager.
+
+The tracker ID is also the ID of its `vision.face_tracking` operation.
+`GET /api/vision/trackers/{id}` and `vision.tracker_changed` report
+`starting`, `searching`, `tracking`, `lost`, `stopping`, and terminal
+`stopped`, `failed`, or `unknown` states. Stop using
+`POST /api/vision/trackers/{id}/stop` with `{}`. After a stream gap, read
+the tracker status. Session close, lease expiry, and a full motion or
+robot stop request teardown.
+
+The agent requires the native tracker to be idle in Head mode with no arm
+effector. It creates its own face registration and removes it during teardown.
+Confirmed stop reports a fresh measured head hold when tracking ran.
+Unconfirmed cleanup keeps the head joints quarantined. The pinned fixture
+enables tracking for software verification. Physical robot capability remains
+disabled pending hardware acceptance.
+
+## Camera video recording
+
+Check `recordings.camera` in capabilities. It requires a discovered camera,
+the Linux FFmpeg runtime and enabled asset storage. Start a bounded
+recording through the session-owned `POST /api/recordings` route.
+
+```json
+{"source":{"kind":"camera","camera":"top","resolution":"320x240","frame_rate":5},"duration":4,"max_bytes":524288}
+```
+
+`source` uses the same camera, resolution, and integer frame rate as preview.
+The accepted source includes `format: "mjpeg-avi"`. Matching recordings
+and previews share the encoder and native camera feed. Different live
+configurations return `resource_busy`. A blocked writer drops frames once
+its bounded queue fills and records that loss.
+
+The recording follows the same `starting`, `recording`, `stopping`,
+`completed`, and `failed` lifecycle as samples and reports a
+`recording.camera` operation. A finalized `camera.video` asset uses
+`video/x-msvideo` and supports checksum verification and byte ranges.
+The asset metadata includes frame count, dropped frames, acquisition
+times in the bridge clock and an aggregate gap summary. AVI plays the
+retained frames at the selected constant rate. The metadata preserves
+loss information when playback duration is shorter than acquisition time.
+
+The duration limit starts at recording admission. A byte-limit or frame-gap
+failure keeps the frames already captured as a partial asset when the muxer
+can finalize them. A process crash can also leave a partial asset whose AVI
+index or trailer is incomplete. A cancelled recording follows the existing
+recording ownership and close rules. Both Python clients expose
+`nao.recordings.camera(duration=..., frame_rate=...)`.
+
+## Microphone recording
+
+Check `recordings.microphone` in capabilities. It requires a discovered audio
+device and enabled asset storage. Create a recording through the same
+session-owned endpoint.
+
+```json
+{"source":{"kind":"microphone"},"duration":5,"max_bytes":262144}
+```
+
+The accepted source contains `sample_rate_hz: 16000`, `channels: 1` and
+`format: "pcm-wav"`. This format captures signed 16-bit PCM from the front
+microphone. Clients can omit those fixed fields and other values fail
+validation. One microphone recording can run at a time. Camera and sample
+recordings can run alongside it within the shared storage and recording limits.
+
+Wait for `recording.microphone` to finish before reading the `microphone.audio`
+asset. Content is `audio/wav`, with a `.wav` download name, SHA-256, and byte
+ranges. The duration bound starts at admission and caps the audio frame count.
+The asset metadata records the frame count and aggregate loss detected by the
+bridge. The WAV contains retained samples in order. A gap does not insert
+silence. Missing blocks, the byte limit, or an interrupted write can leave a
+playable partial asset. A storage restart reconstructs the header from the
+complete PCM samples and reports `recording_interrupted` for that asset.
+
+Stopping, cancelling, session close, and lease expiry release the microphone.
+An unconfirmed native stop blocks new recordings in the current connection
+generation. Both Python clients expose `nao.recordings.microphone(duration=...)`.
+
+## Audio upload
+
+Check `assets.audio_upload`, `audio.upload_formats`, and the `max_audio_upload_*`
+limits in robot capabilities. Send a complete WAV as the request body of
+`POST /api/assets` with `Content-Type: audio/wav` and the active `X-Session-ID`.
+The bridge accepts 16-bit PCM with one or two channels and reports the
+supported sample rates. The byte and duration limits are 8 MiB and 300 seconds.
+Upload and validation use bridge storage and can run without robot audio output.
+
+On success, HTTP 201 returns an immutable `audio.upload` asset and a `Location`
+header. The asset metadata includes frame count, sample rate, channels, sample
+width and duration. The original bytes are retained with a checksum and can be
+downloaded through the normal asset endpoint. A malformed WAV returns 422,
+an oversized request returns 413, and insufficient asset space returns 507.
+Interrupted uploads that never finalized are discarded on restart.
+
+An optional `Idempotency-Key` is scoped to the session. Retrying the same key
+with the original bytes returns the same result while its key is retained. A
+different upload with the same key returns 409. Both Python clients expose
+`nao.assets.upload(path)`. The async client supports explicit retry using the
+original bytes after an ambiguous response.
+
+## Audio playback
+
+Check `audio.playback` in capabilities and `audio.speaker_sample_rate_hz` for
+the discovered output rate. Send `POST /api/audio/playbacks` with the active
+session and a retained WAV asset ID. Uploads and microphone recordings with
+playable PCM are accepted.
+
+```json
+{"asset_id":"<asset-id>","volume":0.6}
+```
+
+Volume is optional and ranges from 0 to 1, with a default of 1. It scales
+this clip. The bridge prepares stereo PCM at the discovered speaker rate and
+uses the joint speech and playback reservation. Listeners configured to pause
+during output remain paused until the operation settles. The asset stays pinned
+against removal while the operation holds its reservation.
+
+HTTP 202 returns an `audio.playback` operation. A completed native result
+reports its `asset_id`, `sample_rate_hz`, and `frames_submitted`. Cancellation
+stops further submissions and allows the last acknowledged buffer time to
+elapse. An unconfirmed buffer outcome leaves `speech.output` quarantined for
+session recovery. Speaker output and the audible stop tail require hardware
+verification. Both Python clients expose `nao.audio.play(asset_id, volume=...)`.
+
 ## Sample recordings and retained assets
 
 Recording storage is enabled by default in Docker; local runs need
@@ -813,7 +1237,7 @@ retained session after closure. Creation and `POST /recordings/{id}/stop` accept
 idempotency keys; stop takes `{}` and returns 202 with the recording resource.
 Cancelling the associated operation also drains/finalizes before reporting cancelled.
 
-`source.kind` is currently `samples`; choose any nonempty subset of `joints`,
+For `source.kind: "samples"`, choose any nonempty subset of `joints`,
 `sensors`, `motion`, `autonomy`. Omitted rate uses the configured sampler cap
 (default 10 Hz); an excessive request needs `allow_lower_rate: true` to accept a
 lower rate. Source cadence is best effort and does not promise new hardware values

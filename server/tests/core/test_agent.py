@@ -54,6 +54,7 @@ def bare_agent(module):
     agent.priority = queue.Queue(8)
     agent.emergency_stop = threading.Event()
     agent.driver = types.SimpleNamespace(
+        connected=lambda: True,
         speak=lambda payload: pytest.fail("Cancelled queued work reached native dispatch"),
         stop=lambda: pytest.fail("Queued-only scoped stop invoked unrelated native output"),
     )
@@ -105,6 +106,24 @@ def test_priority_stop_keeps_joint_stop_behind_unconfirmed_velocity(agent_module
         assert not result["locomotion_confirmed"] and result["joint_stop_confirmed"] is None
 
 
+def test_autonomy_restoration_requires_a_fence_in_the_same_epoch(agent_module):
+    agent = bare_agent(agent_module)
+    request = {
+        "agent": agent.instance,
+        "api": agent.api,
+        "epoch": agent.epoch,
+        "action": "restore_autonomy",
+        "session_id": "session",
+        "deadline": agent_module.monotonic() + 1,
+    }
+    assert agent.valid(request) == "session_not_fenced"
+    agent.revoked["session"] = (agent_module.monotonic(), agent.epoch)
+    assert agent.valid(request) is None
+    agent.epoch += 1
+    request["epoch"] = agent.epoch
+    assert agent.valid(request) == "session_not_fenced"
+
+
 def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
     import autonomy
 
@@ -125,7 +144,7 @@ def test_autonomy_rechecks_fencing_between_native_mutations(agent_module):
             def complete(timeout):
                 values["life_state"] = value
                 writes.append("life_state")
-                agent.revoked["session"] = agent_module.monotonic()
+                agent.revoked["session"] = (agent_module.monotonic(), agent.epoch)
 
             return types.SimpleNamespace(value=complete)
 
@@ -184,6 +203,145 @@ def test_stop_does_not_confuse_finished_autonomy_setter_with_finished_transition
     assert agent.stop(request)["results"]["operation"] == outcome
 
 
+def test_stop_during_light_fade_waits_for_actual_completion(agent_module):
+    agent = bare_agent(agent_module)
+    request = {
+        "id": "fade",
+        "session_id": "session",
+        "action": "light_transition",
+        "payload": {"group": "eyes", "channels": {"red": 0, "green": 0, "blue": 1}, "duration": 1},
+        "agent": "agent",
+        "api": "api",
+        "epoch": 1,
+        "deadline": agent_module.monotonic() + 1,
+    }
+    stop = {"session_id": "session", "payload": {"operation_id": "fade"}}
+
+    def complete_fade():
+        assert agent.stop(stop) == {"confirmed_ids": [], "unresolved_ids": ["fade"]}
+
+    agent.driver.light_transition = lambda _: types.SimpleNamespace(value=complete_fade)
+    agent.records["fade"] = {
+        "session_id": "session",
+        "action": "light_transition",
+        "status": "accepted",
+        "phase": "queued",
+    }
+    replies = queue.Queue(8)
+    agent.work = DrainQueue((request, replies))
+    with pytest.raises(StopIteration):
+        agent.worker()
+    assert replies.get_nowait()["status"] == "accepted"
+    reply = replies.get_nowait()
+    assert reply["status"] == "completed" and reply["result"]["cancelled"] is False
+    assert agent.stop(stop)["results"]["fade"] == reply["result"]
+
+
+@pytest.mark.parametrize("unconfirmed", [None, "speech", "joints", "locomotion", "future"])
+def test_animated_speech_stop_requires_all_native_confirmations(agent_module, unconfirmed):
+    agent = bare_agent(agent_module)
+    calls = []
+
+    def stop(domain):
+        calls.append(domain)
+        if domain == unconfirmed:
+            raise RuntimeError("Unconfirmed " + domain)
+        return {"native_inactive": True}
+
+    agent.driver.stop = lambda: stop("speech")
+    agent.driver.stop_motion = lambda *args, **kwargs: stop("joints")
+    agent.driver.safety_motion = object()
+    agent.driver.locomotion = types.SimpleNamespace(stop=lambda: stop("locomotion"))
+    agent.records["animation"] = {
+        "session_id": "session",
+        "action": "speak",
+        "motion_kind": "animated_speech",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "future": types.SimpleNamespace(
+            isFinished=lambda: unconfirmed != "future",
+            value=lambda timeout: None,
+        ),
+    }
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "animation"}})
+    assert calls == ["locomotion", "speech", "joints"]
+    if unconfirmed is None:
+        assert result["confirmed_ids"] == ["animation"]
+        assert result["results"]["animation"]["animated"] is True
+    else:
+        assert result["confirmed_ids"] == [] and result["unresolved_ids"] == ["animation"]
+
+
+@pytest.mark.parametrize(
+    ("ended", "inactive", "confirmed"),
+    [(True, True, True), (True, False, False), (False, True, False)],
+)
+def test_named_behavior_stop_requires_run_to_settle(agent_module, ended, inactive, confirmed):
+    agent = bare_agent(agent_module)
+    calls = []
+    agent.records["run"] = {
+        "session_id": "session",
+        "action": "behavior_run",
+        "motion_kind": "behavior",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "future": types.SimpleNamespace(isFinished=lambda: ended, value=lambda timeout: None),
+        "behavior": types.SimpleNamespace(request_stop=calls.append, inactive=lambda _: inactive),
+        "behavior_name": "fixture/long",
+    }
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "run"}})
+    assert calls == ["fixture/long"]
+    if confirmed:
+        assert result["confirmed_ids"] == ["run"]
+        assert result["results"]["run"]["name"] == "fixture/long"
+    else:
+        assert result["unresolved_ids"] == ["run"] and not result["confirmed_ids"]
+
+
+def test_behavior_catalog_page_fits_the_private_ipc_frame(agent_module):
+    from behaviors import MAX_NAMES, MAX_PAGE, Behaviors
+
+    adapter = Behaviors.__new__(Behaviors)
+    adapter.names = ["é" * 126 + f"/{index:03}" for index in range(MAX_NAMES)]
+    adapter.running = adapter.names[:5]
+    first = adapter.page(None, MAX_PAGE)
+    last = adapter.page(adapter.names[-2], MAX_PAGE)
+    assert first["next_cursor"] == adapter.names[MAX_PAGE - 1]
+    assert last["items"] == [{"name": adapter.names[-1]}] and last["next_cursor"] is None
+    assert b"\\u00e9" in agent_module.encode(
+        {"result": first, "id": "reply", "status": "completed", "agent": "fixture", "epoch": 1}
+    )
+
+
+@pytest.mark.parametrize("native_confirmation", [False, True])
+def test_gesture_stop_requires_joint_stop_acknowledgement(agent_module, native_confirmation):
+    agent = bare_agent(agent_module)
+    agent.driver.safety_motion = object()
+
+    def stop(names, stop_posture=False):
+        assert names == ["RElbowRoll", "RElbowYaw"]
+        assert not stop_posture
+        if not native_confirmation:
+            raise RuntimeError("Native stop failed")
+
+    agent.driver.stop_motion = stop
+    agent.records["gesture"] = {
+        "session_id": "session",
+        "action": "trajectory",
+        "motion_kind": "gesture",
+        "phase": "dispatch_started",
+        "status": "accepted",
+        "names": ["RElbowRoll", "RElbowYaw"],
+        "future": types.SimpleNamespace(isFinished=lambda: True),
+    }
+    result = agent.stop({"session_id": "session", "payload": {"operation_id": "gesture"}})
+    if native_confirmation:
+        assert result["confirmed_ids"] == ["gesture"]
+        assert result["results"]["gesture"]["stop_confirmed"] is True
+    else:
+        assert result["unresolved_ids"] == ["gesture"] and not result["confirmed_ids"]
+
+
 def test_finite_control_thread_can_finish_normally_without_killing_agent(agent_module, monkeypatch):
     agent = bare_agent(agent_module)
     monkeypatch.setattr(
@@ -238,7 +396,7 @@ def test_epoch_deadline_and_session_fences_reject_stale_dispatch(agent_module):
         "deadline": module.monotonic() + 1,
     }
     assert agent.valid(request) is None
-    agent.revoked["session"] = module.monotonic()
+    agent.revoked["session"] = (module.monotonic(), agent.epoch)
     assert agent.valid(request) == "fenced_session"
     agent.revoked.clear()
     assert agent.valid(dict(request, deadline=module.monotonic() - 1)) == "expired_deadline"
@@ -385,7 +543,13 @@ def test_native_joint_discovery_and_observation_preserve_units_and_sources(agent
     assert joints["LHand"]["unit"] == "ratio"
     assert joints["HeadYaw"]["unit"] == "rad"
     assert joints["LHipYawPitch"]["coupled_with"] == ["RHipYawPitch"]
-    assert observer.chains["LArm"] == ["LShoulderPitch", "LHand"]
+    assert observer.chains["LArm"] == [
+        "LShoulderPitch",
+        "LShoulderRoll",
+        "LElbowYaw",
+        "LElbowRoll",
+        "LHand",
+    ]
     state = observer.sample_joints()
     assert state["measured"]["HeadYaw"] == 0.1
     assert state["commanded"]["HeadYaw"] == 0.2
@@ -440,7 +604,7 @@ def test_walk_stop_needs_native_inactivity_and_ended_future(agent_module, inacti
     agent.records["move"] = record
     result = agent.stop({"payload": {"operation_id": "move"}})
     replies = queue.Queue(8)
-    agent.finish_walk({"id": "move"}, replies, record, False)
+    agent.finish_guarded_motion({"id": "move"}, replies, record, False)
     reply = replies.get_nowait()
     if inactive and ended:
         assert result["confirmed_ids"] == ["move"] and reply["result"]["cancelled"]

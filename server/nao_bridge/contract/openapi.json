@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "NAO Bridge",
-    "version": "1.9.0",
-    "description": "Implemented HTTP/SSE contract with increment-2 foundations, passive sensors, managed sonar, threshold events, finite walking, scoped motion stop, local odometry with still camera capture and managed face observation. Physical motion, hold and new sensor acceptance remain pending. Velocity setpoints run in fixtures and remain gated on physical robots."
+    "version": "1.25.0",
+    "description": "Discover the current robot's capabilities before dispatching commands. HTTP exposes session-owned operations and resources. SSE reports state, observations and operation changes. The contract includes speech and audio output, motion, autonomy, lights, parallel sequences, camera preview and recordings, and retained assets. Some features require specific native services or remain gated pending hardware verification."
   },
   "servers": [
     {
@@ -642,6 +642,34 @@
             }
           }
         ]
+      }
+    },
+    "/audio/playbacks": {
+      "post": {
+        "operationId": "playAudio",
+        "parameters": [
+          { "name": "X-Session-ID", "in": "header", "required": true, "schema": { "type": "string" } },
+          { "name": "Idempotency-Key", "in": "header", "schema": { "type": "string", "minLength": 1, "maxLength": 128 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AudioPlaybackCreate" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted audio playback operation",
+            "headers": { "Location": { "schema": { "type": "string" } } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operation" } } }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
       }
     },
     "/speech/utterances": {
@@ -2277,6 +2305,51 @@
       }
     },
     "/assets": {
+      "post": {
+        "operationId": "uploadAudioAsset",
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "audio/wav": {
+              "schema": { "type": "string", "format": "binary" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Finalized WAV asset",
+            "headers": {
+              "Location": { "schema": { "type": "string" } }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Asset" }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "listAssets",
         "responses": {
@@ -2450,6 +2523,15 @@
                   "type": "string",
                   "format": "binary"
                 }
+              },
+              "image/png": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "video/x-msvideo": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "audio/wav": {
+                "schema": { "type": "string", "format": "binary" }
               }
             }
           },
@@ -2488,6 +2570,15 @@
                   "type": "string",
                   "format": "binary"
                 }
+              },
+              "image/png": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "video/x-msvideo": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "audio/wav": {
+                "schema": { "type": "string", "format": "binary" }
               }
             }
           },
@@ -2830,6 +2921,204 @@
         "description": "On success the operation result is a CameraCaptureResult with the asset ID and acquisition metadata."
       }
     },
+    "/vision/trackers": {
+      "post": {
+        "operationId": "createVisionTracker",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionTracker"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionTrackerCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/vision/trackers/{tracker_id}": {
+      "get": {
+        "operationId": "getVisionTracker",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionTracker"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tracker_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ]
+      }
+    },
+    "/vision/trackers/{tracker_id}/stop": {
+      "post": {
+        "operationId": "stopVisionTracker",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionTracker"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tracker_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
     "/vision/observers": {
       "post": {
         "operationId": "createVisionObserver",
@@ -3086,6 +3375,836 @@
         ],
         "description": "Sequence zero creates an owned base-velocity operation. Newer sequences replace the entire robot-frame target. The planar vector magnitude is bounded by the discovered limit. Duplicate updates leave expiry unchanged. Use operation cancellation or motion stop for a controlled stop. Physical availability requires hardware acceptance."
       }
+    },
+    "/lights": {
+      "get": {
+        "operationId": "listLightGroups",
+        "summary": "Discover common RGB and monochrome light groups and their shared resources",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LightCatalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lights/transitions": {
+      "post": {
+        "operationId": "setLights",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LightTransitionCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Set brightness or RGB color on a discovered light group",
+        "description": "Duration is in seconds. A native fade already in flight may finish after cancellation is requested."
+      }
+    },
+    "/speech/options": {
+      "get": {
+        "operationId": "discoverSpeechOptions",
+        "summary": "Discover supported utterance modes, voice, language and speech option bounds",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechOptions"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/behaviors": {
+      "get": {
+        "operationId": "listBehaviors",
+        "summary": "Discover installed behaviors and the last observed running set",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BehaviorPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BehaviorName"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "default": 12
+            }
+          }
+        ]
+      }
+    },
+    "/behaviors/runs": {
+      "post": {
+        "operationId": "runBehavior",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BehaviorRunCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Run an installed behavior under the session's command ownership",
+        "description": "Completion confirms that the named native run ended. Check discovery for run availability."
+      }
+    },
+    "/motion/gestures": {
+      "get": {
+        "operationId": "listGestures",
+        "summary": "Discover built-in gestures, variant resources and posture requirements",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GestureCatalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/motion/gesture_runs": {
+      "post": {
+        "operationId": "runGesture",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GestureRunCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Compile and run a bounded built-in joint gesture",
+        "description": "Gestures require fresh joint state and use the shared trajectory lifecycle."
+      }
+    },
+    "/sequences/schema": {
+      "get": {
+        "operationId": "getSequenceSchema",
+        "summary": "Download the self-contained portable sequence schema",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sequences/validate": {
+      "post": {
+        "operationId": "validateSequence",
+        "responses": {
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequenceValidation"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SequenceDocument"
+              }
+            }
+          }
+        },
+        "summary": "Plan a finite sequence and diagnose resource conflicts without dispatching",
+        "description": "Pure structural and capability checks with a resource timeline. Commands recheck live readiness at execution."
+      }
+    },
+    "/sequences/runs": {
+      "post": {
+        "operationId": "runSequence",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SequenceDocument"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Reserve resources and execute a finite sequence",
+        "description": "The returned SequenceResult records child statuses, the failing path and the termination reason."
+      }
+    },
+    "/autonomy/profiles": {
+      "get": {
+        "operationId": "listAutonomyProfiles",
+        "summary": "List autonomy profiles and settings unavailable on this connection",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutonomyProfileCatalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/autonomy/profile_runs": {
+      "post": {
+        "operationId": "applyAutonomyProfile",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas.json#/$defs/AutonomyProfileRunCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Apply a discovered autonomy profile and return per-setting outcomes"
+      }
+    },
+    "/vision/previews": {
+      "post": {
+        "operationId": "createCameraPreview",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraPreview"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraPreviewCreate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Create a managed JPEG preview"
+      }
+    },
+    "/vision/previews/{preview_id}": {
+      "get": {
+        "operationId": "getCameraPreview",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraPreview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "preview_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ],
+        "summary": "Get camera preview status"
+      }
+    },
+    "/vision/previews/{preview_id}/stop": {
+      "post": {
+        "operationId": "stopCameraPreview",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraPreview"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Resource status URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "preview_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "summary": "Release a camera preview"
+      }
+    },
+    "/vision/previews/{preview_id}/content": {
+      "get": {
+        "operationId": "streamCameraPreview",
+        "summary": "Stream ordered latest JPEG frames",
+        "parameters": [
+          {
+            "name": "preview_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          {
+            "name": "X-Session-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Multipart JPEG frames with Content-Length and X-Frame-Sequence per part.",
+            "content": {
+              "multipart/x-mixed-replace": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Typed API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3101,6 +4220,9 @@
       },
       "SessionRevoke": {
         "$ref": "schemas.json#/$defs/SessionRevoke"
+      },
+      "AudioPlaybackCreate": {
+        "$ref": "schemas.json#/$defs/AudioPlaybackCreate"
       },
       "SpeechCreate": {
         "$ref": "schemas.json#/$defs/SpeechCreate"
@@ -3348,6 +4470,12 @@
       "CameraCaptureMetadata": {
         "$ref": "schemas.json#/$defs/CameraCaptureMetadata"
       },
+      "VisionTrackerCreate": {
+        "$ref": "schemas.json#/$defs/VisionTrackerCreate"
+      },
+      "VisionTracker": {
+        "$ref": "schemas.json#/$defs/VisionTracker"
+      },
       "VisionObserver": {
         "$ref": "schemas.json#/$defs/VisionObserver"
       },
@@ -3365,6 +4493,90 @@
       },
       "VelocityControlCapability": {
         "$ref": "schemas.json#/$defs/VelocityControlCapability"
+      },
+      "LightGroup": {
+        "$ref": "schemas.json#/$defs/LightGroup"
+      },
+      "LightCatalog": {
+        "$ref": "schemas.json#/$defs/LightCatalog"
+      },
+      "LightReading": {
+        "$ref": "schemas.json#/$defs/LightReading"
+      },
+      "LightStateValue": {
+        "$ref": "schemas.json#/$defs/LightStateValue"
+      },
+      "LightTransitionCreate": {
+        "$ref": "schemas.json#/$defs/LightTransitionCreate"
+      },
+      "SpeechRange": {
+        "$ref": "schemas.json#/$defs/SpeechRange"
+      },
+      "SpeechOptions": {
+        "$ref": "schemas.json#/$defs/SpeechOptions"
+      },
+      "BehaviorName": {
+        "$ref": "schemas.json#/$defs/BehaviorName"
+      },
+      "InstalledBehavior": {
+        "$ref": "schemas.json#/$defs/InstalledBehavior"
+      },
+      "BehaviorPage": {
+        "$ref": "schemas.json#/$defs/BehaviorPage"
+      },
+      "BehaviorRunCreate": {
+        "$ref": "schemas.json#/$defs/BehaviorRunCreate"
+      },
+      "BehaviorChanged": {
+        "$ref": "schemas.json#/$defs/BehaviorChanged"
+      },
+      "GestureVariant": {
+        "$ref": "schemas.json#/$defs/GestureVariant"
+      },
+      "GestureDefinition": {
+        "$ref": "schemas.json#/$defs/GestureDefinition"
+      },
+      "GestureCatalog": {
+        "$ref": "schemas.json#/$defs/GestureCatalog"
+      },
+      "GestureRunCreate": {
+        "$ref": "schemas.json#/$defs/GestureRunCreate"
+      },
+      "SequenceDocument": {
+        "$ref": "schemas.json#/$defs/SequenceDocument"
+      },
+      "SequenceNode": {
+        "$ref": "schemas.json#/$defs/SequenceNode"
+      },
+      "SequenceTimelineStep": {
+        "$ref": "schemas.json#/$defs/SequenceTimelineStep"
+      },
+      "SequenceDiagnostic": {
+        "$ref": "schemas.json#/$defs/SequenceDiagnostic"
+      },
+      "SequenceValidation": {
+        "$ref": "schemas.json#/$defs/SequenceValidation"
+      },
+      "SequenceResult": {
+        "$ref": "schemas.json#/$defs/SequenceResult"
+      },
+      "AutonomyProfile": {
+        "$ref": "schemas.json#/$defs/AutonomyProfile"
+      },
+      "AutonomyProfileCatalog": {
+        "$ref": "schemas.json#/$defs/AutonomyProfileCatalog"
+      },
+      "AutonomyProfileRunCreate": {
+        "$ref": "schemas.json#/$defs/AutonomyProfileRunCreate"
+      },
+      "AutonomyRestoration": {
+        "$ref": "schemas.json#/$defs/AutonomyRestoration"
+      },
+      "CameraPreview": {
+        "$ref": "schemas.json#/$defs/CameraPreview"
+      },
+      "CameraPreviewCreate": {
+        "$ref": "schemas.json#/$defs/CameraPreviewCreate"
       }
     }
   }

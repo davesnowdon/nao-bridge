@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.9.0",
+  "contract_version": "1.24.0",
   "symbols": [
     "bridge_instance_id",
     "connection_generation",
@@ -11,9 +11,167 @@
     "sensor_observer_id",
     "threshold_id",
     "origin_id",
-    "control_id"
+    "control_id",
+    "preview_id"
   ],
   "scenarios": [
+    {
+      "name": "head-only tracker lifecycle",
+      "steps": [
+        "Check vision.face_tracking and fresh head joint readiness",
+        "Create a face tracker and follow tracker state",
+        "Stop the tracker and read its operation and hold result"
+      ],
+      "expected": [
+        "The tracker reserves HeadYaw and HeadPitch while active",
+        "Confirmed stop releases only the owned registration and reports head hold",
+        "Uncertain cleanup remains fenced for session recovery"
+      ],
+      "client_decisions": [
+        "Read the tracker status after SSE gaps and keep unknown outcomes visible."
+      ]
+    },
+    {
+      "name": "managed people observation",
+      "steps": [
+        "Check vision.people and create compatible people observers",
+        "Attach vision.detections and inspect a people frame",
+        "Stop both observers and check the terminal status"
+      ],
+      "expected": [
+        "Automatic observation reports the native camera on each frame",
+        "Each track includes angular coordinates and includes range when supplied",
+        "The detector is released after its last observer stops"
+      ],
+      "client_decisions": [
+        "Scope person IDs to the robot connection and treat missing distance as unavailable."
+      ]
+    },
+    {
+      "name": "shared NAOmark observation",
+      "steps": [
+        "Check vision.landmarks and create two compatible landmark observers",
+        "Stop one observer and attach a vision detections event stream",
+        "Check landmark readiness and read a frame addressed to the remaining observer",
+        "Stop the remaining observer"
+      ],
+      "expected": [
+        "The retained observer continues receiving marker codes and angular geometry",
+        "The last stop releases landmark demand without ending face demand"
+      ],
+      "client_decisions": [
+        "Select the detector using the observer configuration and keep each detector's readiness separate."
+      ]
+    },
+    {
+      "name": "WAV playback and scoped cancellation",
+      "steps": [
+        "Check audio.playback and the discovered speaker rate",
+        "Create a playback operation using a retained PCM WAV asset ID",
+        "Cancel an active playback and await its terminal operation"
+      ],
+      "expected": [
+        "Playback reserves speech output and protects the referenced asset from deletion",
+        "The bridge stops submitting PCM before reporting a confirmed cancellation",
+        "A subsequent session command can acquire speech output after settlement"
+      ],
+      "client_decisions": [
+        "Use the terminal operation and its result to distinguish cancellation, failure and uncertain output."
+      ]
+    },
+    {
+      "name": "bounded WAV upload and retry",
+      "steps": [
+        "Check assets.audio_upload and audio.upload_formats",
+        "POST the WAV bytes with the session header and an idempotency key",
+        "Retry with the original key and bytes and download the asset"
+      ],
+      "expected": [
+        "Both responses identify the same finalized audio.upload asset",
+        "Downloaded bytes and SHA-256 match the uploaded WAV"
+      ],
+      "client_decisions": [
+        "Preserve the original bytes for explicit retry after an ambiguous response."
+      ]
+    },
+    {
+      "name": "bounded microphone recording",
+      "steps": [
+        "Check recordings.microphone in robot capabilities",
+        "Start a microphone recording and await its operation",
+        "Read the asset and download the WAV and a byte range"
+      ],
+      "expected": [
+        "The accepted source identifies 16 kHz mono PCM WAV",
+        "The WAV frame count matches the retained asset metadata",
+        "The downloaded WAV matches the asset SHA-256 and byte range"
+      ],
+      "client_decisions": [
+        "Use the operation and asset status to identify partial audio.",
+        "Check the aggregate loss metadata before aligning audio to another timeline."
+      ]
+    },
+    {
+      "name": "bounded camera recording",
+      "steps": [
+        "Check recordings.camera in robot capabilities",
+        "Create a camera recording and await its operation",
+        "Read the asset and download its full content and a byte range"
+      ],
+      "expected": [
+        "The accepted source identifies MJPEG AVI",
+        "The retained asset contains the completed frames and frame-gap metadata",
+        "The downloaded AVI matches its asset SHA-256 and byte range"
+      ],
+      "client_decisions": [
+        "Read the operation and asset status before using the finalized media.",
+        "Use recording metadata to detect frame loss and compare acquisition time with playback duration."
+      ]
+    },
+    {
+      "name": "managed camera preview",
+      "steps": [
+        "Create two previews with the same camera, resolution and frame rate",
+        "Open one multipart JPEG stream",
+        "Stop the other preview and read another frame",
+        "Capture a still from the same camera and resolution",
+        "Stop the last preview and read its final status"
+      ],
+      "expected": [
+        "Two preview IDs share the same live feed",
+        "Each part contains a complete JPEG and a rising frame sequence",
+        "The remaining preview continues after the first stop",
+        "Still capture succeeds while the preview is streaming",
+        "The last preview reports stopped after native cleanup"
+      ],
+      "client_decisions": [
+        "Treat gaps in frame sequence as missed preview frames.",
+        "Use the status resource to read final cleanup after closing a stream."
+      ]
+    },
+    {
+      "name": "autonomy profile discovery, application and observed changes",
+      "steps": [
+        "GET /api/autonomy/profiles without a session",
+        "Apply an explicit disabled life transition and read observed state",
+        "Subscribe to autonomy.changed and wait for stream.ready",
+        "Apply the interactive profile, then the presentation profile",
+        "Apply the interactive profile with restore_on_close true",
+        "Close the session and inspect the per-setting restoration report"
+      ],
+      "expected": [
+        "Inspect the manual, presentation and interactive bundles and unavailable settings",
+        "Profile operations give a result for each requested setting",
+        "The interactive change appears as observed life and awareness state",
+        "The presentation profile reduces spontaneous activity again",
+        "The cleanup operation reports life restored to disabled after fenced read-back"
+      ],
+      "client_decisions": [
+        "Use the catalog to decide whether to proceed strictly or opt into partial application.",
+        "Refresh autonomy state after stream reset or a connection generation change.",
+        "Inspect the close operation's autonomy_restoration result to distinguish restored, skipped and unknown settings."
+      ]
+    },
     {
       "name": "speech lifecycle",
       "steps": [
@@ -33,6 +191,90 @@
       "nondeterminism": [
         "operation can complete before first GET",
         "opaque IDs and timestamps"
+      ]
+    },
+    {
+      "name": "speech options and contextual animated speech",
+      "steps": [
+        "GET /api/speech/options without a session",
+        "POST a plain utterance and await completion",
+        "POST an animated utterance while awake and await completion",
+        "start an animated utterance with a fixture long enough to be interrupted",
+        "POST /api/motion/stop with scope all and read both operations"
+      ],
+      "expected": [
+        "supported languages, voice, ranges and animated capability for this connection",
+        "speech.utterance owns speech.output",
+        "speech.animated_utterance owns speech, locomotion, joints and lights; succeeded",
+        "running in the fixture with independent audio and motion",
+        "confirmed stop cancels the utterance; missing confirmation preserves unknown and ownership"
+      ],
+      "client_decisions": [
+        "Request animated speech only when the capability is available for the selected language.",
+        "Reconcile both operation results before issuing more motion after an uncertain stop."
+      ]
+    },
+    {
+      "name": "installed behavior discovery, observed running sets and named stop",
+      "steps": [
+        "GET /api/behaviors?limit=1 and follow next_cursor",
+        "POST /api/behaviors/runs for fixture/greet and await completion",
+        "subscribe to behavior.changed and wait for stream.ready",
+        "start fixture/long and read the observed running set",
+        "cancel its Operation and read the outcome and SSE"
+      ],
+      "expected": [
+        "fixture/greet and fixture/long on separate pages",
+        "behavior.run owns behavior execution, speech, locomotion, joints and lights; succeeded",
+        "201 subscription and stream ready",
+        "observed running set includes fixture/long",
+        "confirmed scoped cancel, with running-set events showing start and end"
+      ],
+      "client_decisions": [
+        "Check the run capability even when installed names are present.",
+        "Use the operation result to reconcile ownership. Use behavior.changed for native running observation."
+      ]
+    },
+    {
+      "name": "bounded gestures alongside speech and lights",
+      "steps": [
+        "GET /api/motion/gestures and inspect wave side capabilities",
+        "POST /api/motion/gesture_runs with name wave while in StandInit",
+        "start plain speech and eye lighting while the wave is running",
+        "await the three operation outcomes",
+        "start a repeated left wave and request cancellation"
+      ],
+      "expected": [
+        "wave lists StandInit and side-specific arm joint resources",
+        "motion.gesture_run reserves the right arm by default",
+        "both operations are admitted with disjoint resources",
+        "all three succeeded and the wave reports its planned duration",
+        "cancelled after confirmed joint stop and ended interpolation"
+      ],
+      "client_decisions": [
+        "Use the catalog to choose a supported gesture and posture.",
+        "Check measured joint state after cancellation. Cancellation can leave an intermediate pose."
+      ]
+    },
+    {
+      "name": "server-side presentation sequence",
+      "steps": [
+        "GET /api/sequences/schema and validate presentation-sequence.json",
+        "POST /api/sequences/validate without a session",
+        "POST /api/sequences/runs with an active session",
+        "await the parent and list children by parent_id",
+        "read current motion state"
+      ],
+      "expected": [
+        "a self-contained portable schema",
+        "seven leaves, three concurrent native actions, and unknown overall duration",
+        "202 sequence.run with seven child operation IDs and reserved resources",
+        "seven succeeded children with paths and overlapping speech, wave and lights",
+        "awake is false after the explicit rest child"
+      ],
+      "client_decisions": [
+        "Dry-check the sequence and inspect all diagnostic paths before running.",
+        "Use the parent result and child status to determine which effects completed."
       ]
     },
     {
@@ -264,6 +506,29 @@
       ],
       "nondeterminism": [
         "opaque IDs, native image timestamps, and callback ordering"
+      ]
+    },
+    {
+      "name": "light transitions and read-back",
+      "steps": [
+        "GET /api/lights and compare the eyes and eyes.left resource lists",
+        "POST /api/lights/transitions for eyes.left with color #0000ff and brightness 0.5",
+        "repeat the POST with the same key, then await completion",
+        "send a color to a mono group",
+        "apply brightness to the mono group and await completion",
+        "GET /api/state?include=lights and subscribe to light samples"
+      ],
+      "expected": [
+        "available RGB and mono groups and overlapping eye resources",
+        "202 lights.transition",
+        "same operation ID and succeeded",
+        "422 unsupported",
+        "succeeded with mono brightness applied",
+        "the left eye reports observed blue at 0.5, the eyes group is mixed, and SSE carries the same readings"
+      ],
+      "client_decisions": [
+        "Use listed modes and overlapping resource IDs when choosing targets.",
+        "Read fresh actuator state independently of the operation result."
       ]
     },
     {

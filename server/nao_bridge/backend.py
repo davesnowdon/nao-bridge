@@ -11,6 +11,9 @@ from .camera_frames import CAMERA_SIZES
 from .contract import CONTACTS, PASSIVE_SENSORS
 from .errors import BackendUnknown, BridgeError
 from .fake_controls import FakeControls, FakeVelocityControls
+from .lights import RGB_CHANNELS
+from .playback import AudioSource
+from .wav import SAMPLE_RATE
 
 EventSink = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -23,6 +26,13 @@ class Backend(Protocol):
     async def speak(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def play_audio(
+        self,
+        operation_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+        source: AudioSource,
+    ) -> dict[str, Any]: ...
     async def trajectory(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
@@ -32,12 +42,33 @@ class Backend(Protocol):
     async def configure_autonomy(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]: ...
+    async def restore_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
+    async def light_transition(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
+    async def behavior_page(self, cursor: str | None, limit: int) -> dict[str, Any]: ...
+    async def behavior_run(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
     async def configure_recognition(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def configure_landmarks(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def configure_people(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def track_face(self, operation_id: str, session_id: str) -> dict[str, Any]: ...
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> tuple[dict[str, Any], bytes]: ...
+    async def run_camera_feed(self, feed_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    async def latest_camera_frame(
+        self, feed_id: str, payload: dict[str, Any], after: int
+    ) -> tuple[dict[str, Any], bytes] | None: ...
+    async def run_microphone_feed(self, operation_id: str, session_id: str) -> dict[str, Any]: ...
+    async def microphone_blocks(
+        self, operation_id: str, after: int
+    ) -> list[tuple[dict[str, Any], bytes]]: ...
     async def joint_setpoint(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     async def joint_control_status(self, session_id: str, operation_id: str) -> dict[str, Any]: ...
     async def release_joint_controls(self, session_id: str) -> dict[str, Any]: ...
@@ -73,9 +104,16 @@ class FakeBackend:
         self.posture_reached = True
         self.calls: list[dict[str, Any]] = []
         self.autonomy_results: dict[str, dict[str, Any]] = {}
+        self.light_results: dict[str, dict[str, Any]] = {}
+        self.behavior_names = ["fixture/greet", "fixture/long"]
+        self.running_behaviors: set[str] = set()
         self.controls = FakeControls(self)
         self.velocity_controls = FakeVelocityControls(self)
         self.active: dict[str, tuple[str, asyncio.Event]] = {}
+        self.camera_feed_frame: tuple[dict[str, Any], bytes] | None = None
+        self.camera_feed_id: str | None = None
+        self.microphone_id: str | None = None
+        self.audio_blocks: deque[tuple[dict[str, Any], bytes]] = deque(maxlen=8)
         self.motion_stop_ids: deque[str] = deque(maxlen=4096)
         self.revoked: set[str] = set()
         self.sink: EventSink | None = None
@@ -95,13 +133,19 @@ class FakeBackend:
         self.sonar_calls: list[dict[str, Any]] = []
         self.sonar_failure: str | None = None
         self.faces: dict[str, Any] | None = None
+        self.landmarks: dict[str, Any] | None = None
+        self.next_landmark = 0.0
+        self.landmark_calls: list[dict[str, Any]] = []
+        self.people: dict[str, Any] | None = None
+        self.next_people = 0.0
         self.face_calls: list[dict[str, Any]] = []
         self.face_failure: str | None = None
         self.next_face = 0.0
+        arms = ("ShoulderPitch", "ShoulderRoll", "ElbowYaw", "ElbowRoll", "Hand")
         self.chains = {
             "Head": ["HeadYaw", "HeadPitch"],
-            "LArm": ["LShoulderPitch", "LHand"],
-            "RArm": ["RShoulderPitch", "RHand"],
+            "LArm": ["L" + joint for joint in arms],
+            "RArm": ["R" + joint for joint in arms],
             "LLeg": ["LHipYawPitch"],
             "RLeg": ["RHipYawPitch"],
         }
@@ -178,6 +222,26 @@ class FakeBackend:
             }
             for name, value in self.autonomy_state.items()
         }
+        self.light_channels = {
+            "eyes.left": dict.fromkeys(RGB_CHANNELS, 0.0),
+            "eyes.right": dict.fromkeys(RGB_CHANNELS, 0.0),
+            "ears.left": {"intensity": 0.0},
+        }
+        self.light_members = {
+            "eyes": ("eyes.left", "eyes.right"),
+            "eyes.left": ("eyes.left",),
+            "eyes.right": ("eyes.right",),
+            "ears": ("ears.left",),
+            "ears.left": ("ears.left",),
+        }
+        self.light_catalog = [
+            {
+                "id": group,
+                "mode": "mono" if group.startswith("ears") else "rgb",
+                "resources": [f"lights.{group.split('.')[0]}+{leaf}" for leaf in members],
+            }
+            for group, members in self.light_members.items()
+        ]
 
     async def start(self, sink: EventSink) -> None:
         self.sink = sink
@@ -188,8 +252,14 @@ class FakeBackend:
         if not connected:
             self.velocity_controls.invalidate()
             self.motion_state["locomotion_active"] = False
+            if self.camera_feed_id is not None:
+                self.active[self.camera_feed_id][1].set()
+            if self.microphone_id is not None:
+                self.active[self.microphone_id][1].set()
         self.connected = connected
         self.faces = None
+        self.landmarks = None
+        self.people = None
         self.motion_state["odometry"] = {
             "origin_id": uuid.uuid4().hex,
             "origin_reason": "connection_started",
@@ -226,14 +296,23 @@ class FakeBackend:
                         "voices": ["default"],
                         "default_language": "English",
                         "default_voice": "default",
+                        "animated": {"available": True, "reason": None},
                     },
                     "touch_available": connected,
                     "touch_events": list(self.touch) if connected else [],
                     "sensor_catalog": copy.deepcopy(self.sensor_catalog),
                     "joints": self.joints,
+                    "gestures_verified": connected,
                     "chains": self.chains,
                     "postures": ["StandInit", "Sit", "Crouch"],
                     "autonomy": self.autonomy_catalog,
+                    "lights": self.light_catalog,
+                    "behaviors": {
+                        "discovered": True,
+                        "available": connected,
+                        "events": connected,
+                        "truncated": False,
+                    },
                     "motion_events": {
                         "posture_fields": ["family", "posture"],
                         "fall_phases": ["fallen", "falling"],
@@ -267,6 +346,8 @@ class FakeBackend:
                         "max_translation_m_s": 0.10,
                         "max_rotation_rad_s": 0.40,
                     },
+                    "microphone": connected,
+                    "speaker_sample_rate_hz": 22050 if connected else None,
                     "cameras": [
                         {
                             "id": camera,
@@ -283,6 +364,20 @@ class FakeBackend:
                         "available": connected,
                         "camera": "top" if connected else None,
                         "rates_hz": [1, 2, 5] if connected else [],
+                    },
+                    "landmarks": {
+                        "available": connected,
+                        "camera": "top" if connected else None,
+                        "rates_hz": [1, 2, 5] if connected else [],
+                    },
+                    "people": {
+                        "available": connected,
+                        "camera": None,
+                        "rates_hz": [1, 2, 5] if connected else [],
+                    },
+                    "face_tracker": {
+                        "available": connected,
+                        "reason": None if connected else "not_connected",
                     },
                     "locomotion": {
                         "available": connected,
@@ -303,6 +398,12 @@ class FakeBackend:
                 now = time.monotonic()
                 if self.faces and now >= self.next_face:
                     await self.sample_face(now)
+                if self.landmarks and now >= self.next_landmark:
+                    self.next_landmark = now + 1 / self.landmarks["configuration"]["rate_hz"]
+                    await self.sample_vision(now, "landmarks", self.landmarks)
+                if self.people and now >= self.next_people:
+                    self.next_people = now + 1 / self.people["configuration"]["rate_hz"]
+                    await self.sample_vision(now, "people", self.people)
                 if (
                     self.sonar["enabled"]
                     and self.sonar["status"] == "warming"
@@ -345,6 +446,7 @@ class FakeBackend:
                                     if value is None
                                 },
                             },
+                            "lights": self.sample_lights() if self.light_catalog else None,
                         },
                         "started": now,
                         "finished": now,
@@ -357,10 +459,34 @@ class FakeBackend:
         if self.sink:
             await self.sink("touch.changed", {"sensor": sensor, "pressed": pressed})
 
+    def sample_lights(self) -> dict[str, Any]:
+        groups = {}
+        for group, members in self.light_members.items():
+            first = self.light_channels[members[0]]
+            channels = {
+                name: value
+                if all(self.light_channels[member][name] == value for member in members)
+                else None
+                for name, value in first.items()
+            }
+            groups[group] = {
+                "quality": "mixed" if None in channels.values() else "observed",
+                "channels": channels,
+            }
+        return {"groups": groups}
+
     async def speak(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        return await self._execute(operation_id, session_id, payload, "speech")
+        animated = payload.get("animated", False)
+        result = await self._execute(
+            operation_id, session_id, payload, "animated_speech" if animated else "speech"
+        )
+        if animated:
+            result["animated"] = True
+            if result.get("cancelled") and result.get("dispatched") is not False:
+                result["stop_confirmed"] = True
+        return result
 
     async def configure_sonar(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.sonar_calls.append(copy.deepcopy(payload))
@@ -384,49 +510,98 @@ class FakeBackend:
 
     async def configure_faces(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.face_calls.append(copy.deepcopy(payload))
-        if not self.connected or self.face_failure == "unknown":
-            raise BackendUnknown("Face detector acknowledgement lost")
+        value = self.configure_vision(payload, self.face_failure)
+        self.faces = value if value["configuration"] else None
+        self.next_face = 0
+        return value
+
+    async def configure_landmarks(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.landmark_calls.append(copy.deepcopy(payload))
+        value = self.configure_vision(payload)
+        self.landmarks = value if value["configuration"] else None
+        self.next_landmark = 0
+        return value
+
+    async def configure_people(self, payload: dict[str, Any]) -> dict[str, Any]:
+        value = self.configure_vision(payload, auto_camera=True)
+        self.people = value if value["configuration"] else None
+        self.next_people = 0
+        return value
+
+    async def track_face(self, operation_id: str, session_id: str) -> dict[str, Any]:
+        running = asyncio.create_task(
+            self._execute(operation_id, session_id, {}, "face_track", delay=3600)
+        )
+        try:
+            while not running.done() and operation_id not in self.active:
+                await asyncio.sleep(0)
+            for state in ("searching", "tracking", "lost"):
+                if running.done() or self.sink is None or not self.connected:
+                    break
+                await self.sink("tracker.state", {"operation_id": operation_id, "state": state})
+                await asyncio.wait({running}, timeout=0.12)
+            result = await running
+            if result.get("dispatched") is not False:
+                result["head_hold"] = {"required": True, "confirmed": True}
+            return result
+        finally:
+            if not running.done():
+                running.cancel()
+                await asyncio.gather(running, return_exceptions=True)
+
+    def configure_vision(
+        self, payload: dict[str, Any], failure: str | None = None, *, auto_camera: bool = False
+    ) -> dict[str, Any]:
+        if not self.connected or failure == "unknown":
+            raise BackendUnknown("Detector acknowledgement lost")
         config = payload["configuration"]
-        if config and (config["camera"] not in ("top", None) or self.face_failure == "rejected"):
+        if config and (
+            not auto_camera and config["camera"] not in ("top", None) or failure == "rejected"
+        ):
             raise BridgeError(
                 "unsupported", "Requested camera is not configured on the detector", 422
             )
-        accepted = {**config, "camera": "top"} if config is not None else None
-        value = {
+        accepted = {**config, "camera": "top"} if config is not None and not auto_camera else config
+        return {
             **payload,
             "configuration": accepted,
             "status": "active" if accepted else "stopped",
         }
-        self.faces = value if accepted else None
-        self.next_face = 0
-        return value
 
     async def sample_face(self, now: float) -> None:
-        if self.sink is None or self.faces is None:
+        if self.faces is not None:
+            self.next_face = now + 1 / self.faces["configuration"]["rate_hz"]
+            await self.sample_vision(now, "faces", self.faces)
+
+    async def sample_vision(self, now: float, kind: str, detector: dict[str, Any]) -> None:
+        if self.sink is None:
             return
-        self.next_face = now + 1 / self.faces["configuration"]["rate_hz"]
         usecs = int((now % 1) * 1_000_000)
+        camera = detector["configuration"]["camera"] or "top"
+        detection = {
+            "id": f"top-{int(now)}-{usecs}-0",
+            "alpha_rad": -0.15,
+            "beta_rad": 0.08,
+            "width_rad": 0.4,
+            "height_rad": 0.3,
+        }
+        if kind == "landmarks":
+            detection.update(marker_id=84, heading_rad=0.2)
+        if kind == "people":
+            detection = {"id": "person-7", "alpha_rad": -0.15, "beta_rad": 0.05, "distance_m": 1.3}
         await self.sink(
-            "faces.detections",
+            kind + ".detections",
             {
-                "producer_id": self.faces["producer_id"],
-                "revision": self.faces["revision"],
-                "camera": "top",
-                "frame": "camera.top",
+                "producer_id": detector["producer_id"],
+                "revision": detector["revision"],
+                "camera": camera,
+                "frame": "camera." + camera,
                 "source_time": {
                     "clock": "naoqi_camera",
                     "seconds": int(now),
                     "microseconds": usecs,
                 },
-                "faces": [
-                    {
-                        "id": f"top-{int(now)}-{usecs}-0",
-                        "alpha_rad": -0.15,
-                        "beta_rad": 0.08,
-                        "width_rad": 0.4,
-                        "height_rad": 0.3,
-                    }
-                ],
+                kind: [detection],
             },
         )
 
@@ -469,7 +644,28 @@ class FakeBackend:
     async def trajectory(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        result = await self._execute(operation_id, session_id, payload, "trajectory")
+        gesture = payload.get("gesture")
+        delay = 0.0
+        if gesture is not None:
+            required = gesture["required_posture"]
+            measured = self.joint_state["measured"]
+            if (
+                self.motion_state["locomotion_active"] is not False
+                or (required is not None and self.motion_state["posture"] != required)
+                or any(
+                    abs(measured[name] - start) > 0.1
+                    for name, start in zip(payload["names"], gesture["measured_start"], strict=True)
+                )
+            ):
+                raise BridgeError("precondition_failed", "The gesture starting pose changed", 409)
+            delay = max(times[-1] for times in payload["times"])
+        result = await self._execute(operation_id, session_id, payload, "trajectory", delay=delay)
+        if (
+            gesture is not None
+            and result.get("cancelled")
+            and result.get("dispatched") is not False
+        ):
+            result["stop_confirmed"] = True
         if not result.get("cancelled"):
             for name, points in zip(payload["names"], payload["angles"], strict=True):
                 peers = [name, *next(j["coupled_with"] for j in self.joints if j["name"] == name)]
@@ -566,12 +762,119 @@ class FakeBackend:
         self.autonomy_results[operation_id] = result
         return result
 
+    async def restore_autonomy(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._execute(operation_id, session_id, payload, "restore_autonomy")
+        cancelled = result.get("cancelled", False)
+        settings = []
+        for name, entry in payload["settings"].items():
+            current = self.autonomy_state[name]
+            reason = (
+                "restoration_stopped"
+                if cancelled
+                else "native_safeguard_active"
+                if self.autonomy_state["life_state"] == "safeguard"
+                else "unsupported"
+                if self.autonomy_catalog[name]["status"] != "available"
+                else "external_change"
+                if current != entry["applied"]
+                else None
+            )
+            if reason is None:
+                self.autonomy_state[name] = entry["before"]
+            settings.append(
+                {
+                    **entry,
+                    "setting": name,
+                    "observed": self.autonomy_state[name],
+                    "status": "skipped" if reason else "restored",
+                    "reason": reason,
+                }
+            )
+        result = {
+            **result,
+            "outcome": "cancelled" if cancelled else "succeeded",
+            "settings": settings,
+        }
+        self.autonomy_results[operation_id] = result
+        return result
+
+    async def light_transition(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = await self._execute(
+            operation_id, session_id, payload, "light_transition", delay=payload["duration"]
+        )
+        if not result.get("cancelled"):
+            for member in self.light_members[payload["group"]]:
+                self.light_channels[member] = dict(payload["channels"])
+        self.light_results[operation_id] = result
+        return result
+
+    async def behavior_page(self, cursor: str | None, limit: int) -> dict[str, Any]:
+        if cursor is not None and cursor not in self.behavior_names:
+            raise BridgeError("invalid_request", "Behavior cursor is invalid or expired")
+        start = self.behavior_names.index(cursor) + 1 if cursor is not None else 0
+        names = self.behavior_names[start : start + limit]
+        return {
+            "items": [{"name": name} for name in names],
+            "next_cursor": names[-1] if start + limit < len(self.behavior_names) else None,
+            "running": sorted(self.running_behaviors),
+        }
+
+    async def behavior_run(
+        self, operation_id: str, session_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        name = payload["name"]
+        if name not in self.behavior_names:
+            raise BridgeError("unsupported", "Installed behavior unavailable", 422)
+        if name in self.running_behaviors:
+            raise BridgeError("resource_busy", "The native behavior is already running", 409)
+        result = await self._execute(
+            operation_id,
+            session_id,
+            payload,
+            "behavior_run",
+            delay=30.0 if name == "fixture/long" else 0,
+        )
+        return {**result, "name": name}
+
+    async def play_audio(
+        self,
+        operation_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+        source: AudioSource,
+    ) -> dict[str, Any]:
+        result = await self._execute(
+            operation_id, session_id, payload, "audio_playback", delay=payload["duration_seconds"]
+        )
+        return {
+            **result,
+            "sample_rate_hz": payload["sample_rate_hz"],
+            "frames_submitted": 0
+            if result.get("cancelled")
+            else round(payload["sample_rate_hz"] * payload["duration_seconds"]),
+        }
+
     async def _execute(
-        self, operation_id: str, session_id: str, payload: dict[str, Any], action: str
+        self,
+        operation_id: str,
+        session_id: str,
+        payload: dict[str, Any],
+        action: str,
+        *,
+        delay: float = 0.0,
     ) -> dict[str, Any]:
         if not self.connected:
             raise BackendUnknown("Robot disconnected before dispatch could be established")
-        if session_id in self.revoked:
+        if action == "restore_autonomy":
+            if session_id not in self.revoked:
+                raise BridgeError(
+                    "session_invalid", "Session must be fenced before restoration", 409
+                )
+        elif session_id in self.revoked:
             raise BridgeError("session_invalid", "Agent rejected fenced session", 409)
         if operation_id in self.motion_stop_ids:
             return {"cancelled": True, "dispatched": False}
@@ -591,9 +894,14 @@ class FakeBackend:
             raise BridgeError("unsupported", "Injected native rejection", 422)
         cancel = asyncio.Event()
         self.active[operation_id] = (session_id, cancel)
+        behavior = payload["name"] if action == "behavior_run" else None
         try:
+            if behavior is not None:
+                self.running_behaviors.add(behavior)
+                if self.sink:
+                    await self.sink("behavior.changed", {"running": sorted(self.running_behaviors)})
             try:
-                await asyncio.wait_for(cancel.wait(), timeout=self.duration)
+                await asyncio.wait_for(cancel.wait(), timeout=max(self.duration, delay))
                 return {"cancelled": True}
             except TimeoutError:
                 if not self.connected:
@@ -601,6 +909,10 @@ class FakeBackend:
                 return {"backend": "fake", **({"spoken": True} if action == "speech" else {})}
         finally:
             self.active.pop(operation_id, None)
+            if behavior is not None:
+                self.running_behaviors.discard(behavior)
+                if self.sink:
+                    await self.sink("behavior.changed", {"running": sorted(self.running_behaviors)})
 
     async def capture_image(
         self, operation_id: str, session_id: str, payload: dict[str, Any]
@@ -609,6 +921,9 @@ class FakeBackend:
         outcome = await self._execute(operation_id, session_id, payload, "camera_capture")
         if outcome.get("cancelled"):
             return outcome, b""
+        return self.camera_image(payload, started)
+
+    def camera_image(self, payload: dict[str, Any], started: float) -> tuple[dict[str, Any], bytes]:
         width, height = CAMERA_SIZES[payload["resolution"]]
         camera = payload["camera"]
         pixels = b"\x00\x80\xff" if camera == "top" else b"\xff\x10\x00"
@@ -623,6 +938,98 @@ class FakeBackend:
             "acquisition_started": started,
             "acquisition_finished": time.monotonic(),
         }, pixels * (width * height)
+
+    async def run_camera_feed(self, feed_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.connected:
+            raise BackendUnknown("Robot disconnected before camera acquisition")
+        if feed_id in self.motion_stop_ids:
+            return {"cancelled": True, "dispatched": False}
+        if self.camera_feed_id is not None:
+            raise BridgeError("camera_busy", "Camera acquisition already running", 409)
+        cancel = asyncio.Event()
+        self.camera_feed_id = feed_id
+        self.active[feed_id] = (feed_id, cancel)
+        self.calls.append(
+            {"id": feed_id, "session_id": feed_id, "payload": payload, "action": "camera_feed"}
+        )
+        sequence = 0
+        try:
+            while not cancel.is_set():
+                sequence += 1
+                metadata, pixels = self.camera_image(payload, time.monotonic())
+                self.camera_feed_frame = ({**metadata, "sequence": sequence}, pixels)
+                try:
+                    await asyncio.wait_for(cancel.wait(), 1 / payload["frame_rate"])
+                except TimeoutError:
+                    continue
+            return {"cancelled": True, "dispatched": True}
+        finally:
+            self.active.pop(feed_id, None)
+            self.camera_feed_frame = None
+            self.camera_feed_id = None
+
+    async def latest_camera_frame(
+        self, feed_id: str, payload: dict[str, Any], after: int
+    ) -> tuple[dict[str, Any], bytes] | None:
+        if not self.connected:
+            raise BackendUnknown("Camera connection changed during acquisition")
+        latest = self.camera_feed_frame
+        if feed_id != self.camera_feed_id or latest is None or latest[0]["sequence"] <= after:
+            return None
+        return latest
+
+    async def run_microphone_feed(self, operation_id: str, session_id: str) -> dict[str, Any]:
+        if not self.connected:
+            raise BackendUnknown("Robot disconnected before audio acquisition")
+        if operation_id in self.motion_stop_ids or session_id in self.revoked:
+            return {"cancelled": True, "dispatched": False}
+        if self.microphone_id is not None:
+            raise BridgeError("resource_busy", "Microphone acquisition is already running", 409)
+        cancel = asyncio.Event()
+        self.microphone_id = operation_id
+        self.active[operation_id] = (session_id, cancel)
+        self.calls.append(
+            {"id": operation_id, "session_id": session_id, "action": "microphone_feed"}
+        )
+        sequence = 0
+        frames = SAMPLE_RATE // 20
+        pcm = b"\x00\x00\x01\x00\xff\x7f\x00\x80" * (frames // 4)
+        try:
+            while not cancel.is_set():
+                sequence += 1
+                seconds, microseconds = divmod((sequence - 1) * 50000, 1000000)
+                stamp = {"seconds": seconds, "microseconds": microseconds}
+                self.audio_blocks.append(
+                    (
+                        {
+                            "frames": frames,
+                            "received": time.monotonic(),
+                            "sequence": sequence,
+                            "source_time": stamp,
+                        },
+                        pcm,
+                    )
+                )
+                try:
+                    await asyncio.wait_for(cancel.wait(), 0.05)
+                except TimeoutError:
+                    continue
+            return {"cancelled": True, "dispatched": True}
+        finally:
+            self.active.pop(operation_id, None)
+            self.audio_blocks.clear()
+            self.microphone_id = None
+
+    async def microphone_blocks(
+        self, operation_id: str, after: int
+    ) -> list[tuple[dict[str, Any], bytes]]:
+        if not self.connected:
+            raise BackendUnknown("Microphone connection changed during acquisition")
+        if operation_id != self.microphone_id:
+            return []
+        return [
+            (metadata, pcm) for metadata, pcm in self.audio_blocks if metadata["sequence"] > after
+        ]
 
     async def stop(
         self,
@@ -654,7 +1061,15 @@ class FakeBackend:
                 if (
                     call["action"] == "walk"
                     if motion_scope == "locomotion"
-                    else call["action"] not in {"speech", "camera_capture"}
+                    else call["action"]
+                    not in {
+                        "speech",
+                        "camera_capture",
+                        "camera_feed",
+                        "microphone_feed",
+                        "audio_playback",
+                        "light_transition",
+                    }
                 )
             }
             if motion_scope
@@ -694,13 +1109,46 @@ class FakeBackend:
                 "velocity_controls": velocity,
                 **scope_result,
             }
-        if motion_scope:
+        if operation_ids:
             self.motion_stop_ids.extend(operation_ids or [])
+        if operation_id:
+            self.motion_stop_ids.append(operation_id)
+        deferred = {
+            call["id"]
+            for call in self.calls
+            if call["action"] == "light_transition" and call["id"] in matched
+        }
         for key in matched:
-            self.active[key][1].set()
+            if key not in deferred:
+                self.active[key][1].set()
+        behavior_stops = {
+            call["id"]: {
+                "name": call["payload"]["name"],
+                "cancelled": True,
+                "stop_confirmed": True,
+                "backend": "fake",
+            }
+            for call in self.calls
+            if call["id"] in matched and call["action"] == "behavior_run"
+        }
+        tracker_stops = {
+            call["id"]: {
+                "cancelled": True,
+                "dispatched": True,
+                "head_hold": {"required": True, "confirmed": True},
+            }
+            for call in self.calls
+            if call["id"] in matched and call["action"] == "face_track"
+        }
+        outcomes = {
+            **self.autonomy_results,
+            **self.light_results,
+            **behavior_stops,
+            **tracker_stops,
+        }
         completed = [
             key
-            for key in self.autonomy_results
+            for key in outcomes
             if (operation_id is None or key == operation_id)
             and (motion_scope is None or key in selected)
             and (
@@ -712,7 +1160,7 @@ class FakeBackend:
         ]
         unresolved = {
             oid for oid, value in {**controls, **velocity}.items() if not value["released"]
-        }
+        } | deferred
         return {
             "confirmed_ids": list(
                 set(
@@ -728,7 +1176,7 @@ class FakeBackend:
             "unresolved_ids": list(unresolved),
             "controls": controls,
             "velocity_controls": velocity,
-            "results": {key: self.autonomy_results[key] for key in completed},
+            "results": {key: outcomes[key] for key in completed},
             **scope_result,
         }
 

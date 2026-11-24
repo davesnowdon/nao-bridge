@@ -3,9 +3,12 @@
 import argparse
 import hashlib
 import http.client
+import io
 import json
 import time
-from urllib.parse import urlsplit
+import wave
+from pathlib import Path
+from urllib.parse import urlencode, urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -177,14 +180,176 @@ class Probe:
             conn.close()
         return asset["id"]
 
-    def wait(self, operation):
-        deadline = time.monotonic() + 5
+    def camera_recording(self):
+        result = self.request(
+            "POST",
+            "/api/recordings",
+            {"source": {"kind": "camera", "frame_rate": 5}, "duration": 1.2, "max_bytes": 262144},
+            status=201,
+            schema="Recording",
+        )
+        assert result["source"]["format"] == "mjpeg-avi"
+        operation = self.wait({"id": result["operation_id"]})
+        assert operation["kind"] == "recording.camera"
+        assert operation["status"] in {"succeeded", "failed"}, operation
+        if operation["status"] == "failed":
+            assert operation["error"]["code"] == "recording_gaps", operation
+        asset = self.request(
+            "GET", "/api/assets/" + operation["result"]["asset_id"], schema="Asset"
+        )
+        assert asset["kind"] == "camera.video" and asset["content_type"] == "video/x-msvideo"
+        assert asset["metadata"]["frame_count"] >= 2
+        path = "/api/assets/" + asset["id"] + "/content"
+        conn = self.connection()
+        try:
+            conn.request("GET", path)
+            result = conn.getresponse()
+            video = result.read()
+            assert result.status == 200 and hashlib.sha256(video).hexdigest() == asset["sha256"]
+            assert (
+                len(video) == asset["size_bytes"]
+                and video[:4] == b"RIFF"
+                and video[8:12] == b"AVI "
+            )
+            conn.request("GET", path, headers={"Range": "bytes=0-11"})
+            result = conn.getresponse()
+            assert result.status == 206 and result.read() == video[:12]
+        finally:
+            conn.close()
+
+    def microphone_recording(self):
+        recording = self.request(
+            "POST",
+            "/api/recordings",
+            {"source": {"kind": "microphone"}, "duration": 0.6},
+            status=201,
+            schema="Recording",
+        )
+        assert recording["source"] == {
+            "kind": "microphone",
+            "format": "pcm-wav",
+            "channels": 1,
+            "sample_rate_hz": 16000,
+        }
+        operation = self.wait({"id": recording["operation_id"]})
+        assert operation["kind"] == "recording.microphone" and operation["status"] == "succeeded", (
+            operation
+        )
+        asset = self.request(
+            "GET", "/api/assets/" + operation["result"]["asset_id"], schema="Asset"
+        )
+        assert asset["kind"] == "microphone.audio" and asset["content_type"] == "audio/wav"
+        path = "/api/assets/" + asset["id"] + "/content"
+        conn = self.connection()
+        try:
+            conn.request("GET", path)
+            response = conn.getresponse()
+            content = response.read()
+            assert response.status == 200 and response.getheader("Content-Type") == "audio/wav"
+            assert response.getheader("Content-Disposition").endswith('.wav"')
+            assert len(content) == asset["size_bytes"]
+            assert hashlib.sha256(content).hexdigest() == asset["sha256"]
+            with wave.open(io.BytesIO(content)) as audio:
+                assert (audio.getnchannels(), audio.getsampwidth(), audio.getframerate()) == (
+                    1,
+                    2,
+                    16000,
+                )
+                assert audio.getnframes() == asset["metadata"]["frame_count"] > 0
+            conn.request("GET", path, headers={"Range": "bytes=0-43"})
+            response = conn.getresponse()
+            assert response.status == 206 and response.read() == content[:44]
+        finally:
+            conn.close()
+
+    def upload_audio(self):
+        data = io.BytesIO()
+        with wave.open(data, "wb") as audio:
+            audio.setparams((1, 2, 16000, 0, "NONE", ""))
+            audio.writeframes(b"\x10\x00\xf0\xff" * 80)
+        content = data.getvalue()
+        headers = {
+            "X-Session-ID": self.session,
+            "Content-Type": "audio/wav",
+            "Idempotency-Key": "fixture-wav-upload",
+        }
+        conn = self.connection()
+        try:
+            assets = []
+            for _ in range(2):
+                conn.request("POST", "/api/assets", body=content, headers=headers)
+                response = conn.getresponse()
+                assert response.status == 201
+                asset = json.loads(response.read())
+                self.validate("Asset", asset)
+                assets.append(asset)
+            assert assets[0] == assets[1] and asset["kind"] == "audio.upload"
+            assert asset["sha256"] == hashlib.sha256(content).hexdigest()
+            conn.request("GET", "/api/assets/" + asset["id"] + "/content")
+            response = conn.getresponse()
+            assert response.status == 200 and response.read() == content
+            return asset["id"]
+        finally:
+            conn.close()
+
+    def wait(self, operation, timeout=5):
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             value = self.request("GET", "/api/operations/" + operation["id"], schema="Operation")
             if value["status"] in {"succeeded", "failed", "cancelled", "unknown"}:
                 return value
             time.sleep(0.02)
         raise AssertionError("Operation did not finish within fixture deadline")
+
+    def recorder_trajectory(self):
+        """Capture measured keyframes and submit a portable document through raw HTTP."""
+        catalog = self.request("GET", "/api/motion/joints", schema="Joints")
+        selected = {"HeadYaw", "LHand"}
+        assert selected <= {joint["name"] for joint in catalog["items"]}
+        poses = []
+        for index, (yaw, openness) in enumerate(((0.2, 0.3), (-0.2, 0.6), (0, 0.5)), start=1):
+            target = {"HeadYaw": yaw, "LHand": openness}
+            command = self.request(
+                "POST",
+                "/api/motion/joint_moves",
+                {"positions": target, "duration": 0.1},
+                status=202,
+                schema="Operation",
+            )
+            assert self.wait(command)["status"] == "succeeded"
+            deadline = time.monotonic() + 2
+            while True:
+                state = self.request(
+                    "GET", "/api/state?include=joints&wait_for_fresh_ms=500", schema="State"
+                )
+                group = state["groups"]["joints"]
+                measured = group["value"]["measured"] if group["quality"] == "fresh" else {}
+                if all(
+                    name in measured and abs(measured[name] - goal) < 0.001
+                    for name, goal in target.items()
+                ):
+                    poses.append(
+                        {
+                            "time": index * 0.3,
+                            "positions": {name: measured[name] for name in target},
+                        }
+                    )
+                    break
+                assert time.monotonic() < deadline, (target, group)
+                time.sleep(0.025)
+        document = {"schema_version": "1.0", "interpolation": "native", "keyframes": poses}
+        self.validate("Trajectory", document)
+        saved = json.dumps(document)
+        playback = self.request(
+            "POST",
+            "/api/motion/trajectory_runs",
+            {"trajectory": json.loads(saved)},
+            status=202,
+            schema="Operation",
+        )
+        assert set(playback["resources"]) == {"joint." + name for name in selected}
+        outcome = self.wait(playback)
+        assert outcome["status"] == "succeeded", outcome
 
     def camera_capture(self):
         catalog = self.request("GET", "/api/vision/cameras", schema="Cameras")
@@ -228,18 +393,79 @@ class Probe:
             assert error["error"]["code"] == "resource_busy" and time.monotonic() < deadline, error
             time.sleep(0.02)
 
-    def vision_observers(self):
+    def camera_previews(self, captures):
+        collection = "/api/vision/previews"
+        config = {"camera": "bottom", "resolution": "640x480", "frame_rate": 5}
+        first = self.request("POST", collection, config, status=201, schema="CameraPreview")
+        second = self.request("POST", collection, config, status=201, schema="CameraPreview")
+        assert first["id"] != second["id"]
+        conflict = self.request("POST", collection, {"camera": "top"}, status=409, schema="Error")
+        assert conflict["error"]["code"] == "resource_busy"
+
+        def part(response):
+            assert response.readline(256) == b"--nao-camera\r\n"
+            fields = {}
+            for line in iter(lambda: response.readline(256), b"\r\n"):
+                name, delimiter, value = line.partition(b":")
+                assert delimiter and name not in fields, line
+                fields[name] = value.strip()
+            assert fields[b"Content-Type"] == b"image/jpeg"
+            size = int(fields[b"Content-Length"])
+            assert 4 <= size <= 1048576
+            jpeg = response.read(size)
+            assert jpeg.startswith(b"\xff\xd8") and jpeg.endswith(b"\xff\xd9")
+            assert response.read(2) == b"\r\n"
+            return int(fields[b"X-Frame-Sequence"])
+
+        conn = self.connection(timeout=5)
+        try:
+            conn.request("GET", second["content_url"], headers={"X-Session-ID": self.session})
+            response = conn.getresponse()
+            assert response.status == 200
+            assert (
+                response.getheader("Content-Type")
+                == "multipart/x-mixed-replace; boundary=nao-camera"
+            )
+            sequence = part(response)
+            self.request("POST", f"{collection}/{first['id']}/stop", {}, status=202)
+            assert part(response) > sequence
+            if captures:
+                operation = self.wait(
+                    self.request(
+                        "POST",
+                        "/api/vision/captures",
+                        {"camera": "bottom", "resolution": "640x480"},
+                        status=202,
+                        schema="Operation",
+                    )
+                )
+                assert operation["status"] == "succeeded", operation
+                assert operation["result"]["capture"]["frame"] == "camera.bottom"
+                self.request("DELETE", "/api/assets/" + operation["result"]["asset_id"], status=204)
+            path = collection + "/" + second["id"]
+            self.request("POST", path + "/stop", {}, status=202)
+            deadline = time.monotonic() + 5
+            while True:
+                preview = self.request("GET", path, schema="CameraPreview")
+                if preview["status"] == "stopped":
+                    break
+                assert preview["status"] == "stopping" and time.monotonic() < deadline, preview
+                time.sleep(0.02)
+        finally:
+            conn.close()
+
+    def vision_observers(self, kind="faces"):
         collection = "/api/vision/observers"
         observers = [
             self.request(
                 "POST",
                 collection,
-                {"faces": True, "rate_hz": 5},
+                {kind: True, "rate_hz": 5},
                 status=201,
                 schema="VisionObserver",
                 headers={"Idempotency-Key": key},
             )
-            for key in ("face-first", "face-second")
+            for key in (kind + "-first", kind + "-second")
         ]
 
         def wait(item, status):
@@ -261,8 +487,8 @@ class Probe:
 
         for item in observers:
             assert wait(item, "active")["configuration"] == {
-                "faces": True,
-                "camera": "top",
+                kind: True,
+                "camera": None if kind == "people" else "top",
                 "rate_hz": 5,
             }
         stop(observers[0])
@@ -280,7 +506,7 @@ class Probe:
                     (
                         "stream.ready",
                         "StreamReady",
-                        lambda data: data["source_readiness"]["vision.faces"] == "ready",
+                        lambda data: data["source_readiness"]["vision." + kind] == "ready",
                     ),
                     (
                         "vision.detections",
@@ -288,7 +514,7 @@ class Probe:
                         lambda data: (
                             data["observer_id"] == observers[1]["id"]
                             and data["frame"] == "camera.top"
-                            and bool(data["faces"])
+                            and bool(data[kind])
                         ),
                     ),
                 ],
@@ -296,6 +522,294 @@ class Probe:
         finally:
             self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
         stop(observers[1])
+
+    def face_tracker(self):
+        collection = "/api/vision/trackers"
+        headers = {"Idempotency-Key": "fixture-face-tracker"}
+        tracker = self.request(
+            "POST", collection, {}, status=201, schema="VisionTracker", headers=headers
+        )
+        replay = self.request(
+            "POST", collection, {}, status=201, schema="VisionTracker", headers=headers
+        )
+        assert tracker["id"] == replay["id"] and tracker["mode"] == "head"
+        path = collection + "/" + tracker["id"]
+        deadline = time.monotonic() + 5
+        while True:
+            view = self.request("GET", path, schema="VisionTracker")
+            if view["status"] in {"tracking", "lost"}:
+                break
+            assert time.monotonic() < deadline and view["status"] in {"starting", "searching"}, view
+            time.sleep(0.03)
+        self.request("POST", path + "/stop", {}, status=202, schema="VisionTracker")
+        operation = self.wait({"id": tracker["id"]})
+        assert operation["status"] == "cancelled" and set(operation["resources"]) == {
+            "joint.HeadYaw",
+            "joint.HeadPitch",
+        }
+        view = self.request("GET", path, schema="VisionTracker")
+        assert view["status"] == "stopped" and view["head_hold"]["confirmed"]
+
+    def light_transitions(self):
+        catalog = self.request("GET", "/api/lights", schema="LightCatalog")
+        groups = {group["id"]: group for group in catalog["items"]}
+        assert groups["eyes.left"]["mode"] == "rgb"
+        assert groups["ears.left"]["mode"] == "mono"
+        assert set(groups["eyes.left"]["resources"]) < set(groups["eyes"]["resources"])
+        path = "/api/lights/transitions"
+        payload = {"group": "eyes.left", "color": "#0000ff", "brightness": 0.5}
+        key = {"Idempotency-Key": "raw-light"}
+        action = self.request("POST", path, payload, status=202, schema="Operation", headers=key)
+        duplicate = self.request("POST", path, payload, status=202, headers=key)
+        assert action["id"] == duplicate["id"] and action["kind"] == "lights.transition"
+        assert self.wait(action)["status"] == "succeeded"
+        invalid = self.request(
+            "POST", path, {"group": "ears.left", "color": "#ff0000"}, status=422, schema="Error"
+        )
+        assert invalid["error"]["code"] == "unsupported"
+        mono = self.request(
+            "POST", path, {"group": "ears.left", "brightness": 0.375, "duration": 0.05}, status=202
+        )
+        assert self.wait(mono)["status"] == "succeeded"
+        deadline = time.monotonic() + 3
+        while True:
+            state = self.request("GET", "/api/state?include=lights&wait_for_fresh_ms=1000")
+            values = state["groups"]["lights"]["value"]
+            if values and values["groups"]["ears.left"]["channels"]["intensity"] == 0.375:
+                break
+            assert time.monotonic() < deadline, state
+            time.sleep(0.02)
+        self.validate("LightStateValue", values)
+        observed = values["groups"]
+        assert observed["eyes.left"] == {
+            "quality": "observed",
+            "channels": {"red": 0, "green": 0, "blue": 0.5},
+        }
+        assert (
+            observed["eyes"]["quality"] == "mixed" and observed["eyes"]["channels"]["blue"] is None
+        )
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"samples": [{"groups": ["lights"], "rate_hz": 5}]},
+            status=201,
+            schema="Subscription",
+        )
+        try:
+            self.stream(
+                sub,
+                observations=[
+                    (
+                        "state.sample",
+                        "StateSample",
+                        lambda data: data["state"]["groups"]["lights"]["value"] == values,
+                    )
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+
+    def behaviors(self):
+        first = self.request("GET", "/api/behaviors?limit=1", schema="BehaviorPage")
+        assert first["support"]["status"] == "available"
+        assert first["items"] == [{"name": "fixture/greet"}]
+        path = "/api/behaviors?" + urlencode({"cursor": first["next_cursor"], "limit": 1})
+        last = self.request("GET", path, schema="BehaviorPage")
+        assert last["items"] == [{"name": "fixture/long"}] and last["next_cursor"] is None
+        path = "/api/behaviors/runs"
+        greeting = self.request(
+            "POST", path, {"name": "fixture/greet"}, status=202, schema="Operation"
+        )
+        assert greeting["kind"] == "behavior.run"
+        assert {"speech.output", "locomotion", "behaviors.execution"} <= set(greeting["resources"])
+        outcome = self.wait(greeting)
+        assert outcome["status"] == "succeeded" and outcome["result"]["name"] == "fixture/greet"
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"events": ["behavior.changed"]},
+            status=201,
+            schema="Subscription",
+        )
+
+        def run_and_cancel():
+            activity = self.request("POST", path, {"name": "fixture/long"}, status=202)
+            deadline = time.monotonic() + 3
+            while self.request("GET", "/api/behaviors")["running"] != ["fixture/long"]:
+                assert time.monotonic() < deadline
+                time.sleep(0.02)
+            self.request("POST", "/api/operations/" + activity["id"] + "/cancel", {}, status=202)
+            outcome = self.wait(activity)
+            assert outcome["status"] == "cancelled" and outcome["result"]["stop_confirmed"], outcome
+            assert outcome["result"]["name"] == "fixture/long"
+
+        try:
+            self.stream(
+                sub,
+                on_ready=run_and_cancel,
+                observations=[
+                    ("behavior.changed", "BehaviorChanged", {"running": ["fixture/long"]}),
+                    ("behavior.changed", "BehaviorChanged", {"running": []}),
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+
+    def autonomy_profiles(self):
+        catalog = self.request("GET", "/api/autonomy/profiles", schema="AutonomyProfileCatalog")
+        assert {item["name"] for item in catalog["items"]} == {
+            "manual",
+            "presentation",
+            "interactive",
+        }
+        sub = self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"events": ["autonomy.changed"]},
+            status=201,
+            schema="Subscription",
+        )
+
+        def apply_profile(name):
+            request = self.request(
+                "POST",
+                "/api/autonomy/profile_runs",
+                {"profile": name},
+                status=202,
+                schema="Operation",
+            )
+            outcome = self.wait(request)
+            assert outcome["kind"] == "autonomy.transition"
+            assert outcome["status"] == "succeeded", outcome
+            profile = next(item for item in catalog["items"] if item["name"] == name)
+            assert not profile["unavailable_settings"], profile
+            assert {
+                item["setting"]: item["observed"] for item in outcome["result"]["settings"]
+            } == profile["settings"]
+
+        try:
+            self.stream(
+                sub,
+                on_ready=lambda: apply_profile("interactive"),
+                observations=[
+                    (
+                        "autonomy.changed",
+                        "AutonomyStateValue",
+                        lambda data: (
+                            data["settings"]["life_state"] == "solitary"
+                            and data["settings"]["basic_awareness"] is True
+                        ),
+                    ),
+                ],
+            )
+        finally:
+            self.request("DELETE", "/api/events/subscriptions/" + sub["id"], status=204)
+        apply_profile("presentation")
+
+    def gestures(self):
+        catalog = self.request("GET", "/api/motion/gestures", schema="GestureCatalog")
+        wave = next(item for item in catalog["items"] if item["name"] == "wave")
+        assert wave["required_posture"] == "StandInit"
+        right = next(item for item in wave["variants"] if item["side"] == "right")
+        assert right["support"]["status"] == "available"
+        assert right["resources"] == [
+            "joint.RElbowRoll",
+            "joint.RElbowYaw",
+            "joint.RShoulderPitch",
+            "joint.RShoulderRoll",
+        ]
+        action = self.request(
+            "POST", "/api/motion/gesture_runs", {"name": "wave"}, status=202, schema="Operation"
+        )
+        assert action["kind"] == "motion.gesture_run" and action["resources"] == right["resources"]
+        speech = self.request(
+            "POST", "/api/speech/utterances", {"text": "Waving with the bridge fixture"}, status=202
+        )
+        light = self.request(
+            "POST", "/api/lights/transitions", {"group": "eyes", "color": "#0080ff"}, status=202
+        )
+        assert self.wait(speech)["status"] == "succeeded"
+        assert self.wait(light)["status"] == "succeeded"
+        result = self.wait(action)
+        assert (
+            result["status"] == "succeeded"
+            and 2.5 <= result["result"]["planned_duration_seconds"] <= 12
+        )
+        point = next(item for item in catalog["items"] if item["name"] == "point")
+        assert point["required_posture"] == "StandInit"
+        assert next(item for item in point["variants"] if item["side"] == "right") == right
+        action = self.request(
+            "POST", "/api/motion/gesture_runs", {"name": "point"}, status=202, schema="Operation"
+        )
+        assert action["resources"] == right["resources"]
+        assert self.wait(action)["status"] == "succeeded"
+        action = self.request(
+            "POST",
+            "/api/motion/gesture_runs",
+            {"name": "wave", "side": "left", "repetitions": 3},
+            status=202,
+        )
+        path = "/api/operations/" + action["id"]
+        deadline = time.monotonic() + 2
+        while self.request("GET", path)["status"] != "running":
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+        time.sleep(0.15)
+        self.request("POST", path + "/cancel", {}, status=202)
+        cancelled = self.wait(action)
+        assert cancelled["status"] == "cancelled" and cancelled["result"]["stop_confirmed"]
+
+    def presentation_sequence(self):
+        script_file = Path(__file__).with_name("presentation-sequence.json")
+        if not script_file.is_file():
+            script_file = (
+                script_file.parent.parent / "contracts/fixtures/presentation-sequence.json"
+            )
+        script = json.loads(script_file.read_text())
+        schema = self.request("GET", "/api/sequences/schema")
+        Draft202012Validator(schema).validate(script)
+        validated = self.request(
+            "POST", "/api/sequences/validate", script, schema="SequenceValidation"
+        )
+        assert validated["valid"] and validated["maximum_parallel_commands"] == 3
+        assert validated["estimated_duration_seconds"] is None
+        assert len(validated["timeline"]) == 7
+        start = self.request("POST", "/api/sequences/runs", script, status=202, schema="Operation")
+        assert start["kind"] == "sequence.run" and len(start["child_operation_ids"]) == 7
+        end = self.wait(start, timeout=10)
+        assert end["status"] == "succeeded", end
+        self.validate("SequenceResult", end["result"])
+        children = self.request(
+            "GET",
+            "/api/operations?" + urlencode({"parent_id": start["id"], "limit": 100}),
+            schema="OperationPage",
+        )
+        assert {child["id"] for child in children["items"]} == set(start["child_operation_ids"])
+        assert all(child["status"] == "succeeded" for child in children["items"])
+        assert [child["sequence_path"] for child in children["items"]] == [
+            [0],
+            [1],
+            [2, 0],
+            [2, 1],
+            [2, 2],
+            [3],
+            [4],
+        ]
+        parallel_children = [
+            child for child in children["items"] if child["sequence_path"][:1] == [2]
+        ]
+        assert max(child["started_at"] for child in parallel_children) < min(
+            child["finished_at"] for child in parallel_children
+        )
+        motion = self.request("GET", "/api/state?include=motion&wait_for_fresh_ms=1000")
+        assert motion["groups"]["motion"]["value"]["awake"] is False
+        for route, body in (
+            ("wake", {}),
+            ("posture_changes", {"name": "StandInit"}),
+            ("stiffness_changes", {"targets": {"Body": 0.5}, "duration": 0.1}),
+        ):
+            ready = self.request("POST", "/api/motion/" + route, body, status=202)
+            assert self.wait(ready)["status"] == "succeeded"
 
     def velocity_control(self):
         path = "/api/motion/velocity"
@@ -320,7 +834,16 @@ class Probe:
         rejected = self.request("PUT", path, {**update, "sequence": 2}, status=409, schema="Error")
         assert rejected["error"]["code"] == "control_ended"
 
-    def stream(self, subscription, *, reconnect=False, touch=False, contacts=(), observations=()):
+    def stream(
+        self,
+        subscription,
+        *,
+        reconnect=False,
+        touch=False,
+        contacts=(),
+        observations=(),
+        on_ready=None,
+    ):
         conn = self.connection(timeout=3)
         headers = {
             "X-Session-ID": self.session,
@@ -362,6 +885,8 @@ class Probe:
                     assert event["id"] not in ids
                     ids.add(event["id"])
                     seen.add(event["type"])
+                    if event["type"] == "stream.ready" and on_ready:
+                        on_ready()
                     for expected in pending_observations[:]:
                         kind, schema, data = expected
                         if event["type"] == kind and (
@@ -405,8 +930,20 @@ def run(url):
         robot = probe.request("GET", "/api/robot", schema="Robot")
     capabilities = probe.request("GET", "/api/robot/capabilities", schema="Capabilities")
     captures = capabilities["features"]["vision.captures"]["status"] == "available"
-    faces = capabilities["features"]["vision.observers"]["status"] == "available"
+    previews = capabilities["features"]["vision.previews"]["status"] == "available"
+    video = capabilities["features"]["recordings.camera"]["status"] == "available"
+    microphone = capabilities["features"]["recordings.microphone"]["status"] == "available"
+    audio_upload = capabilities["features"]["assets.audio_upload"]["status"] == "available"
+    audio_playback = capabilities["features"]["audio.playback"]["status"] == "available"
+    if robot["backend"] == "native-fixture":
+        assert previews, "Native container preview must use the pinned FFmpeg encoder"
+    faces = capabilities["features"]["vision.faces"]["status"] == "available"
+    landmarks = capabilities["features"]["vision.landmarks"]["status"] == "available"
+    people = capabilities["features"]["vision.people"]["status"] == "available"
+    tracker = capabilities["features"]["vision.face_tracking"]["status"] == "available"
     velocity = capabilities["features"]["motion.velocity"]["status"] == "available"
+    behaviors = capabilities["features"]["behaviors.runs"]["status"] == "available"
+    gestures = capabilities["features"]["motion.gestures"]["status"] == "available"
     sensor_state = probe.request(
         "GET", "/api/state?include=sensors&wait_for_fresh_ms=1000", schema="State"
     )
@@ -464,8 +1001,21 @@ def run(url):
             probe.velocity_control()
         if captures:
             probe.camera_capture()
+        if previews:
+            probe.camera_previews(captures)
         if faces:
             probe.vision_observers()
+        if landmarks:
+            probe.vision_observers("landmarks")
+        if people:
+            probe.vision_observers("people")
+        if tracker:
+            probe.face_tracker()
+        if behaviors:
+            probe.behaviors()
+        lights = probe.request("GET", "/api/lights", schema="LightCatalog")["support"]["status"]
+        if lights == "available":
+            probe.light_transitions()
         operation = probe.request(
             "POST",
             "/api/speech/utterances",
@@ -491,6 +1041,24 @@ def run(url):
             headers={"Idempotency-Key": "speech"},
         )
         assert probe.wait(operation)["status"] == "succeeded"
+        speech_options = probe.request("GET", "/api/speech/options", schema="SpeechOptions")
+        assert speech_options["support"]["status"] == "available"
+        assert speech_options["default_language"] in speech_options["languages"]
+        assert speech_options["volume"] == {"minimum": 0, "maximum": 1, "default": 0.5}
+        assert speech_options["rate"] == {"minimum": 0.5, "maximum": 2, "default": 1}
+        animated = speech_options["animated"]["status"] == "available"
+        if animated:
+            utterance = probe.request(
+                "POST",
+                "/api/speech/utterances",
+                {"text": "The animated speech fixture is ready.", "animated": True},
+                status=202,
+                schema="Operation",
+            )
+            assert utterance["kind"] == "speech.animated_utterance"
+            assert {"speech.output", "locomotion", "joint.HeadYaw"} <= set(utterance["resources"])
+            outcome = probe.wait(utterance)
+            assert outcome["status"] == "succeeded" and outcome["result"]["animated"] is True
         autonomy = probe.request(
             "POST",
             "/api/autonomy/transitions",
@@ -509,6 +1077,7 @@ def run(url):
         )
         probe.validate("AutonomyStateValue", state["groups"]["autonomy"]["value"])
         assert state["groups"]["autonomy"]["value"]["settings"]["life_state"] == "disabled"
+        probe.autonomy_profiles()
         previous = probe.request(
             "POST",
             "/api/motion/joint_moves",
@@ -526,24 +1095,7 @@ def run(url):
         assert replacement["replaces_operation_id"] == previous["id"]
         assert probe.wait(replacement)["status"] == "succeeded"
         assert probe.wait(previous)["status"] in {"cancelled", "succeeded"}
-        trajectory_run = probe.request(
-            "POST",
-            "/api/motion/trajectory_runs",
-            {
-                "trajectory": {
-                    "schema_version": "1.0",
-                    "interpolation": "native",
-                    "keyframes": [
-                        {"time": 0.1, "positions": {"HeadYaw": 0.2}},
-                        {"time": 0.2, "positions": {"HeadYaw": -0.2}},
-                        {"time": 0.3, "positions": {"HeadYaw": 0}},
-                    ],
-                }
-            },
-            status=202,
-            schema="Operation",
-        )
-        assert probe.wait(trajectory_run)["status"] == "succeeded"
+        probe.recorder_trajectory()
         for route, body in [
             ("stiffness_changes", {"targets": {"Head": 0.7}, "duration": 0.1}),
             ("rest", {}),
@@ -558,6 +1110,8 @@ def run(url):
             assert result["status"] == "succeeded" and result["result"]["state_refreshed"]
         owners = probe.request("GET", "/api/robot/diagnostics")["configuration_owners"]
         assert owners["joint.HeadYaw"] == session["id"]
+        if gestures:
+            probe.gestures()
         probe.request(
             "POST",
             "/api/speech/utterances",
@@ -570,6 +1124,27 @@ def run(url):
             == "available"
         ):
             probe.sample_recording()
+        if video:
+            probe.camera_recording()
+        if microphone:
+            probe.microphone_recording()
+        if audio_upload:
+            audio_asset = probe.upload_audio()
+            if audio_playback:
+                played = probe.wait(
+                    probe.request(
+                        "POST",
+                        "/api/audio/playbacks",
+                        {"asset_id": audio_asset, "volume": 0.5},
+                        status=202,
+                        schema="Operation",
+                    )
+                )
+                assert played["status"] == "succeeded" and played["kind"] == "audio.playback", (
+                    played
+                )
+                assert played["result"]["asset_id"] == audio_asset
+                assert played["result"]["frames_submitted"] > 0
         subscription = probe.request(
             "POST",
             "/api/events/subscriptions",
@@ -587,6 +1162,16 @@ def run(url):
             time.sleep(0.05)
         probe.stream(subscription, reconnect=True)
         probe.request("DELETE", "/api/events/subscriptions/" + subscription["id"], status=204)
+        if gestures:
+            probe.presentation_sequence()
+        restore_probe = probe.request(
+            "POST",
+            "/api/autonomy/profile_runs",
+            {"profile": "interactive", "restore_on_close": True},
+            status=202,
+            schema="Operation",
+        )
+        assert probe.wait(restore_probe)["status"] == "succeeded"
     finally:
         cleanup = probe.request(
             "POST",
@@ -595,11 +1180,19 @@ def run(url):
             status=202,
             schema="Operation",
         )
-        assert probe.wait(cleanup)["status"] == "succeeded"
+        cleanup_result = probe.wait(cleanup)
+        assert cleanup_result["status"] == "succeeded", cleanup_result
         assert (
             session["id"]
             not in probe.request("GET", "/api/robot/diagnostics")["configuration_owners"].values()
         )
+    restored = cleanup_result["result"]["autonomy_restoration"]
+    probe.validate("AutonomyRestoration", restored)
+    assert restored["status"] == "restored", restored
+    assert any(
+        item["setting"] == "life_state" and item["observed"] == "disabled"
+        for item in restored["settings"]
+    )
     return {
         "backend": robot["backend"],
         "contract_version": robot["contract_version"],
@@ -612,16 +1205,39 @@ def run(url):
             "session",
             "idempotency",
             "speech",
+            "speech_options",
             "joint_discovery_and_trajectory",
             "motion_configuration_and_ownership",
+            "autonomy_profiles_and_observed_changes",
+            "guarded_autonomy_restoration_on_close",
             "validation",
             "sse",
             "reconnect_without_replay",
             "cleanup",
         ]
         + (["camera_capture_and_download"] if captures else [])
+        + (["shared_camera_previews_and_still_capture"] if previews else [])
+        + (["camera_recording_asset"] if video else [])
+        + (["microphone_recording_asset"] if microphone else [])
+        + (["wav_upload_asset_and_retry"] if audio_upload else [])
+        + (["wav_audio_playback"] if audio_upload and audio_playback else [])
         + (["vision_observer_sharing_and_detections"] if faces else [])
-        + (["ordered_velocity_expiry"] if velocity else []),
+        + (["landmark_observer_sharing_and_detections"] if landmarks else [])
+        + (["people_observer_sharing_and_detections"] if people else [])
+        + (["head_only_face_tracker_and_scoped_stop"] if tracker else [])
+        + (["ordered_velocity_expiry"] if velocity else [])
+        + (["light_transitions_and_readback"] if lights == "available" else [])
+        + (["animated_speech"] if animated else [])
+        + (["installed_behavior_run_and_stop"] if behaviors else [])
+        + (
+            [
+                "parallel_wave_speech_and_lights",
+                "point_gesture",
+                "server_side_presentation_sequence",
+            ]
+            if gestures
+            else []
+        ),
     }
 
 

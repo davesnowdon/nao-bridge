@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import get_swagger_ui_html
 from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import ClientDisconnect
 from starlette.responses import (
     FileResponse,
     HTMLResponse,
@@ -21,11 +22,14 @@ from starlette.responses import (
 )
 
 from .backend import Backend, FakeBackend
+from .camera_previews import BOUNDARY
 from .config import Settings
 from .contract import OPENAPI, SCHEMAS, parse_json, validate
 from .core import EVENT_TYPES, Core
 from .errors import BridgeError
 from .events import StreamWriteTimeout
+from .sequences import plan_sequence, sequence_schema
+from .wav import CONTENT_TYPE as WAV_CONTENT_TYPE
 
 LOG = logging.getLogger(__name__)
 DOC_ASSETS = Path(__file__).parent / "static" / "swagger-ui"
@@ -102,7 +106,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             ),
         )
 
-    async def body(request: Request, name: str) -> dict[str, Any]:
+    async def body(request: Request, name: str | None) -> dict[str, Any]:
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             != "application/json"
@@ -114,7 +118,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                 raise BridgeError("payload_too_large", "Request body exceeds advertised limit", 413)
             raw.extend(part)
         value = parse_json(bytes(raw))
-        validate(name, value)
+        if name is not None:
+            validate(name, value)
         return value
 
     def query(request: Request, allowed: set[str]) -> None:
@@ -278,6 +283,11 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/speech/options")
+    async def speech_options(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.speech_options()
+
     @app.post("/api/speech/utterances")
     async def speech(request: Request) -> Response:
         value = await body(request, "SpeechCreate")
@@ -288,6 +298,20 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             request.headers.get("idempotency-key"),
             value,
             lambda: core.utterance(item, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.post("/api/audio/playbacks")
+    async def play_audio(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "AudioPlaybackCreate")
+        item = session(request)
+        result = await core.idempotent(
+            item.public["id"],
+            "POST /audio/playbacks",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.audio_playback(item, value),
         )
         return created(result, "operations", 202)
 
@@ -310,6 +334,53 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.post("/api/vision/previews")
+    async def create_preview(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "CameraPreviewCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/previews",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.camera_previews.create(owner, value),
+        )
+        return created(result, "vision/previews", 201)
+
+    @app.get("/api/vision/previews/{preview_id}")
+    async def get_preview(request: Request, preview_id: str) -> dict[str, Any]:
+        query(request, set())
+        item = core.camera_previews.get(preview_id, session(request, False).public["id"])
+        return copy.deepcopy(item.public)
+
+    @app.get("/api/vision/previews/{preview_id}/content")
+    async def preview_content(request: Request, preview_id: str) -> Response:
+        query(request, set())
+        item = core.camera_previews.get(preview_id, session(request).public["id"])
+        token = core.camera_previews.attach(item)
+        request.scope["nao_stream_cleanup"] = lambda: core.camera_previews.detach(item, token)
+        return StreamingResponse(
+            core.camera_previews.stream(item, token),
+            media_type="multipart/x-mixed-replace; boundary=" + BOUNDARY,
+            headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/api/vision/previews/{preview_id}/stop")
+    async def stop_preview(request: Request, preview_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        item = core.camera_previews.get(preview_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/previews/" + preview_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.camera_previews.stop(item),
+        )
+        return created(result, "vision/previews", 202)
+
     @app.post("/api/vision/observers")
     async def create_vision_observer(request: Request) -> Response:
         query(request, set())
@@ -320,7 +391,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             "POST /vision/observers",
             request.headers.get("idempotency-key"),
             value,
-            lambda: core.face_observers.create(owner, value),
+            lambda: core.vision_observers.create(owner, value),
         )
         return created(result, "vision/observers", 201)
 
@@ -328,7 +399,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     async def get_vision_observer(request: Request, observer_id: str) -> dict[str, Any]:
         query(request, set())
         return copy.deepcopy(
-            core.face_observers.get(observer_id, session(request, False).public["id"]).public
+            core.vision_observers.get(observer_id, session(request, False).public["id"]).public
         )
 
     @app.post("/api/vision/observers/{observer_id}/stop")
@@ -336,15 +407,49 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         query(request, set())
         value = await body(request, "EmptyRequest")
         owner = session(request)
-        item = core.face_observers.get(observer_id, owner.public["id"])
+        item = core.vision_observers.get(observer_id, owner.public["id"])
         result = await core.idempotent(
             owner.public["id"],
             "POST /vision/observers/" + observer_id + "/stop",
             request.headers.get("idempotency-key"),
             value,
-            lambda: core.face_observers.stop(item),
+            lambda: core.vision_observers.stop(item),
         )
         return created(result, "vision/observers", 202)
+
+    @app.post("/api/vision/trackers")
+    async def create_tracker(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "VisionTrackerCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/trackers",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.start_face_tracker(owner),
+        )
+        return created(result, "vision/trackers", 201)
+
+    @app.get("/api/vision/trackers/{tracker_id}")
+    async def get_tracker(request: Request, tracker_id: str) -> dict[str, Any]:
+        query(request, set())
+        return core.tracker_view(core.tracker(tracker_id, session(request, False).public["id"]))
+
+    @app.post("/api/vision/trackers/{tracker_id}/stop")
+    async def stop_tracker(request: Request, tracker_id: str) -> Response:
+        query(request, set())
+        value = await body(request, "EmptyRequest")
+        owner = session(request)
+        op = core.tracker(tracker_id, owner.public["id"])
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /vision/trackers/" + tracker_id + "/stop",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.stop_face_tracker(op),
+        )
+        return created(result, "vision/trackers", 202)
 
     @app.get("/api/assets")
     async def list_assets(request: Request) -> dict[str, Any]:
@@ -370,6 +475,23 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             "items": copy.deepcopy(page),
             "next_cursor": page[-1]["id"] if len(values) > limit else None,
         }
+
+    @app.post("/api/assets")
+    async def upload_asset(request: Request) -> Response:
+        query(request, set())
+        if (
+            request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            != WAV_CONTENT_TYPE
+        ):
+            raise BridgeError("unsupported_media_type", "Content-Type must be audio/wav", 415)
+        sid = session(request).public["id"]
+        try:
+            asset = await core.recordings.http.upload(
+                sid, request.headers.get("idempotency-key"), request.stream()
+            )
+        except ClientDisconnect as exc:
+            raise BridgeError("upload_incomplete", "Audio upload was interrupted", 400) from exc
+        return created(asset, "assets", 201)
 
     @app.get("/api/assets/{asset_id}")
     async def get_asset(request: Request, asset_id: str) -> dict[str, Any]:
@@ -568,6 +690,25 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         query(request, set())
         return await submit_motion_action(request, "walk", "MoveCreate", "moves")
 
+    @app.get("/api/motion/gestures")
+    async def gestures(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.gestures()
+
+    @app.post("/api/motion/gesture_runs")
+    async def gesture(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "GestureRunCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /motion/gesture_runs",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.gesture(owner, value),
+        )
+        return created(result, "operations", 202)
+
     @app.post("/api/motion/trajectory_runs")
     async def trajectory(request: Request) -> Response:
         value = await body(request, "TrajectoryRunCreate")
@@ -581,6 +722,47 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         )
         return created(result, "operations", 202)
 
+    @app.get("/api/behaviors")
+    async def behavior_catalog(request: Request) -> dict[str, Any]:
+        query(request, {"cursor", "limit"})
+        cursor = request.query_params.get("cursor")
+        if cursor is not None and (not cursor.strip() or len(cursor.encode("utf-8")) > 256):
+            raise BridgeError("invalid_request", "Invalid behavior cursor")
+        return await core.behavior_page(cursor, bounded_int(request, "limit", 12, 12, 1))
+
+    @app.post("/api/behaviors/runs")
+    async def behavior_run(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "BehaviorRunCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /behaviors/runs",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.behavior_run(owner, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.get("/api/lights")
+    async def light_groups(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.light_catalog()
+
+    @app.post("/api/lights/transitions")
+    async def light_transition(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "LightTransitionCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /lights/transitions",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.light_transition(owner, value),
+        )
+        return created(result, "operations", 202)
+
     @app.post("/api/autonomy/transitions")
     async def configure_autonomy(request: Request) -> Response:
         value = await body(request, "AutonomyTransitionCreate")
@@ -591,6 +773,54 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             request.headers.get("idempotency-key"),
             value,
             lambda: core.configure_autonomy(item, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.get("/api/autonomy/profiles")
+    async def autonomy_profiles(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return core.autonomy_profiles()
+
+    @app.post("/api/autonomy/profile_runs")
+    async def run_autonomy_profile(request: Request) -> Response:
+        query(request, set())
+        value = await body(request, "AutonomyProfileRunCreate")
+        owner = session(request)
+        result = await core.idempotent(
+            owner.public["id"],
+            "POST /autonomy/profile_runs",
+            request.headers.get("idempotency-key"),
+            value,
+            lambda: core.apply_autonomy_profile(owner, value),
+        )
+        return created(result, "operations", 202)
+
+    @app.get("/api/sequences/schema")
+    async def get_sequence_schema(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return sequence_schema()
+
+    @app.post("/api/sequences/validate")
+    async def validate_sequence(request: Request) -> dict[str, Any]:
+        query(request, set())
+        return (await plan_sequence(core, await body(request, None))).wire()
+
+    @app.post("/api/sequences/runs")
+    async def run_sequence(request: Request) -> Response:
+        query(request, set())
+        document = await body(request, None)
+        owner = session(request)
+        sid, route = owner.public["id"], "POST /sequences/runs"
+        key = request.headers.get("idempotency-key")
+        if previous := core.replay_before_preflight(sid, route, key, document):
+            return created(previous, "operations", 202)
+        plan = await plan_sequence(core, document)
+        result = await core.idempotent(
+            sid,
+            route,
+            key,
+            document,
+            lambda: core.sequences.submit(owner, plan),
         )
         return created(result, "operations", 202)
 
@@ -684,13 +914,21 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
                     "support": core.capabilities()["features"]["touch.changed"]
                     if name == "touch.changed"
                     else core.capabilities()["features"][name]
-                    if name in {"motion.posture_changed", "motion.fall_changed"}
+                    if name
+                    in {
+                        "motion.posture_changed",
+                        "motion.fall_changed",
+                        "behavior.changed",
+                        "autonomy.changed",
+                    }
                     else core.capabilities()["features"]["speech.listeners"]
                     if name in {"speech.recognized", "speech.listener_changed"}
                     else core.capabilities()["features"]["sensors.observers"]
                     if name == "sensor.observer_changed"
                     else core.capabilities()["features"]["vision.observers"]
                     if name in {"vision.observer_changed", "vision.detections"}
+                    else core.capabilities()["features"]["vision.face_tracking"]
+                    if name == "vision.tracker_changed"
                     else core.capabilities()["features"]["recordings"]
                     if name == "recording.changed"
                     else core.capabilities()["features"]["assets"]

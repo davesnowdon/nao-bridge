@@ -6,6 +6,31 @@ the first contact-sensor change. Physical motion, controlled hold, and source
 sampling rates remain unverified until hardware acceptance; discovery retains
 `hardware_verified: false`.
 
+Use `--hand-foot-only` for a focused check of each hand back and foot bumper
+in fresh state and two simultaneous SSE streams on the candidate image, or
+`--hand-foot` to include those contacts in the full guided run.
+The focused CLI rehearsal passed all four contacts and session cleanup against
+the pinned native fixture. It also passed against increment-2 candidate `1e8cf5d`
+with contract 1.1.0. This candidate advertises the `touch` state field and sensor
+ID. Later catalogs also supply an explicit state path. Integrated physical
+checks remain pending on both firmware generations.
+[Increment-2 candidate](https://github.com/davesnowdon/nao-bridge/pull/37) ·
+[Hardware acceptance runner](hardware-acceptance.md#optional-hand-and-foot-contacts)
+
+The direct HTTP Recorder scenario captures three measured `HeadYaw` and `LHand`
+poses, round-trips the portable JSON, and plays it as one timed operation using
+only the selected joints. It also verifies a checksummed sample asset when storage
+is available. [Direct conformance runner](../scripts/conformance.py)
+
+Repeating speech with an active vocabulary listener reproduced much of the
+agent RSS growth from the mixed-load soak. In isolated 150-second trials, RSS
+grew 3,896 KiB after the 31-second sample with repeated native subscriber
+lookups and 1,548 KiB with subscriber reuse. The adapter now retains up to two
+ALMemory subscriber proxies while recognition is configured. Each revision
+still replaces its signal links and rejects callbacks from older revisions.
+Stopping recognition releases both links and proxies. The recognition tests
+verify reuse, stale callback rejection, cleanup, and later reacquisition.
+
 | Deliverable | Software status | Physical acceptance |
 | --- | --- | --- |
 | Hand/foot state, dedicated events, sensor discovery | Implemented; unit/client/raw-HTTP and native container checks pass | Native hand-back and foot probes recorded; integrated API pending |
@@ -139,6 +164,14 @@ cannot be advertised. No physical robot was contacted; independent sampling-grou
 workers were implemented in the following step; source rate/skew measurements
 remain outstanding.
 
+The `--sample-timing` mode rehearsed the planned measurement against the exact
+increment-2 candidate `1e8cf5d`. One 10.09-second native fixture run captured
+102 fresh SSE frames at 10.01 Hz. The observed sensor, joint, and motion sample
+rates were 7.71, 9.29, and 8.29 Hz, with p95 acquisition-start skew of 101.89 ms.
+The report records group age and coalescing too. Collect the same evidence on
+both robots for physical acceptance.
+[Sampling measurement](hardware-acceptance.md#measure-shared-sampling)
+
 Sampler isolation validation: `make check` passed 262 server/integration and 41
 client tests plus lint/types. The production native container suite passed after
 separating acquisition into four fixed workers. A deliberately blocked real SDK
@@ -251,7 +284,7 @@ authority between setters, refuses observed native safeguard-state overrides, an
 retains uncertainty rather than dispatching later settings after an unconfirmed
 write. Persistent configuration ownership is separate from temporary actuator
 reservations. Cleanup leaves settings applied. Named profiles and explicit guarded
-`restore_on_close` remain increment-4 work; true is rejected until implemented.
+`restore_on_close` were delivered in [increment 4](increment-4-status.md#autonomy-profiles-and-observations).
 Legacy awareness-running state is not represented as a modern ability preference.
 
 Autonomy validation: `make check` passed 165 server/integration and 30 client tests

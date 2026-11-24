@@ -16,7 +16,14 @@ from locomotion import Locomotion, Odometry, LocomotionError
 from recognition import Recognition, FixtureRecognition
 from sonar import Sonar, FixtureSonar, KEYS as SONAR_KEYS
 from camera import VideoDevice, FixtureVideo
+from microphone import AudioDevice, FixtureAudio
+from speaker import Speaker
 from faces import EVENT as FACE_EVENT, FaceDetector, FixtureFaces
+from landmarks import EVENT as LANDMARK_EVENT, LandmarkDetector, FixtureLandmarks
+from people import EVENT as PEOPLE_EVENT, PeopleDetector, FixturePeople
+from tracker import FaceTracker, FixtureTracker
+from lights import Lights, FixtureLights
+from behaviors import EVENT as BEHAVIOR_EVENT, Behaviors, FixtureBehaviors
 from velocity import MAX_ROTATION, MAX_TRANSLATION
 
 with open(os.path.join(os.path.dirname(__file__), "..", "nao_bridge", "contract", "contact-sensors.json")) as source:
@@ -46,6 +53,10 @@ def contact_values(values):
 class NativeDriver(object):
     joint_hold_verified = False
     velocity_stop_verified = False
+    animated_speech_stop_verified = False
+    behavior_stop_verified = False
+    gestures_verified = False
+    tracker_stop_verified = False
 
     def __init__(self, endpoint, observe, lock=None):
         self.endpoint = endpoint
@@ -53,6 +64,7 @@ class NativeDriver(object):
         self.session = None
         self.safety_session = None
         self.tts = None
+        self.animated_speech = None
         self.safety = None
         self.memory = None
         self.subscribers = []
@@ -68,7 +80,14 @@ class NativeDriver(object):
         self.recognition = None
         self.sonar = None
         self.camera = None
+        self.microphone = None
+        self.speaker = None
         self.faces = None
+        self.landmarks = None
+        self.people = None
+        self.tracker = None
+        self.lights = None
+        self.behaviors = None
         self.passive_sensors = None
         self.adapter_lock = lock if lock is not None else threading.RLock()
         self._connected = threading.Event()
@@ -146,8 +165,27 @@ class NativeDriver(object):
         self.description["sonar"] = self.sonar.catalog
         self.camera = VideoDevice(self.session, monotonic)
         self.description["cameras"] = self.camera.items
+        self.microphone = AudioDevice(self.session, monotonic)
+        self.description["microphone"] = self.microphone.service is not None
+        self.speaker = Speaker(self.microphone.service, monotonic)
+        self.description["speaker_sample_rate_hz"] = self.speaker.rate
         self.faces = FaceDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
         self.description["faces"] = self.faces.catalog
+        self.landmarks = LandmarkDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
+        self.description["landmarks"] = self.landmarks.catalog
+        self.people = PeopleDetector(self.session, self.memory, self.observe, monotonic, self.adapter_lock)
+        self.description["people"] = self.people.catalog
+        tracker_safety = self.safety_motion
+        self.tracker = FaceTracker(self.session, self.tracker_stop_verified and self.joint_control_available(),
+                                   self.require_stiff, lambda names: self.hold_joints(names, tracker_safety))
+        self.description["face_tracker"] = self.tracker.catalog
+        self.lights = Lights(self.session, self.memory, self.call)
+        self.description["lights"] = self.lights.catalog()
+        self.discover_animated_speech()
+        self.behaviors = Behaviors(self.session, self.safety_session, self.memory, self.call,
+                                   self.observe, self.behavior_stop_verified)
+        self.description["behaviors"] = self.behaviors.catalog
+        self.description["gestures_verified"] = bool(self.gestures_verified and self.safety_motion)
         self.description["joint_controls"] = {
             "available": self.joint_control_available(),
             "reason": None if self.joint_control_available() else "hardware_hold_unverified",
@@ -193,6 +231,7 @@ class NativeDriver(object):
         passive_sensors = self.passive_sensors
         sonar = self.sonar
         odometry = self.odometry
+        lights = self.lights
 
         def unavailable():
             raise ValueError("native_service_unavailable")
@@ -207,7 +246,37 @@ class NativeDriver(object):
         return {"sensors": lambda: self.sample_sensors(memory, passive_sensors, sonar),
                 "joints": motion.sample_joints if motion else unavailable,
                 "motion": motion_state if motion else unavailable,
-                "autonomy": autonomy.sample if autonomy else unavailable}
+                "autonomy": autonomy.sample if autonomy else unavailable,
+                "lights": lights.sample if lights and lights.groups else unavailable}
+
+    def light_transition(self, payload):
+        if not self.lights:
+            raise ValueError("Lights unavailable")
+        return self.lights.dispatch(payload)
+
+    def discover_animated_speech(self):
+        try:
+            self.animated_speech = self.session.service("ALAnimatedSpeech", _async=True).value(500)
+        except Exception:
+            self.animated_speech = None
+        available = bool(self.animated_speech and self.motion and self.safety_motion
+                         and self.locomotion and self.locomotion.catalog["available"])
+        enabled = available and self.animated_speech_stop_verified
+        self.description["speech"]["animated"] = {
+            "available": enabled,
+            "reason": None if enabled else (
+                "hardware_animated_stop_unverified" if available else "native_service_unavailable"),
+        }
+
+    def prepare_animated_speech(self, payload):
+        speech = self.description["speech"]
+        if not speech["animated"]["available"] or not self.animated_speech:
+            raise ValueError("Animated speech is unavailable")
+        if payload["language"] != self.call(self.tts, "getLanguage"):
+            raise ValueError("Animated speech requires the current native language")
+        if payload["voice"] != self.call(self.tts, "getVoice"):
+            raise ValueError("Animated speech requires the current native voice")
+        self.require_stiff(self.motion.names)
 
     def speak(self, payload):
         # Voice changes are a later capability; do not mutate global voice preferences silently.
@@ -218,6 +287,8 @@ class NativeDriver(object):
             raise ValueError("The tested per-utterance Acapela controls are unavailable for Japanese")
         text = "\\vol=%d\\\\rspd=%d\\%s" % (
             int(round(payload["volume"] * 100)), int(round(payload["rate"] * 100)), payload["text"])
+        if payload.get("animated"):
+            return self.animated_speech.say(text, {"bodyLanguageMode": "contextual"}, _async=True)
         return self.tts.say(text, language, _async=True)
 
     def stop(self):
@@ -238,6 +309,23 @@ class NativeDriver(object):
                 if not bounds["writable"] or not all(bounds["minimum"] <= value <= bounds["maximum"] for value in values):
                     raise ValueError("Joint target outside limits")
         self.require_stiff(payload["names"])
+        if "gesture" in payload:
+            self.prepare_gesture(payload)
+
+    def prepare_gesture(self, payload):
+        if not self.gestures_verified or not self.safety_motion:
+            raise ValueError("Physical gesture execution is unavailable")
+        names, gesture = payload["names"], payload["gesture"]
+        expected = gesture["required_posture"]
+        measured = self.call(self.motion.motion, "getAngles", names, True)
+        if (len(measured) != len(names) or not all(isinstance(value, numbers.Real)
+                and not isinstance(value, bool) and abs(value - start) <= 0.1
+                for value, start in zip(measured, gesture["measured_start"]))
+                or self.call(self.motion.motion, "moveIsActive") is not False
+                or expected is not None and (not self.posture or self.posture.sample() != expected)):
+            error = ValueError("The native gesture starting pose changed before dispatch")
+            error.code = "precondition_failed"
+            raise error
 
     def require_stiff(self, names):
         awake = self.call(self.motion.motion, "robotIsWakeUp")
@@ -279,15 +367,16 @@ class NativeDriver(object):
     def set_joint_target(self, payload):
         return self.motion.motion.setAngles(payload["names"], payload["angles"], payload["speed"], _async=True)
 
-    def hold_joints(self, names):
+    def hold_joints(self, names, safety_motion=None):
+        motion = safety_motion if safety_motion is not None else self.safety_motion
         start = monotonic()
-        angles = self.safety_motion.getAngles(names, True, _async=True).value(150)
+        angles = motion.getAngles(names, True, _async=True).value(150)
         if (len(angles) != len(names) or not all(isinstance(v, numbers.Real) and not isinstance(v, bool)
                 and v == v and abs(v) != float("inf") for v in angles) or monotonic() - start > 0.15):
             raise ValueError("Fresh measured joint targets unavailable for hold")
         payload = {"names": names, "angles": angles, "speed": 0.1}
         self.validate_joint_target(payload)
-        self.safety_motion.setAngles(names, angles, 0.1, _async=True).value(150)
+        motion.setAngles(names, angles, 0.1, _async=True).value(150)
         return {"required": True, "confirmed": bool(self.joint_hold_verified),
                 "mechanism": "fresh_measured_target", "speed": 0.1,
                 "acquisition_to_confirmation_ms": (monotonic() - start) * 1000}
@@ -343,13 +432,32 @@ class NativeDriver(object):
     def close(self):
         self._connected.clear()
         self.locomotion = self.odometry = None
+        self.lights = None
+        self.animated_speech = None
+        if self.behaviors:
+            self.behaviors.close()
+            self.behaviors = None
         if self.faces:
             self.faces.close()
             self.faces = None
+        if self.landmarks:
+            self.landmarks.close()
+            self.landmarks = None
+        if self.people:
+            self.people.close()
+            self.people = None
+        if self.tracker:
+            self.tracker.cleanup()
+            self.tracker = None
         if self.camera:
             self.camera.invalidate()
             self.camera.cleanup()
             self.camera = None
+        if self.microphone:
+            self.microphone.invalidate()
+            self.microphone.cleanup()
+            self.microphone = None
+        self.speaker = None
         if self.sonar:
             self.sonar.close()
             self.sonar = None
@@ -406,6 +514,22 @@ class FixtureSafety(object):
         self.speech.stop_event.set()
 
 
+class FixtureAnimatedSpeech(object):
+    def __init__(self, speech, motion):
+        self.speech = speech
+        self.motion = motion
+
+    def say(self, text, configuration):
+        if configuration != {"bodyLanguageMode": "contextual"} or "^" in text:
+            raise ValueError("Unexpected animated speech configuration")
+        duration = 30 if "[fixture:block]" in text else 0.15
+        animation = threading.Thread(target=self.motion._run,
+                                     args=(self.motion.names, duration, lambda: None))
+        animation.start()
+        self.speech.say(text, "English")
+        animation.join()
+
+
 class FixtureTouch(object):
     def __init__(self):
         self.signal = qi.Signal("m")
@@ -415,7 +539,7 @@ class FixtureMemory(object):
     def __init__(self):
         self.sources = dict((event, FixtureTouch()) for event in TOUCH)
         self.sources.update((event, FixtureTouch()) for event in ["PostureChanged", "PostureFamilyChanged", "ALMotion/RobotIsFalling", "robotHasFallen"])
-        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT])
+        self.sources.update((event, FixtureTouch()) for event in ["WordRecognized", "ALSpeechRecognition/ActiveListening", FACE_EVENT, LANDMARK_EVENT, PEOPLE_EVENT, BEHAVIOR_EVENT])
         self.values = dict((key, 0) for key in MEMORY_KEYS)
         self.values[BATTERY_KEY] = 76
         self.values.update(zip(SONAR_KEYS, [0.4, 1.2]))
@@ -448,6 +572,10 @@ class FixtureMemory(object):
 class FixtureDriver(NativeDriver):
     joint_hold_verified = True
     velocity_stop_verified = True
+    animated_speech_stop_verified = True
+    behavior_stop_verified = True
+    gestures_verified = True
+    tracker_stop_verified = True
 
     """Real SDK calls/signals against local services; never connects to robot hardware."""
 
@@ -459,23 +587,37 @@ class FixtureDriver(NativeDriver):
         self.memory_impl = FixtureMemory()
         self.motion_impl = qi.multiThreaded()(FixtureMotion)()
         self.posture_impl = qi.multiThreaded()(FixturePosture)(self.motion_impl)
+        self.animated_impl = qi.multiThreaded()(FixtureAnimatedSpeech)(self.work_impl, self.motion_impl)
         self.autonomy_impl = qi.multiThreaded()(FixtureAutonomy)()
         self.recognition_impl = qi.multiThreaded()(FixtureRecognition)(self.memory_impl)
         self.sonar_impl = qi.multiThreaded()(FixtureSonar)()
         self.video_impl = qi.multiThreaded()(FixtureVideo)()
+        self.audio_impl = qi.multiThreaded()(FixtureAudio)(self.server)
         self.faces_impl = qi.multiThreaded()(FixtureFaces)(self.memory_impl)
+        self.landmarks_impl = qi.multiThreaded()(FixtureLandmarks)(self.memory_impl)
+        self.people_impl = qi.multiThreaded()(FixturePeople)(self.memory_impl)
+        self.tracker_impl = FixtureTracker()
+        self.lights_impl = qi.multiThreaded()(FixtureLights)(self.memory_impl)
+        self.behaviors_impl = qi.multiThreaded()(FixtureBehaviors)(self.memory_impl)
         self.face_sequence = 0
         self.contact_index = 0
         self.server.registerService("ALTextToSpeech", self.work_impl)
         self.server.registerService("FixtureSafety", self.safety_impl)
         self.server.registerService("ALMemory", self.memory_impl)
         self.server.registerService("ALMotion", self.motion_impl)
+        self.server.registerService("ALAnimatedSpeech", self.animated_impl)
         self.server.registerService("ALRobotPosture", self.posture_impl)
         self.server.registerService("ALAutonomousLife", self.autonomy_impl)
         self.server.registerService("ALSpeechRecognition", self.recognition_impl)
         self.server.registerService("ALSonar", self.sonar_impl)
         self.server.registerService("ALVideoDevice", self.video_impl)
+        self.server.registerService("ALAudioDevice", self.audio_impl)
         self.server.registerService("ALFaceDetection", self.faces_impl)
+        self.server.registerService("ALLandMarkDetection", self.landmarks_impl)
+        self.server.registerService("ALPeoplePerception", self.people_impl)
+        self.server.registerService("ALTracker", self.tracker_impl)
+        self.server.registerService("ALLeds", self.lights_impl)
+        self.server.registerService("ALBehaviorManager", self.behaviors_impl)
         super(FixtureDriver, self).__init__(self.server.endpoints()[0], observe, lock)
         self.last_touch = time.time()
 
@@ -488,6 +630,8 @@ class FixtureDriver(NativeDriver):
     def sample_sensors(self, memory, passive_sensors, sonar=None):
         self.face_sequence += 1
         self.faces_impl.sample(self.face_sequence)
+        self.landmarks_impl.sample(self.face_sequence)
+        self.people_impl.sample(self.face_sequence)
         if time.time() - self.last_touch >= 0.5:
             self.last_touch = time.time()
             self.memory_impl.toggle(self.contact_index // 2)

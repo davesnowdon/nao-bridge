@@ -14,14 +14,19 @@ from .errors import (
     SessionLost,
     VisionObserverError,
     VisionObserverTimeout,
+    VisionTrackerError,
+    VisionTrackerTimeout,
 )
-from .models import SensorObserverData, VisionObserverData
+from .models import CameraPreviewData, SensorObserverData, VisionObserverData, VisionTrackerData
 
 if TYPE_CHECKING:
     from .async_client import AsyncNao
 
 TERMINAL = {"stopped", "failed", "unknown"}
-ObserverData = TypeVar("ObserverData", bound=SensorObserverData | VisionObserverData)
+ObserverData = TypeVar(
+    "ObserverData",
+    bound=SensorObserverData | VisionObserverData | CameraPreviewData | VisionTrackerData,
+)
 Observer = TypeVar("Observer", bound="AsyncObserver[Any]")
 
 
@@ -36,12 +41,15 @@ class AsyncObserver(Generic[ObserverData]):
         domain: str,
         error: Callable[[ObserverData], Exception],
         timeout_error: type[TimeoutError],
+        *,
+        resource: str = "observers",
+        label: str | None = None,
     ):
         self._nao = nao
         self.data = data
         self._model = model
-        self._url = f"/api/{domain}/observers/" + data.id
-        self._label = "Sensor observer" if domain == "sensors" else "Vision observer"
+        self._url = f"/api/{domain}/{resource}/" + data.id
+        self._label = label or ("Sensor observer" if domain == "sensors" else "Vision observer")
         self._error, self._timeout_error = error, timeout_error
         self._id = data.id
         self._session_id = data.session_id
@@ -170,3 +178,23 @@ class AsyncVisionObserver(AsyncObserver[VisionObserverData]):
         super().__init__(
             nao, data, VisionObserverData, "vision", VisionObserverError, VisionObserverTimeout
         )
+
+
+class AsyncVisionTracker(AsyncObserver[VisionTrackerData]):
+    def __init__(self, nao: AsyncNao, data: VisionTrackerData):
+        super().__init__(
+            nao,
+            data,
+            VisionTrackerData,
+            "vision",
+            VisionTrackerError,
+            VisionTrackerTimeout,
+            resource="trackers",
+            label="Vision tracker",
+        )
+
+    async def wait_ready(self, *, timeout: float | None = 10) -> AsyncVisionTracker:
+        return await self._wait({"searching", "tracking", "lost"}, timeout)
+
+    async def wait_configured(self, *, timeout: float | None = 10) -> AsyncVisionTracker:
+        return await self.wait_ready(timeout=timeout)

@@ -1,8 +1,9 @@
-"""Guided increment-1 checks over public HTTP/SSE; no Python SDK dependency."""
+"""Guided speech and contact checks over public HTTP/SSE."""
 
 import argparse
 import asyncio
 import json
+import math
 import platform
 import subprocess
 import sys
@@ -30,6 +31,65 @@ CORE_CHECKS = [
     "session cleanup",
 ]
 FAULT_CHECKS = ["network loss", "network recovery", "bridge restart"]
+HAND_FOOT_CONTACTS = {
+    "touch.hand.left.back": "back of the left hand",
+    "touch.hand.right.back": "back of the right hand",
+    "bumper.left": "front of the left foot bumper",
+    "bumper.right": "front of the right foot bumper",
+}
+TIMING_GROUPS = ("sensors", "joints", "motion")
+TIMING_SECONDS = 10
+TIMING_CHECK = "shared state sampling cadence, age and skew"
+
+
+def contact_check(sensor_id):
+    return "state and two SSE subscribers: " + sensor_id
+
+
+def p95_ms(values):
+    return round(sorted(values)[math.ceil(0.95 * len(values)) - 1], 2) if values else None
+
+
+def sampling_metrics(samples, accepted_rate):
+    states = [sample["state"] for sample in samples]
+    duration_ms = states[-1]["bridge_time_ms"] - states[0]["bridge_time_ms"]
+    groups = {}
+    for name in TIMING_GROUPS:
+        fresh = [
+            state["groups"][name] for state in states if state["groups"][name]["quality"] == "fresh"
+        ]
+        stamps = sorted(
+            {
+                group["sampled_bridge_time_ms"]
+                for group in fresh
+                if group["sampled_bridge_time_ms"] is not None
+            }
+        )
+        age = [group["age_ms"] for group in fresh if group["age_ms"] is not None]
+        groups[name] = {
+            "fresh_frames": len(fresh),
+            "distinct_fresh_samples": len(stamps),
+            "observed_hz": round((len(stamps) - 1) * 1000 / (stamps[-1] - stamps[0]), 2)
+            if len(stamps) >= 2
+            else None,
+            "age_p95_ms": p95_ms(age),
+        }
+    skew = []
+    for state in states:
+        group_values = [state["groups"][name] for name in TIMING_GROUPS]
+        stamps = [group["sampled_bridge_time_ms"] for group in group_values]
+        if all(group["quality"] == "fresh" for group in group_values) and None not in stamps:
+            skew.append(max(stamps) - min(stamps))
+    return {
+        "accepted_rate_hz": accepted_rate,
+        "elapsed_s": round(duration_ms / 1000, 3),
+        "frames": len(states),
+        "coalesced_samples": sum(sample["skipped_samples"] for sample in samples),
+        "delivery_hz": round((len(states) - 1) * 1000 / duration_ms, 2),
+        "groups": groups,
+        "all_groups_fresh_frames": len(skew),
+        "group_start_skew_p95_ms": p95_ms(skew),
+    }
 
 
 class ObservationFailed(RuntimeError):
@@ -73,7 +133,17 @@ class Evidence:
             "automation": "running",
             "hardware_acceptance": "incomplete",
             "checks": [
-                {"name": name, "result": "not tested"} for name in CORE_CHECKS + FAULT_CHECKS
+                {"name": name, "result": "not tested"}
+                for name in [
+                    *CORE_CHECKS,
+                    *(
+                        contact_check(sensor)
+                        for sensor in HAND_FOOT_CONTACTS
+                        if metadata.get("hand_foot")
+                    ),
+                    *([TIMING_CHECK] if metadata.get("sample_timing") else []),
+                    *FAULT_CHECKS,
+                ]
             ],
             "observations": [],
         }
@@ -108,24 +178,59 @@ class Evidence:
         summary = self.summary
         metadata = summary["metadata"]
         robot = summary.get("robot", {})
+        scope = "connection, speech and head touch"
+        if metadata.get("sample_timing"):
+            scope = "shared state sampling over SSE"
+        elif metadata.get("hand_foot_only"):
+            scope = "connection, hand-back and foot-bumper state and events"
+        elif metadata.get("hand_foot"):
+            scope += ", plus hand-back and foot-bumper state and events"
         lines = [
             "# Robot test report",
             "",
             "Result: **" + summary.get("result", "RUNNING") + "**",
             "",
-            "Scope: increment-1 connection, speech and touch; optional idle disconnect/restart.",
+            "Scope: " + scope + ".",
             "",
             "| Check | Result |",
             "| --- | --- |",
         ]
         for check in summary["checks"]:
             lines.append(f"| {check['name']} | {check['result'].upper()} |")
-        lines += ["", "## What you observed", ""]
-        for item in summary["observations"]:
-            outcome = {"y": "PASS", "n": "FAIL", "s": "NOT OBSERVED"}[item["answer"].lower()]
-            lines.append(f"- {outcome}: {item['question']}")
-        if len(summary["observations"]) < 4:
-            lines.append("- Remaining listening checks: NOT TESTED.")
+        if not (metadata.get("hand_foot_only") or metadata.get("sample_timing")):
+            lines += ["", "## What you observed", ""]
+            for item in summary["observations"]:
+                outcome = {"y": "PASS", "n": "FAIL", "s": "NOT OBSERVED"}[item["answer"].lower()]
+                lines.append(f"- {outcome}: {item['question']}")
+            if len(summary["observations"]) < 4:
+                lines.append("- Remaining listening checks: NOT TESTED.")
+        if timing := summary.get("sample_timing"):
+            lines += [
+                "",
+                "## Sampling measurements",
+                "",
+                f"{timing['frames']} frames in {timing['elapsed_s']} seconds. "
+                f"Accepted rate {timing['accepted_rate_hz']} Hz. "
+                f"SSE frame rate {timing['delivery_hz']} Hz. "
+                f"{timing['coalesced_samples']} samples coalesced.",
+                "",
+                "| Group | Fresh frames | Distinct fresh samples | Observed Hz | p95 age (ms) |",
+                "| --- | ---: | ---: | ---: | ---: |",
+            ]
+            for name, values in timing["groups"].items():
+                rate = values["observed_hz"] if values["observed_hz"] is not None else "—"
+                age = values["age_p95_ms"] if values["age_p95_ms"] is not None else "—"
+                lines.append(
+                    f"| {name} | {values['fresh_frames']} | {values['distinct_fresh_samples']} | "
+                    f"{rate} | {age} |"
+                )
+            skew = timing["group_start_skew_p95_ms"]
+            if skew is not None:
+                lines += [
+                    "",
+                    f"Acquisition-start skew p95 was {skew} ms "
+                    f"across {timing['all_groups_fresh_frames']} fully fresh frames.",
+                ]
         for field in ("error", "cleanup_error"):
             if field in summary:
                 lines += ["", "## " + field.replace("_", " ").title(), "", summary[field]]
@@ -167,10 +272,11 @@ class Evidence:
 
 
 class Stream:
-    def __init__(self, runner, subscription, reconnect=False):
+    def __init__(self, runner, subscription, reconnect=False, *, include_samples=False):
         self.runner = runner
         self.subscription = subscription
         self.queue = asyncio.Queue(maxsize=256)
+        self.include_samples = include_samples
         self.task = asyncio.create_task(self.read(reconnect))
 
     async def read(self, reconnect):
@@ -205,7 +311,7 @@ class Stream:
                             "sse", subscription=self.subscription["id"], event=event
                         )
                         # Samples remain in the evidence, not in the operator's touch queue.
-                        if event["type"] != "state.sample":
+                        if self.include_samples or event["type"] != "state.sample":
                             self.queue.put_nowait(event)
                     fields, data, size = {}, [], 0
                 elif not line.startswith(":"):
@@ -428,19 +534,46 @@ class Runner:
             key=uuid.uuid4().hex,
         )
 
-    async def open_stream(self, subscription, reconnect=False):
-        stream = Stream(self, subscription, reconnect)
+    async def open_stream(self, subscription, reconnect=False, *, include_samples=False):
+        stream = Stream(self, subscription, reconnect, include_samples=include_samples)
         self.streams.append(stream)
         await stream.event("stream.ready", timeout=10)
         return stream
 
-    async def touch(self, streams, label, sensor="front"):
+    async def expect_contact_state(self, sensor_id, state_path, pressed):
+        try:
+            async with asyncio.timeout(1.5):
+                while True:
+                    state = await self.request("GET", "/api/state?include=sensors", schema="State")
+                    group = state["groups"]["sensors"]
+                    value = group["value"]
+                    for part in state_path:
+                        value = value.get(part) if isinstance(value, dict) else None
+                    if group["quality"] == "fresh" and value is pressed:
+                        return
+                    await asyncio.sleep(0.05)
+        except TimeoutError as exc:
+            raise RuntimeError(f"Fresh state did not show {sensor_id} pressed={pressed}") from exc
+
+    async def touch(self, streams, label, sensor="front", *, state_path=None):
         self.evidence.summary["active_check"] = label
-        await self.ask(f"{label}: release all head sensors, then press Enter when ready.")
+        sensor_id = sensor if state_path is not None else "touch.head." + sensor
+        contact = (
+            HAND_FOOT_CONTACTS[sensor]
+            if state_path is not None
+            else f"{sensor.upper()} head sensor"
+        )
+        release = "the selected contact" if state_path is not None else "all head sensors"
+        await self.ask(f"{label}: release {release}, then press Enter when ready.")
         for stream in streams:
             stream.discard_pending()
+        action = (
+            "Press and hold for two seconds, then release"
+            if state_path is not None
+            else "Press and release once"
+        )
         print(
-            f"Now press and release the {sensor.upper()} head sensor once (within 180 seconds).",
+            f"{contact}: {action} (within 180 seconds).",
             flush=True,
         )
 
@@ -449,16 +582,15 @@ class Runner:
             for pressed in (True, False):
                 while True:
                     event = await stream.event("touch.changed", timeout=180)
-                    if event["data"]["sensor"] != "touch.head." + sensor:
+                    if event["data"]["sensor"] != sensor_id:
                         continue
                     if pressed and not event["data"]["pressed"]:
                         continue
                     break
-                require(
-                    event["data"] == {"sensor": "touch.head." + sensor, "pressed": pressed},
-                    "Unexpected head press/release; see recorded events",
-                )
-                result.append(event["data"])
+                require(event["data"]["pressed"] is pressed, "Unexpected contact edge")
+                result.append(pressed)
+                if state_path is not None and stream is streams[0]:
+                    await self.expect_contact_state(sensor_id, state_path, pressed)
             return result
 
         try:
@@ -470,14 +602,33 @@ class Runner:
         self.evidence.passed(label)
         self.evidence.summary.pop("active_check", None)
 
-    async def exercise(self, capabilities):
-        for name in ("speech.utterances", "touch.changed"):
-            require(capabilities["features"][name]["status"] == "available", name + " unavailable")
-        await self.ask(
-            "This run speaks and cancels speech. No motion, posture or stiffness commands.\n"
-            "Use an otherwise idle bridge: priority stop affects all speech. "
-            "Enter to begin; q quits."
-        )
+    async def hand_foot_paths(self):
+        catalog = await self.request("GET", "/api/sensors", schema="Sensors")
+        sensors = {sensor["id"]: sensor for sensor in catalog["items"]}
+        contact_paths = {}
+        for sensor_id in HAND_FOOT_CONTACTS:
+            self.evidence.summary["active_check"] = contact_check(sensor_id)
+            entry = sensors.get(sensor_id)
+            require(
+                entry is not None
+                and entry["state"]["status"] == "available"
+                and entry["events"]["status"] == "available",
+                sensor_id + " is unavailable in state or events",
+            )
+            path = entry.get("state_path")
+            if not path and entry["state_group"] == "sensors" and entry["state_field"] == "touch":
+                path = ["touch", sensor_id]
+            require(path, sensor_id + " has no advertised touch state path")
+            contact_paths[sensor_id] = path
+        self.evidence.summary.pop("active_check", None)
+        return contact_paths
+
+    async def verify_hand_foot(self, streams, contact_paths):
+        for sensor_id, state_path in contact_paths.items():
+            await self.touch(streams, contact_check(sensor_id), sensor_id, state_path=state_path)
+
+    async def start_session(self):
+        await self.authority()
         sent = time.monotonic()
         self.session = await self.request(
             "POST",
@@ -489,6 +640,67 @@ class Runner:
         )
         self.lease_deadline = self.confirmed_deadline(self.session, sent)
         self.renewal = asyncio.create_task(self.renew())
+
+    async def exercise_hand_foot(self):
+        contact_paths = await self.hand_foot_paths()
+        await self.ask(
+            "This run checks four hand and foot contacts. Press Enter to begin or q to quit."
+        )
+        await self.start_session()
+        first = await self.open_stream(await self.subscription())
+        second = await self.open_stream(await self.subscription())
+        await self.verify_hand_foot([first, second], contact_paths)
+        await self.authority()
+
+    async def measure_sampling(self):
+        self.evidence.summary["active_check"] = TIMING_CHECK
+        await self.start_session()
+        subscription = await self.request(
+            "POST",
+            "/api/events/subscriptions",
+            {"samples": [{"groups": list(TIMING_GROUPS), "rate_hz": 10}], "allow_lower_rate": True},
+            status=201,
+            schema="Subscription",
+        )
+        stream = await self.open_stream(subscription, include_samples=True)
+        samples = []
+        async with asyncio.timeout(TIMING_SECONDS + 10):
+            while True:
+                frame = await stream.event("state.sample")
+                sample = frame["data"]
+                self.validate("StateSample", sample)
+                state = sample["state"]
+                require(
+                    state["bridge_instance_id"] == self.robot["bridge_instance_id"]
+                    and state["connection_generation"] == self.robot["connection_generation"],
+                    "Control identity changed during sampling",
+                )
+                samples.append(sample)
+                if (
+                    state["bridge_time_ms"] - samples[0]["state"]["bridge_time_ms"]
+                    >= TIMING_SECONDS * 1000
+                ):
+                    break
+        await self.authority()
+        timing = sampling_metrics(samples, subscription["samples"][0]["rate_hz"])
+        self.evidence.summary["sample_timing"] = timing
+        require(
+            timing["all_groups_fresh_frames"] > 0
+            and all(row["observed_hz"] is not None for row in timing["groups"].values()),
+            "Sampling window did not contain enough fresh observations from all requested groups",
+        )
+        self.evidence.passed(TIMING_CHECK)
+        self.evidence.summary.pop("active_check", None)
+
+    async def exercise(self, capabilities, *, hand_foot=False):
+        for name in ("speech.utterances", "touch.changed"):
+            require(capabilities["features"][name]["status"] == "available", name + " unavailable")
+        contact_paths = await self.hand_foot_paths() if hand_foot else {}
+        await self.ask(
+            "This run exercises speech and the robot-wide priority stop.\n"
+            "Start with the robot and bridge idle. Press Enter to begin or q to quit."
+        )
+        await self.start_session()
         first_sub, second_sub = await self.subscription(), await self.subscription()
         first = await self.open_stream(first_sub)
         second = await self.open_stream(second_sub)
@@ -547,6 +759,7 @@ class Runner:
             await self.touch(
                 [first, second], "two independent touch subscribers: " + sensor, sensor
             )
+        await self.verify_hand_foot([first, second], contact_paths)
         await first.close()
         self.streams.remove(first)
         await self.request("DELETE", "/api/events/subscriptions/" + first_sub["id"], status=204)
@@ -744,15 +957,26 @@ async def execute(args, *, ask=prompt):
         datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
     )
     metadata, container = await collect_metadata(args.url, args.container)
-    metadata.update(inspect_only=args.inspect, fault_checks=args.faults, rehearsal=args.rehearsal)
+    metadata.update(
+        inspect_only=args.inspect,
+        fault_checks=args.faults,
+        rehearsal=args.rehearsal,
+        hand_foot=args.hand_foot or args.hand_foot_only,
+        hand_foot_only=args.hand_foot_only,
+        sample_timing=args.sample_timing,
+    )
     evidence = Evidence(directory, metadata)
     print("Results will be saved to " + str(directory.resolve()), flush=True)
     async with httpx.AsyncClient(base_url=args.url, timeout=5, trust_env=False) as http:
         runner = Runner(http, evidence, ask=ask, rehearsal=args.rehearsal)
         try:
             capabilities = await runner.preflight()
-            if not args.inspect:
-                await runner.exercise(capabilities)
+            if args.sample_timing:
+                await runner.measure_sampling()
+            elif args.hand_foot_only:
+                await runner.exercise_hand_foot()
+            elif not args.inspect:
+                await runner.exercise(capabilities, hand_foot=args.hand_foot)
                 await runner.cleanup()
                 if args.faults:
                     await runner.faults(container)
@@ -772,10 +996,10 @@ async def execute(args, *, ask=prompt):
                 evidence.mark("session cleanup", "failed")
             answers = [item["answer"].lower() for item in evidence.summary["observations"]]
             failed = evidence.summary["automation"] == "failed" or "n" in answers
-            complete = (
-                evidence.summary["automation"] == "passed"
-                and len(answers) == 4
-                and all(answer == "y" for answer in answers)
+            complete = evidence.summary["automation"] == "passed" and (
+                args.hand_foot_only
+                or args.sample_timing
+                or (len(answers) == 4 and all(answer == "y" for answer in answers))
             )
             result = "FAIL" if failed else "PASS" if complete else "INCOMPLETE"
             if args.inspect and not failed:
@@ -805,11 +1029,27 @@ def main():
     parser.add_argument(
         "url", nargs="?", default="http://127.0.0.1:3000", help="Bridge HTTP origin"
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--inspect", action="store_true", help="Read-only preflight instead of guided tests"
     )
     parser.add_argument(
         "--faults", action="store_true", help="Also guide idle network/restart checks"
+    )
+    mode.add_argument(
+        "--hand-foot",
+        action="store_true",
+        help="Also verify hand-back and foot-bumper state and events",
+    )
+    mode.add_argument(
+        "--hand-foot-only",
+        action="store_true",
+        help="Verify only hand-back and foot-bumper state and events",
+    )
+    mode.add_argument(
+        "--sample-timing",
+        action="store_true",
+        help="Measure shared state sampling over a ten-second SSE window",
     )
     parser.add_argument(
         "--container", default="nao-bridge", help="Local Docker container name for evidence/restart"
@@ -821,8 +1061,8 @@ def main():
         "--output", type=Path, help="Optional new results directory; default is automatic"
     )
     args = parser.parse_args()
-    if args.inspect and args.faults:
-        parser.error("--faults cannot be combined with --inspect")
+    if args.faults and (args.inspect or args.hand_foot_only or args.sample_timing):
+        parser.error("--faults requires the full guided run.")
     origin = httpx.URL(args.url)
     if (
         origin.scheme not in {"http", "https"}

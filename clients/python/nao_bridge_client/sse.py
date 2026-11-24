@@ -9,6 +9,8 @@ from .errors import ProtocolError
 from .json_wire import loads
 from .models import (
     AssetData,
+    AutonomyStateValue,
+    BehaviorChangedData,
     Capabilities,
     ConnectionChangedData,
     Event,
@@ -27,6 +29,7 @@ from .models import (
     TouchChangedData,
     VisionDetections,
     VisionObserverData,
+    VisionTrackerData,
 )
 
 PAYLOADS = {
@@ -37,12 +40,15 @@ PAYLOADS = {
     "sensor.observer_changed": SensorObserverData,
     "vision.observer_changed": VisionObserverData,
     "vision.detections": VisionDetections,
+    "vision.tracker_changed": VisionTrackerData,
     "sensor.threshold_changed": SensorThresholdChangedData,
     "speech.recognized": SpeechRecognizedData,
     "recording.changed": RecordingData,
     "asset.created": AssetData,
     "motion.posture_changed": MotionPostureChangedData,
     "motion.fall_changed": MotionFallChangedData,
+    "behavior.changed": BehaviorChangedData,
+    "autonomy.changed": AutonomyStateValue,
     "state.sample": StateSampleData,
     "operation.changed": OperationData,
     "session.changed": SessionData,

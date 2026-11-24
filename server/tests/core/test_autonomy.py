@@ -97,6 +97,47 @@ def test_safeguard_entered_after_preparation_prevents_life_write(native):
     assert result["settings"][0]["reason"] == "native_safeguard_active"
 
 
+def test_native_restoration_requires_fresh_match_and_keeps_safeguard(native):
+    control, life = adapter(native)
+    life.state = "disabled"
+    expectancy = {
+        "settings": {
+            "basic_awareness": {"before": True, "applied": False},
+            "life_state": {"before": "solitary", "applied": "disabled"},
+        }
+    }
+    assert native.valid_restoration(expectancy)
+    assert not native.valid_restoration(
+        {"settings": {"life_state": {"before": "safeguard", "applied": "disabled"}}}
+    )
+    result = control.restore(expectancy, apply)
+    assert life.state == "solitary"
+    assert [item["reason"] for item in result["settings"]] == ["external_change", None]
+    life.state = "safeguard"
+    result = control.restore(expectancy, lambda *args: pytest.fail("Safeguard overridden"))
+    assert all(item["reason"] == "native_safeguard_active" for item in result["settings"])
+
+
+def test_native_restoration_stops_after_unknown_write(native):
+    control, life = adapter(native)
+    life.state = "disabled"
+    life.abilities["BasicAwareness"] = False
+    requested = {
+        "settings": {
+            "basic_awareness": {"before": True, "applied": False},
+            "life_state": {"before": "solitary", "applied": "disabled"},
+        }
+    }
+
+    def timeout(*args):
+        raise TimeoutError("Native result lost")
+
+    result = control.restore(requested, timeout)
+    assert result["outcome"] == "unknown"
+    assert [item["status"] for item in result["settings"]] == ["unknown", "skipped"]
+    assert life.state == "disabled"
+
+
 def test_readback_mismatch_rolls_back_only_known_unchanged_by_others_settings(native):
     control, life = adapter(native)
     payload = {
@@ -187,14 +228,13 @@ async def test_http_autonomy_observations_results_ownership_and_cleanup(rig):
         assert backend.joint_state["stiffness"]["HeadYaw"] == 0.5
 
 
-async def test_http_autonomy_rejects_unknown_settings_conflicts_and_unimplemented_restoration(rig):
+async def test_http_autonomy_rejects_unknown_settings_and_conflicts(rig):
     async with rig(duration=10) as (client, core, backend):
         session, owner = await new_session(client)
         for body, expected in [
             ({"settings": {"fall_manager": False}}, 400),
             ({"settings": {"life_state": "safeguard"}}, 400),
             ({"settings": {"awareness_running": False}}, 422),
-            ({"settings": {"life_state": "disabled"}, "restore_on_close": True}, 422),
         ]:
             response = await client.post("/api/autonomy/transitions", json=body, headers=owner)
             assert response.status_code == expected, response.text
@@ -206,6 +246,169 @@ async def test_http_autonomy_rejects_unknown_settings_conflicts_and_unimplemente
             headers=owner,
         )
         assert response.status_code == 409
+
+
+async def test_profiles_show_legacy_fallback_and_validate_strict_before_dispatch(rig):
+    async with rig() as (client, core, backend):
+        _, owner = await new_session(client)
+        catalog = backend.autonomy_catalog
+        catalog["basic_awareness"]["status"] = "unavailable"
+        catalog["awareness_running"]["status"] = "available"
+        catalog["background_movement"]["status"] = "unavailable"
+        backend.autonomy_state["awareness_running"] = True
+        await backend.connection(True)
+
+        discovery = (await client.get("/api/autonomy/profiles")).json()
+        VALIDATORS["AutonomyProfileCatalog"].validate(discovery)
+        profile = next(item for item in discovery["items"] if item["name"] == "manual")
+        assert profile["settings"]["awareness_running"] is False
+        assert "basic_awareness" not in profile["settings"]
+        assert profile["unavailable_settings"] == ["background_movement"]
+
+        path = "/api/autonomy/profile_runs"
+        strict = await client.post(path, json={"profile": "manual"}, headers=owner)
+        assert strict.status_code == 422
+        assert not backend.calls
+
+        payload = {"profile": "manual", "allow_partial": True}
+        headers = {**owner, "Idempotency-Key": "profile-run"}
+        accepted = await client.post(path, json=payload, headers=headers)
+        retry = await client.post(path, json=payload, headers=headers)
+        assert accepted.status_code == retry.status_code == 202
+        assert accepted.json()["id"] == retry.json()["id"]
+        result = await wait_operation(client, accepted.json()["id"], owner)
+        assert result["status"] == "succeeded"
+        assert {item["setting"]: item["status"] for item in result["result"]["settings"]}[
+            "background_movement"
+        ] == "skipped"
+        assert backend.autonomy_state["awareness_running"] is False
+        assert discovery["connection_generation"] == core.generation
+
+
+async def apply_restorable_profile(client, owner):
+    response = await client.post(
+        "/api/autonomy/profile_runs",
+        json={"profile": "presentation", "restore_on_close": True},
+        headers=owner,
+    )
+    assert response.status_code == 202
+    assert (await wait_operation(client, response.json()["id"], owner))["status"] == "succeeded"
+
+
+async def close_autonomy_session(client, sid, owner):
+    response = await client.post(f"/api/sessions/{sid}/close", json={}, headers=owner)
+    assert response.status_code == 202
+    return await wait_operation(client, response.json()["id"], owner)
+
+
+async def test_close_restores_only_confirmed_unchanged_owned_settings(rig):
+    async with rig() as (client, core, backend):
+        session, owner = await new_session(client)
+        await apply_restorable_profile(client, owner)
+        backend.autonomy_state["basic_awareness"] = True
+        result = await close_autonomy_session(client, session["id"], owner)
+        assert result["status"] == "succeeded"
+        restoration = result["result"]["autonomy_restoration"]
+        VALIDATORS["AutonomyRestoration"].validate(restoration)
+        assert restoration["status"] == "partial"
+        settings = {item["setting"]: item for item in restoration["settings"]}
+        assert settings["life_state"]["status"] == "restored"
+        assert settings["life_state"]["observed"] == "solitary"
+        assert settings["basic_awareness"]["reason"] == "external_change"
+        assert settings["basic_awareness"]["observed"] is True
+        assert backend.autonomy_state["life_state"] == "solitary"
+        assert not core.configuration_owners and not core.resources
+
+
+async def test_non_restorable_edit_replaces_previous_restore_intent(rig):
+    async with rig() as (client, _, backend):
+        session, owner = await new_session(client)
+        await apply_restorable_profile(client, owner)
+        response = await client.post(
+            "/api/autonomy/transitions",
+            json={"settings": {"basic_awareness": False}},
+            headers=owner,
+        )
+        assert (await wait_operation(client, response.json()["id"], owner))["status"] == "succeeded"
+        result = await close_autonomy_session(client, session["id"], owner)
+        assert result["result"]["autonomy_restoration"]["status"] == "restored"
+        assert backend.autonomy_state["basic_awareness"] is False
+
+
+async def test_close_never_restores_on_a_new_connection(rig, monkeypatch):
+    async with rig() as (client, _, backend):
+        session, owner = await new_session(client)
+        await apply_restorable_profile(client, owner)
+        original = backend.fence
+
+        async def fence(sid):
+            await backend.connection(False)
+            await backend.connection(True)
+            return await original(sid)
+
+        monkeypatch.setattr(backend, "fence", fence)
+        result = await close_autonomy_session(client, session["id"], owner)
+        restoration = result["result"]["autonomy_restoration"]
+        assert restoration["status"] == "skipped"
+        assert {item["reason"] for item in restoration["settings"]} == {"connection_changed"}
+        assert len(backend.calls) == 1
+        assert backend.autonomy_state["life_state"] == "disabled"
+
+
+async def test_unknown_restore_quarantines_native_resources(rig):
+    async with rig() as (client, core, backend):
+        session, owner = await new_session(client)
+        await apply_restorable_profile(client, owner)
+        backend.fail_next = "unknown"
+        result = await close_autonomy_session(client, session["id"], owner)
+        assert result["status"] == "unknown"
+        restoration = result["result"]["autonomy_restoration"]
+        assert restoration["status"] == "unknown"
+        assert result["result"]["unresolved_operation_ids"] == [restoration["operation_id"]]
+        assert core.resources["joint.HeadYaw"] == restoration["operation_id"]
+        assert backend.autonomy_state["life_state"] == "disabled"
+
+
+async def test_lease_expiry_performs_opted_in_restoration(rig):
+    async with rig() as (client, core, backend):
+        session, owner = await new_session(client)
+        await apply_restorable_profile(client, owner)
+        core.sessions[session["id"]].deadline = core.clock()
+        async with asyncio.timeout(2):
+            while core.configuration_owners or core.resources:
+                await asyncio.sleep(0.01)
+        assert core.sessions[session["id"]].public["status"] == "expired"
+        assert backend.autonomy_state["life_state"] == "solitary"
+        assert backend.calls[-1]["action"] == "restore_autonomy"
+
+
+async def test_robot_stop_overtakes_an_unsubmitted_native_restore(rig, monkeypatch):
+    async with rig() as (client, core, backend):
+        session, owner = await new_session(client)
+        _, supervisor = await new_session(client)
+        await apply_restorable_profile(client, owner)
+        about_to_dispatch, released = asyncio.Event(), asyncio.Event()
+        original = backend.restore_autonomy
+
+        async def delayed_restore(*args):
+            about_to_dispatch.set()
+            await released.wait()
+            return await original(*args)
+
+        monkeypatch.setattr(backend, "restore_autonomy", delayed_restore)
+        close = asyncio.create_task(close_autonomy_session(client, session["id"], owner))
+        try:
+            await asyncio.wait_for(about_to_dispatch.wait(), 1)
+            accepted = await client.post("/api/robot/stop", headers=supervisor, json={})
+            assert accepted.status_code == 202
+            result = await wait_operation(client, accepted.json()["id"], supervisor)
+            assert result["status"] == "succeeded"
+        finally:
+            released.set()
+        result = await close
+        assert result["result"]["autonomy_restoration"]["status"] == "skipped"
+        assert backend.autonomy_state["life_state"] == "disabled"
+        assert not core.resources
 
 
 async def test_unknown_autonomy_result_quarantines_affected_resources(rig):

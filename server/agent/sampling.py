@@ -5,7 +5,7 @@ import threading
 import time
 
 
-GROUPS = ("sensors", "joints", "motion", "autonomy")
+GROUPS = ("sensors", "joints", "motion", "autonomy", "lights")
 
 
 class GroupSampler(object):

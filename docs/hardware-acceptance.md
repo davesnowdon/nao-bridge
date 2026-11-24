@@ -8,9 +8,9 @@ uv run --project server python scripts/hardware_acceptance.py http://127.0.0.1:3
 
 The script checks the connection first, then asks you to press Enter to start
 speech testing. It runs the API checks, asks whether the speech sounded right and
-stopped, and tells you which head sensor to touch. Allow about five minutes. Use
-an otherwise idle bridge because the priority-stop test stops all speech. No
-motion, posture or stiffness commands are sent.
+stopped, and tells you which head sensor to touch. Allow about five minutes. Start
+with an idle robot and bridge. The priority-stop test can interrupt work owned by
+other sessions.
 
 You do not need to fill in a checklist, copy IDs or collect logs. The script creates
 a new directory under `hardware-results/` and prints the path to **report.md** at
@@ -87,6 +87,45 @@ bridge or unavailable Docker access, it asks you to restart the bridge instead.
 Results go into the same report; no separate monitor or manual result recording
 is needed. These checks run while idle; in-flight/process-freeze/load tests remain
 listed as outside this run's scope.
+
+## Optional hand and foot contacts
+
+To verify just the hands and feet, run:
+
+```bash
+uv run --project server python scripts/hardware_acceptance.py --hand-foot-only
+```
+
+The four prompts cover the back of each hand and the front of each foot bumper.
+Hold each contact for about two seconds. The report checks press and release in
+fresh state and two SSE subscriptions. This mode uses only discovery, state reads,
+and session and subscription requests.
+
+To test the stacked changes in order, use this runner from the increment-4
+checkout and pass the URL of the bridge built from the increment-2 candidate.
+The focused mode has been rehearsed against that candidate's sensor catalog.
+
+To include those checks in the full guided run:
+
+```bash
+uv run --project server python scripts/hardware_acceptance.py --hand-foot
+```
+
+The four prompts follow the head sensors. Both modes use the sensor IDs and
+state paths advertised by the bridge, and report each contact by its public ID.
+
+## Measure shared sampling
+
+```bash
+uv run --project server python scripts/hardware_acceptance.py --sample-timing
+```
+
+This mode automatically collects ten seconds of SSE samples. The report
+records the accepted rate, frame rate on the bridge clock, and
+coalesced frames. For sensors, joints, and motion, it counts each fresh
+acquisition timestamp once and reports the observed rate and p95 sample age.
+The skew measurement uses the span between acquisition start timestamps in
+frames where all three groups were fresh. These are bridge acquisition times.
 
 For connection checks only, use `--inspect`. For a simulated backend, use
 `--rehearsal`; the report is prominently labelled as a rehearsal. `--output DIR`

@@ -1,6 +1,7 @@
-"""Read-only discovery and finite, named ALVideoDevice capture."""
+"""Named ALVideoDevice capture and demand-driven frame acquisition."""
 from __future__ import print_function
 
+import json
 import math
 import numbers
 import os
@@ -8,6 +9,9 @@ import re
 import threading
 import time
 import uuid
+from contextlib import contextmanager
+
+from wire import replace_slot
 
 try:
     string_type = basestring
@@ -19,6 +23,7 @@ CAMERAS = {"top": 0, "bottom": 1}
 RESOLUTIONS = {"320x240": (1, 320, 240), "640x480": (2, 640, 480)}
 RGB = 11
 CAPTURE_RATE = 5
+MAX_FEED_RATE = 5
 
 
 class CameraError(ValueError):
@@ -51,15 +56,21 @@ def valid_capture_id(value):
     return isinstance(value, string_type) and re.match(r"\A[0-9a-f]{32}\Z", value) is not None
 
 
+def valid_feed(payload):
+    return (isinstance(payload, dict) and set(payload) == {"camera", "resolution", "frame_rate"}
+            and type(payload["frame_rate"]) is int and 1 <= payload["frame_rate"] <= MAX_FEED_RATE
+            and valid_capture(dict(camera=payload["camera"], resolution=payload["resolution"])))
+
+
 def handoff(root, instance, operation, pixels):
-    """Replace the one private RGB slot without putting pixels in the JSON lane."""
-    path = os.path.join(root, "camera-" + instance + ".rgb")
-    pending = path + ".tmp"
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
-    with os.fdopen(os.open(pending, flags, 0o600), "wb") as output:
-        output.write(operation.encode("ascii"))
-        output.write(pixels)
-    os.rename(pending, path)
+    replace_slot(os.path.join(root, "camera-" + instance + ".rgb"),
+                 operation.encode("ascii"), pixels)
+
+
+def handoff_feed(root, instance, operation, frame, pixels):
+    metadata = json.dumps(frame, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    header = operation.encode("ascii") + b" " + metadata + b"\n"
+    replace_slot(os.path.join(root, "camera-feed-" + instance + ".rgb"), header, pixels)
 
 
 def decode_image(image, camera, resolution):
@@ -153,8 +164,35 @@ class VideoDevice(object):
     def capture(self, payload, authority=lambda: True, dispatch=None):
         if not valid_capture(payload):
             raise CameraError("invalid_request", "Invalid camera capture")
+        with self.source(payload, CAPTURE_RATE, authority, dispatch) as (job, start):
+            return self.frame(payload, job, start, authority)
+
+    def feed(self, payload, publish, authority, dispatch):
+        if not valid_feed(payload):
+            raise CameraError("invalid_request", "Invalid camera feed")
+        rate = payload["frame_rate"]
+        sequence, previous_stamp = 0, None
+        with self.source(payload, rate, authority, dispatch) as (job, start):
+            fresh_deadline = self.clock() + 1.5
+            while authority():
+                frame, pixels = self.frame(payload, job, start, authority)
+                stamp = frame["source_time"]
+                if stamp is None or stamp != previous_stamp:
+                    sequence += 1
+                    frame["sequence"] = sequence
+                    publish(frame, pixels)
+                    previous_stamp = stamp
+                    fresh_deadline = self.clock() + 1.5
+                elif self.clock() >= fresh_deadline:
+                    raise CameraError("camera_frame_unavailable", "Native camera stopped updating")
+                next_frame = frame["acquisition_started"] + 1.0 / rate
+                while authority() and self.clock() < next_frame:
+                    time.sleep(min(0.02, max(0, next_frame - self.clock())))
+
+    @contextmanager
+    def source(self, payload, rate, authority, dispatch):
         if not self.lock.acquire(False):
-            raise CameraError("resource_busy", "Camera capture already running")
+            raise CameraError("resource_busy", "Camera acquisition already running")
         try:
             self.require_authority(authority)
             camera, resolution = payload["camera"], payload["resolution"]
@@ -168,7 +206,7 @@ class VideoDevice(object):
                 job.subscribe = start(
                     self.service.subscribeCamera,
                     job.name, CAMERAS[camera], RESOLUTIONS[resolution][0], RGB,
-                    CAPTURE_RATE)
+                    rate)
                 try:
                     job.handle = job.subscribe.value(1000)
                 except Exception:
@@ -179,33 +217,36 @@ class VideoDevice(object):
                 if not job.owns(job.handle):
                     job.handle = None
                     raise CameraError("invalid_camera_subscription", "Unexpected native handle")
-                deadline = self.clock() + 1.5
-                while True:
-                    self.require_authority(authority)
-                    remaining = deadline - self.clock()
-                    if remaining <= 0:
-                        raise CameraError("camera_frame_unavailable", "Camera produced no frame")
-                    started = self.clock()
-                    job.read = start(self.service.getImageRemote, job.handle)
-                    try:
-                        frame = job.read.value(max(1, int(remaining * 1000)))
-                    except Exception:
-                        raise CameraError("camera_frame_unavailable", "Native camera read failed")
-                    ended = self.clock()
-                    if ended > deadline:
-                        raise CameraError("camera_frame_unavailable", "Camera frame arrived too late")
-                    if frame:
-                        metadata, pixels = decode_image(frame, camera, resolution)
-                        self.require_authority(authority)
-                        metadata.update(acquisition_started=started, acquisition_finished=ended)
-                        return metadata, pixels
-                    time.sleep(min(0.05, max(0, deadline - self.clock())))
+                yield job, start
             finally:
                 # A remote read takes no native local-image lock. End only our subscription.
                 if not self.cleanup_locked():
                     raise CameraUnknown("Native camera subscription cleanup is unconfirmed")
         finally:
             self.lock.release()
+
+    def frame(self, payload, job, start, authority):
+        deadline = self.clock() + 1.5
+        while True:
+            self.require_authority(authority)
+            remaining = deadline - self.clock()
+            if remaining <= 0:
+                raise CameraError("camera_frame_unavailable", "Camera produced no frame")
+            started = self.clock()
+            job.read = start(self.service.getImageRemote, job.handle)
+            try:
+                frame = job.read.value(max(1, int(remaining * 1000)))
+            except Exception:
+                raise CameraError("camera_frame_unavailable", "Native camera read failed")
+            ended = self.clock()
+            if ended > deadline:
+                raise CameraError("camera_frame_unavailable", "Camera frame arrived too late")
+            if frame:
+                metadata, pixels = decode_image(frame, payload["camera"], payload["resolution"])
+                self.require_authority(authority)
+                metadata.update(acquisition_started=started, acquisition_finished=ended)
+                return metadata, pixels
+            time.sleep(min(0.05, max(0, deadline - self.clock())))
 
     def cleanup(self):
         if not self.lock.acquire(False):

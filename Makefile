@@ -1,4 +1,6 @@
-.PHONY: install fmt lint typecheck test check image test-container
+.PHONY: install fmt lint typecheck test check image test-container soak-container
+
+SOAK_SECONDS ?= 1800
 
 install:
 	$(MAKE) -C server install
@@ -25,4 +27,11 @@ test-container: image
 	docker run --rm --network none --entrypoint /opt/modern/bin/python3 \
 		-v "$(CURDIR)/server/tests/container_smoke.py:/tests/container_smoke.py:ro" \
 		-v "$(CURDIR)/scripts/conformance.py:/tests/conformance.py:ro" \
+		-v "$(CURDIR)/contracts/fixtures/presentation-sequence.json:/tests/presentation-sequence.json:ro" \
 		nao-bridge-core /tests/container_smoke.py
+
+soak-container: image
+	docker run --rm --network none --init --entrypoint /opt/modern/bin/python3 \
+		-v "$(CURDIR)/server/tests/container_soak.py:/tests/container_soak.py:ro" \
+		-v "$(CURDIR)/scripts/conformance.py:/tests/conformance.py:ro" \
+		nao-bridge-core /tests/container_soak.py --seconds $(SOAK_SECONDS)

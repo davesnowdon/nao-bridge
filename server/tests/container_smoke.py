@@ -3,14 +3,17 @@
 import asyncio
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
-from contextlib import suppress
+import wave
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("conformance", "/tests/conformance.py")
@@ -615,6 +618,78 @@ async def check_native_controls():
         assert first_face["frame"] == "camera.top" and first_face["revision"] == 1
         assert first_face["faces"][0]["alpha_rad"] == -0.15
         assert "fixture label" not in str(first_face)
+        landmark_request = {
+            "producer_id": "blocked-workers-landmarks",
+            "revision": 1,
+            "configuration": {"camera": "top", "rate_hz": 5},
+        }
+        assert info["landmarks"]["available"]
+        assert (await backend.configure_landmarks(landmark_request))["status"] == "active"
+        async with asyncio.timeout(3):
+            while "landmarks.detections" not in state:
+                await asyncio.sleep(0.01)
+        marker = state["landmarks.detections"]
+        assert marker["frame"] == "camera.top" and marker["landmarks"][0]["marker_id"] == 84
+        people_request = {
+            "producer_id": "blocked-workers-people",
+            "revision": 1,
+            "configuration": {"camera": "bottom", "rate_hz": 5},
+        }
+        assert info["people"]["available"] and info["people"]["camera"] is None
+        assert (await backend.configure_people(people_request))["status"] == "active"
+        await asyncio.sleep(0.25)
+        assert "people.detections" not in state
+        assert (
+            await backend.configure_people({**people_request, "revision": 2, "configuration": None})
+        )["status"] == "stopped"
+        assert (
+            await backend.configure_people(
+                {**people_request, "revision": 3, "configuration": {"camera": None, "rate_hz": 5}}
+            )
+        )["configuration"]["camera"] is None
+        async with asyncio.timeout(3):
+            while "people.detections" not in state:
+                await asyncio.sleep(0.01)
+        people = state["people.detections"]
+        assert people["frame"] == "camera.top" and people["revision"] == 3
+        assert people["people"][0]["distance_m"] == 1.3
+        assert "distance_m" not in people["people"][1]
+        assert (
+            await backend.configure_people({**people_request, "revision": 4, "configuration": None})
+        )["status"] == "stopped"
+        print(
+            "Native people observation: camera filter, optional range and owned teardown passed",
+            flush=True,
+        )
+        tracker_id = uuid.uuid4().hex
+        assert info["face_tracker"]["available"]
+        tracker = asyncio.create_task(backend.track_face(tracker_id, "fixture-tracker"))
+        states = []
+        try:
+            async with asyncio.timeout(4):
+                while not states or states[-1] != "lost":
+                    update = state.get("tracker.state", {})
+                    if (
+                        update.get("operation_id") == tracker_id
+                        and update.get("state") not in states
+                    ):
+                        states.append(update["state"])
+                    assert not tracker.done()
+                    await asyncio.sleep(0.01)
+            assert states == ["searching", "tracking", "lost"] and all(
+                not task.done() for task in blocked
+            )
+        finally:
+            stopped_tracker = await backend.stop(operation_id=tracker_id)
+            tracker_result = await asyncio.wait_for(tracker, 3)
+        assert (
+            tracker_id in stopped_tracker["confirmed_ids"]
+            and tracker_result["head_hold"]["confirmed"]
+        )
+        print(
+            "Native face tracker: detection states, scoped stop and measured hold passed",
+            flush=True,
+        )
         assert [camera["id"] for camera in info["cameras"]] == ["top", "bottom"]
         for camera, size, color in (
             ("top", "320x240", b"\x00\x80\xff"),
@@ -637,6 +712,98 @@ async def check_native_controls():
         print(
             "Native camera IPC: full frames with blocked workers and fenced IDs passed", flush=True
         )
+        feed_id = uuid.uuid4().hex
+        streaming = {"camera": "bottom", "resolution": "640x480", "frame_rate": 5}
+        feed = asyncio.create_task(backend.run_camera_feed(feed_id, streaming))
+        sequence = 0
+        frames = []
+        try:
+            async with asyncio.timeout(4):
+                while len(frames) < 3:
+                    result = await backend.latest_camera_frame(feed_id, streaming, sequence)
+                    if result:
+                        metadata, rgb = result
+                        sequence = metadata["sequence"]
+                        frames.append(metadata)
+                        assert rgb == b"\xff\x10\x00" * (640 * 480)
+                    else:
+                        assert not feed.done()
+                        await asyncio.sleep(0.02)
+            assert all(not task.done() for task in blocked)
+            sequences = [frame["sequence"] for frame in frames]
+            assert sequences == sorted(set(sequences))
+            assert len({frame["source_time"]["microseconds"] for frame in frames}) == 3
+        finally:
+            await backend.stop(operation_id=feed_id)
+            assert (await asyncio.wait_for(feed, 3))["cancelled"]
+        # An older, larger frame remains in the slot until the new producer publishes.
+        smaller = {"camera": "top", "resolution": "320x240", "frame_rate": 5}
+        assert await backend.latest_camera_frame(uuid.uuid4().hex, smaller, 0) is None
+        frame, rgb = await backend.capture_image(
+            uuid.uuid4().hex, "fixture-camera", {"camera": "top", "resolution": "320x240"}
+        )
+        assert frame["camera"] == "top" and rgb == b"\x00\x80\xff" * (320 * 240)
+        print(
+            "Native camera feed: paced frame transfer, scoped stop and reacquisition passed",
+            flush=True,
+        )
+        assert info["microphone"] is True
+        for _ in range(2):
+            microphone_id = uuid.uuid4().hex
+            assert not await backend.microphone_blocks(microphone_id, 0)
+            microphone = asyncio.create_task(
+                backend.run_microphone_feed(microphone_id, "fixture-microphone")
+            )
+            sequence = 0
+            try:
+                async with asyncio.timeout(3):
+                    while sequence < 3:
+                        blocks = await backend.microphone_blocks(microphone_id, sequence)
+                        for block, pcm in blocks:
+                            sequence += 1
+                            assert block["sequence"] == sequence and block["frames"] == 1600
+                            assert block["source_time"]["microseconds"] == (sequence - 1) * 100000
+                            assert pcm == b"\x00\x00\x01\x00\x01\xff\xff\x7f" * 400
+                        if not blocks:
+                            assert not microphone.done()
+                            await asyncio.sleep(0.02)
+                assert all(not task.done() for task in blocked)
+            finally:
+                await backend.stop(operation_id=microphone_id)
+                assert (await asyncio.wait_for(microphone, 3))["cancelled"]
+        print("Native microphone feed: exact PCM, scoped stop and reacquisition passed", flush=True)
+
+        @contextmanager
+        def source():
+            with tempfile.TemporaryFile() as file:
+                with wave.open(file, "wb") as audio:
+                    audio.setparams((1, 2, 16000, 0, "NONE", ""))
+                    audio.writeframes(b"\xff\x7f\x00\x80" * 16000)
+                file.seek(0)
+                yield {}, file
+
+        assert info["speaker_sample_rate_hz"] == 22050
+        playback_id = uuid.uuid4().hex
+        playback = asyncio.create_task(
+            backend.play_audio(
+                playback_id, "fixture-playback", {"sample_rate_hz": 22050, "volume": 0.25}, source
+            )
+        )
+        try:
+            async with asyncio.timeout(4):
+                while playback_id not in backend.pending and not playback.done():
+                    await asyncio.sleep(0.01)
+                await asyncio.sleep(0.14)
+                assert not playback.done() and all(not task.done() for task in blocked)
+        finally:
+            stopped = await backend.stop(operation_id=playback_id)
+            result = await asyncio.wait_for(playback, 3)
+        assert playback_id in stopped["confirmed_ids"] and result["cancelled"]
+        assert 0 < result["frames_submitted"] < 44100
+        print(
+            "Native playback: bounded PCM and scoped stop with four blocked workers passed",
+            flush=True,
+        )
         async with asyncio.timeout(3):
             while state["faces.detections"]["observed"] <= first_face["observed"]:
                 await asyncio.sleep(0.01)
@@ -644,9 +811,26 @@ async def check_native_controls():
             {**face_request, "revision": 2, "configuration": None}
         )
         assert stopped_faces["status"] == "stopped" and all(not task.done() for task in blocked)
-        last_face = state["faces.detections"]
+        confirmed_stop = time.monotonic()
         await asyncio.sleep(0.3)
-        assert state["faces.detections"] == last_face
+        # The event socket can deliver an earlier observation after the command reply.
+        assert state["faces.detections"]["observed"] <= confirmed_stop
+        async with asyncio.timeout(3):
+            while state["landmarks.detections"]["observed"] <= confirmed_stop:
+                await asyncio.sleep(0.01)
+        assert (
+            await backend.configure_landmarks(
+                {
+                    **landmark_request,
+                    "revision": 2,
+                    "configuration": None,
+                }
+            )
+        )["status"] == "stopped"
+        print(
+            "Native landmarks: NAOmark decoding and teardown independent of faces passed",
+            flush=True,
+        )
         print(
             "Native face IPC: observations, concurrent stills and owned teardown passed", flush=True
         )
@@ -810,7 +994,40 @@ try:
     print("Pinned qi 1.6.7 loaded with system C++ runtime; API libraries isolated", flush=True)
     probe.schemas = probe.request("GET", "/api/schemas.json")
     recovery_probe.schemas = probe.schemas
-    print(json.dumps(conformance.run("http://127.0.0.1:3000")))
+    summary = conformance.run("http://127.0.0.1:3000")
+    assert {
+        "light_transitions_and_readback",
+        "animated_speech",
+        "installed_behavior_run_and_stop",
+        "parallel_wave_speech_and_lights",
+        "server_side_presentation_sequence",
+    } <= set(summary["checks"]), summary
+    print(json.dumps(summary))
+    speech_session = probe.request("POST", "/api/sessions", {"name": "animated-stop"}, status=201)
+    probe.session = speech_session["id"]
+    try:
+        animation = probe.request(
+            "POST",
+            "/api/speech/utterances",
+            {"text": "[fixture:block]", "animated": True},
+            status=202,
+        )
+        path = "/api/operations/" + animation["id"]
+        until(lambda: probe.request("GET", path)["status"] == "running", timeout=2)
+        time.sleep(0.15)
+        stop = probe.request("POST", "/api/motion/stop", {"scope": "all"}, status=202)
+        assert probe.wait(stop)["status"] == "succeeded"
+        interrupted = probe.wait(animation)
+        assert interrupted["status"] == "cancelled", interrupted
+        assert interrupted["result"]["animated"] and interrupted["result"]["stop_confirmed"]
+    finally:
+        cleanup = probe.request("POST", "/api/sessions/" + probe.session + "/close", {}, status=202)
+        assert probe.wait(cleanup)["status"] == "succeeded"
+        probe.session = None
+    print(
+        "Native animated speech: contextual dispatch and confirmed audio/motion stop passed",
+        flush=True,
+    )
     observers, streams = [], []
     try:
         for _ in range(2):
@@ -1251,6 +1468,33 @@ try:
             == "recording"
         )
     )
+    interrupted_video = probe.request(
+        "POST",
+        "/api/recordings",
+        {"source": {"kind": "camera"}, "duration": 30, "max_bytes": 1048576},
+        status=201,
+        schema="Recording",
+    )
+    until(
+        lambda: (
+            probe.request("GET", "/api/recordings/" + interrupted_video["id"])["status"]
+            == "recording"
+        )
+    )
+    interrupted_audio = probe.request(
+        "POST",
+        "/api/recordings",
+        {"source": {"kind": "microphone"}, "duration": 30, "max_bytes": 1048576},
+        status=201,
+        schema="Recording",
+    )
+    until(
+        lambda: (
+            probe.request("GET", "/api/recordings/" + interrupted_audio["id"])["status"]
+            == "recording"
+        )
+    )
+    time.sleep(0.5)
     operation = probe.request(
         "POST", "/api/speech/utterances", {"text": "[fixture:block]"}, status=202
     )
@@ -1269,11 +1513,12 @@ try:
     diag = probe.request("GET", "/api/robot/diagnostics")
     assert not diag["quarantined_resources"] and diag["sessions"] == 0
     probe.request("GET", "/api/assets/" + retained_asset, schema="Asset")
-    interrupted_asset = next(
-        asset
+    recovered = {
+        asset["metadata"]["recording_id"]: asset
         for asset in probe.request("GET", "/api/assets", schema="Assets")["items"]
-        if asset["metadata"]["recording_id"] == interrupted_recording["id"]
-    )
+        if "recording_id" in asset["metadata"]
+    }
+    interrupted_asset = recovered[interrupted_recording["id"]]
     assert (
         interrupted_asset["status"] == "partial"
         and interrupted_asset["error"]["code"] == "recording_interrupted"
@@ -1291,8 +1536,38 @@ try:
             probe.validate("RecordingLine", json.loads(row))
     finally:
         connection.close()
+    video_asset = recovered[interrupted_video["id"]]
+    assert video_asset["kind"] == "camera.video" and video_asset["status"] == "partial"
+    assert video_asset["error"]["code"] == "recording_interrupted"
+    connection = probe.connection()
+    try:
+        connection.request("GET", "/api/assets/" + video_asset["id"] + "/content")
+        response = connection.getresponse()
+        content = response.read()
+        assert (
+            response.status == 200 and hashlib.sha256(content).hexdigest() == video_asset["sha256"]
+        )
+        assert content[:4] == b"RIFF" and content[8:12] == b"AVI "
+    finally:
+        connection.close()
+    audio_asset = recovered[interrupted_audio["id"]]
+    assert audio_asset["kind"] == "microphone.audio" and audio_asset["status"] == "partial"
+    assert audio_asset["error"]["code"] == "recording_interrupted"
+    connection = probe.connection()
+    try:
+        connection.request("GET", "/api/assets/" + audio_asset["id"] + "/content")
+        response = connection.getresponse()
+        content = response.read()
+        assert (
+            response.status == 200 and hashlib.sha256(content).hexdigest() == audio_asset["sha256"]
+        )
+        with wave.open(io.BytesIO(content)) as audio:
+            assert audio.getnframes() == audio_asset["metadata"]["frame_count"] > 0
+            assert len(audio.readframes(audio.getnframes())) == 2 * audio.getnframes()
+    finally:
+        connection.close()
     print(
-        "API restart: finalized asset retained and interrupted recording recovered as partial",
+        "API restart: retained finalized assets and recovered partial samples, video and audio",
         flush=True,
     )
     probe.session = probe.request("POST", "/api/sessions", {}, status=201)["id"]

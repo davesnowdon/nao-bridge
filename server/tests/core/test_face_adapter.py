@@ -24,6 +24,40 @@ def frame(usecs=1, *, camera=0, faces=None):
     return [[42, usecs], [*faces, [2, ["private label"]]], [], [], camera]
 
 
+def test_landmark_geometry_uses_the_reported_camera_and_bounds_the_frame(monkeypatch):
+    monkeypatch.syspath_prepend(str(AGENT))
+    spec = importlib.util.spec_from_file_location("landmarks_under_test", AGENT / "landmarks.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    mark = [[1, -0.2, 0.03, 0.12, 0.1, 0.25], [84]]
+    raw = [[42, 12], [mark] * 20, [], [], "CameraBottom"]
+    frame = module.detections(raw)
+    assert frame["camera"] == "bottom" and frame["frame"] == "camera.bottom"
+    assert len(frame["landmarks"]) == 16
+    assert frame["landmarks"][0]["id"] == "bottom-42-12-0"
+    assert frame["landmarks"][0]["marker_id"] == 84
+    assert frame["landmarks"][0]["heading_rad"] == 0.25
+    assert module.detections(raw[:4]) is None
+    raw[1] = [[mark[0], [True]]]
+    assert module.detections(raw) is None
+
+
+def test_people_frames_keep_observed_camera_and_omit_unknown_distance(monkeypatch):
+    monkeypatch.syspath_prepend(str(AGENT))
+    spec = importlib.util.spec_from_file_location("people_under_test", AGENT / "people.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    raw = [[42, 12], [[7, 1.3, 0.05, -0.2], [8, -1.0, 0.04, 0.3], [7, 50, 0, 0]], [], [], 1]
+    frame = module.detections(raw)
+    assert frame["frame"] == "camera.bottom"
+    assert frame["people"] == [
+        {"id": "person-7", "distance_m": 1.3, "beta_rad": 0.05, "alpha_rad": -0.2},
+        {"id": "person-8", "beta_rad": 0.04, "alpha_rad": 0.3},
+    ]
+    raw[1] = [[7, 1.3, 0.05, float("nan")]]
+    assert module.detections(raw) is None
+
+
 class Native:
     def __init__(self, module):
         self.clock = 0

@@ -32,6 +32,9 @@ def options(url, output=None, **overrides):
                 "output": output,
                 "inspect": False,
                 "faults": False,
+                "hand_foot": False,
+                "hand_foot_only": False,
+                "sample_timing": False,
                 "container": "nao-bridge",
                 "rehearsal": True,
             }
@@ -52,21 +55,25 @@ async def test_preflight_refuses_simulation_without_mutations(socket_rig, tmp_pa
         evidence.file.close()
 
 
-@pytest.mark.parametrize("answer", ["y", "n", "s"])
-async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, answer):
+@pytest.mark.parametrize(
+    ("answer", "hand_foot"), [("y", False), ("y", True), ("n", False), ("s", False)]
+)
+async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, answer, hand_foot):
     touches = []
     output = tmp_path / "run"
     try:
         async with socket_rig(lease_seconds=1.2) as (url, core, backend):
 
-            async def touch(sensor):
+            async def touch(sensor, hold=0):
                 await asyncio.sleep(0.05)
-                other = "middle" if sensor == "front" else "front"
-                await backend.touch_changed("touch.head." + other, True)
-                await backend.touch_changed("touch.head." + other, False)
-                await backend.touch_changed("touch.head." + sensor, False)
-                await backend.touch_changed("touch.head." + sensor, True)
-                await backend.touch_changed("touch.head." + sensor, False)
+                other = "touch.head.middle" if sensor == "touch.head.front" else "touch.head.front"
+                await backend.touch_changed(other, True)
+                await backend.touch_changed(other, False)
+                await backend.touch_changed(sensor, False)
+                await backend.touch_changed(sensor, True)
+                if hold:
+                    await asyncio.sleep(hold)
+                await backend.touch_changed(sensor, False)
 
             async def ask(message):
                 if "start the cancel check" in message or "start the stop check" in message:
@@ -75,10 +82,17 @@ async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, ans
                     backend.duration = 0.01
                 if "release all head sensors" in message:
                     sensor = next((s for s in ("middle", "rear") if s in message), "front")
-                    touches.append(asyncio.create_task(touch(sensor)))
+                    touches.append(asyncio.create_task(touch("touch.head." + sensor)))
+                if "release the selected contact" in message:
+                    sensor = next(
+                        sensor_id
+                        for sensor_id in hardware.HAND_FOOT_CONTACTS
+                        if sensor_id in message
+                    )
+                    touches.append(asyncio.create_task(touch(sensor, hold=0.35)))
                 return answer if "[y=yes" in message else ""
 
-            result = await hardware.execute(options(url, output), ask=ask)
+            result = await hardware.execute(options(url, output, hand_foot=hand_foot), ask=ask)
             await asyncio.gather(*touches)
             assert result == {"y": 0, "n": 1, "s": 2}[answer]
             assert len(backend.calls) == (1 if answer == "n" else 6)
@@ -89,6 +103,12 @@ async def test_guided_rehearsal_over_real_http_and_sse(socket_rig, tmp_path, ans
             verdict = {"y": "PASS", "n": "FAIL", "s": "INCOMPLETE"}[answer]
             assert summary["result"] == "REHEARSAL " + verdict
             assert len(summary["observations"]) == (1 if answer == "n" else 4)
+            if hand_foot:
+                checks = {check["name"]: check["result"] for check in summary["checks"]}
+                assert all(
+                    checks[hardware.contact_check(sensor_id)] == "passed"
+                    for sensor_id in hardware.HAND_FOOT_CONTACTS
+                )
             report = (output / "report.md").read_text()
             assert "REHEARSAL " + verdict in report and "network loss | NOT TESTED" in report
             assert "requires_manual_review" not in report
@@ -114,6 +134,105 @@ async def test_changed_identity_prevents_speech(socket_rig, tmp_path):
             assert not backend.calls
     finally:
         evidence.file.close()
+
+
+@pytest.mark.parametrize("has_state_path", [True, False])
+async def test_hand_foot_only_rehearsal(socket_rig, tmp_path, monkeypatch, has_state_path):
+    touches = []
+    output = tmp_path / "hand-foot"
+    async with socket_rig() as (url, core, backend):
+        if not has_state_path:
+            catalog = core.sensors
+
+            def sensors():
+                value = catalog()
+                for item in value["items"]:
+                    item.pop("state_path", None)
+                return value
+
+            monkeypatch.setattr(core, "sensors", sensors)
+
+        async def touch(sensor):
+            await asyncio.sleep(0.05)
+            await backend.touch_changed(sensor, True)
+            await asyncio.sleep(0.35)
+            await backend.touch_changed(sensor, False)
+
+        async def ask(message):
+            if "release the selected contact" in message:
+                sensor = next(sensor for sensor in hardware.HAND_FOOT_CONTACTS if sensor in message)
+                touches.append(asyncio.create_task(touch(sensor)))
+            else:
+                assert "checks four hand and foot contacts" in message
+            return ""
+
+        try:
+            assert await hardware.execute(options(url, output, hand_foot_only=True), ask=ask) == 0
+        finally:
+            await asyncio.gather(*touches)
+        assert not backend.calls and not core.subscriptions and not core.streams
+        assert all(s.public["status"] == "closed" for s in core.sessions.values())
+
+    summary = json.loads((output / "summary.json").read_text())
+    checks = {check["name"]: check["result"] for check in summary["checks"]}
+    assert summary["result"] == "REHEARSAL PASS" and not summary["observations"]
+    assert all(
+        checks[hardware.contact_check(sensor)] == "passed" for sensor in hardware.HAND_FOOT_CONTACTS
+    )
+    assert checks["session cleanup"] == "passed"
+    assert checks["stop protocol outcome"] == "not tested"
+
+
+def test_sampling_metrics_count_distinct_fresh_acquisitions():
+    samples = []
+    for clock, stamps, stale in [
+        (1000, (980, 970, 960), False),
+        (1100, (980, 970, 960), True),
+        (1200, (1170, 1160, 1150), False),
+    ]:
+        groups = {
+            name: {
+                "quality": "stale" if stale and name == "joints" else "fresh",
+                "sampled_bridge_time_ms": stamp,
+                "age_ms": clock - stamp,
+            }
+            for name, stamp in zip(hardware.TIMING_GROUPS, stamps, strict=True)
+        }
+        samples.append(
+            {"state": {"bridge_time_ms": clock, "groups": groups}, "skipped_samples": int(stale)}
+        )
+    timing = hardware.sampling_metrics(samples, 10)
+    assert timing["delivery_hz"] == 10 and timing["coalesced_samples"] == 1
+    assert timing["groups"]["sensors"] == {
+        "fresh_frames": 3,
+        "distinct_fresh_samples": 2,
+        "observed_hz": 5.26,
+        "age_p95_ms": 120,
+    }
+    assert timing["groups"]["joints"]["fresh_frames"] == 2
+    assert timing["groups"]["joints"]["age_p95_ms"] == 40
+    assert timing["all_groups_fresh_frames"] == 2 and timing["group_start_skew_p95_ms"] == 20
+
+
+async def test_sample_timing_rehearsal(socket_rig, tmp_path, monkeypatch):
+    monkeypatch.setattr(hardware, "TIMING_SECONDS", 0.7)
+
+    async def no_questions(message):
+        pytest.fail(message)
+
+    output = tmp_path / "timing"
+    async with socket_rig() as (url, core, backend):
+        assert (
+            await hardware.execute(options(url, output, sample_timing=True), ask=no_questions) == 0
+        )
+        assert not backend.calls and not core.subscriptions and not core.streams
+
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["result"] == "REHEARSAL PASS"
+    timing = summary["sample_timing"]
+    assert timing["elapsed_s"] >= 0.7 and timing["accepted_rate_hz"] == 10
+    assert all(row["distinct_fresh_samples"] >= 2 for row in timing["groups"].values())
+    assert timing["all_groups_fresh_frames"] and timing["group_start_skew_p95_ms"] >= 0
 
 
 async def test_failed_request_is_recorded_and_never_retried(tmp_path):

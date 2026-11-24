@@ -1,6 +1,11 @@
 # Client contract and implementation guide
 
-Status: lifecycle guide for the replacement API. The [canonical schemas/fixtures](../contracts/README.md) and [HTTP walkthrough](http-api.md) describe the delivered wire surface. Motion foundations are implemented; velocity, media and sequences below include later delivery work. The [API plan](api-plan.md) defines domain behavior; [increment-2 status](increment-2-status.md) records current progress and remaining hardware gates.
+The replacement HTTP/SSE API exposes discovery, motion, observation, recordings,
+and sequences. Read `/api/robot/capabilities` on the target bridge to discover
+which features are usable on its current connection. The [canonical contract
+bundle](../contracts/README.md) and [HTTP walkthrough](http-api.md) describe the
+wire surface. The [implementation status](increment-4-status.md) records
+fixture evidence and pending hardware checks.
 
 ## Contract ownership
 
@@ -148,19 +153,27 @@ status, cleanup and recovery behavior independently of any client language.
 
 ## Vision observer lifecycle
 
-Create the observer under a live session and keep its ID with the accepted
-camera and rate. Compatible observers share one detector. Use GET to confirm
-`active` before expecting observations. `stream.ready` reports
-`source_readiness["vision.faces"]` for the session attached to the stream.
-Each `vision.detections` event includes the observer ID, frame, native image
-timestamp and angular face bounds. Use the frame and generation when associating
-its geometry with other observations. Never treat silence as an empty frame.
+Discover `vision.faces`, `vision.landmarks`, and `vision.people` before requesting
+that detector. Create the observer under a live session and keep its ID with the
+accepted camera and rate. Compatible observers share a native detector for the
+selected kind. Use GET to confirm `active` before expecting observations.
+`stream.ready` reports per-detector readiness for the session attached to the
+stream. Each `vision.detections` event includes the observer ID, kind, frame and
+source timestamp. Use the frame and generation when associating geometry with
+other observations. A delivered empty detection frame and a silent stream carry
+different information.
 
 Stop only the observer the client owns. The final release waits for native
 cleanup. Client wait cancellation leaves the observer's lifetime unchanged.
 Scope exit and session closure request cleanup. Reconcile with GET after a gap
 and consume future observations without historical replay. An unknown outcome
 requires explicit recovery and a new observer after a generation change.
+
+A head-only face tracker is a separate resource that controls both head joints.
+Check `vision.face_tracking` before creating it, keep the accepted tracker ID,
+reconcile state with GET after gaps, and use scoped stop on release. Hardware
+dispatch is gated pending physical verification. See [head-only face
+tracking](http-api.md#head-only-face-tracking).
 
 ## Portable motion, media, and sequences
 
@@ -193,11 +206,29 @@ or prerequisites for other clients.
 
 Binary images/audio/video/downloads use the documented content routes and content types. Assets carry metadata, sizes/checksums, and partial/completed status; SSE announces metadata/lifecycle only. Stream downloads incrementally rather than requiring base64 JSON or loading large assets into memory. Browser-side and native clients follow the same protocol even if their networking libraries differ.
 
+Create a camera preview and retain its scoped ID. Read complete JPEG parts
+from the multipart response and keep that
+reader separate from lease renewal, SSE and command dispatch. Releasing the
+preview ends the session's claim on the shared feed. A closed media socket still
+leaves the preview available for that session to reopen. Recordings select a
+source (`samples`, `camera` or `microphone`) and an explicit duration. Camera
+recording yields MJPEG AVI. Microphone recording yields PCM WAV. Report available
+partial files together with their recording outcome and gap metadata. See
+[managed JPEG preview](http-api.md#managed-jpeg-preview).
+
+[WAV upload](http-api.md#audio-upload) is a binary POST. Retain the submitted
+bytes and key for exact retries and verify the returned size and SHA-256. Speaker
+playback is a finite operation referencing a retained WAV asset. An accepted
+operation pins its source and shares speech ownership until output settles.
+
 Resume finalized asset downloads with a byte `Range` and the saved strong ETag in `If-Range`. Verify 206 and `Content-Range` before appending; a 200 response replaces the local partial download, and 416 requires checking the saved size/metadata. Verify the final checksum. Sequence UIs can list direct children with `GET /operations?parent_id=...`; validation's resource/duration estimates may contain unknown timings and never imply successful execution.
 
 ## Conformance artifacts and completion
 
-Deliver a versioned bundle with OpenAPI and referenced schemas, valid/invalid JSON fixtures, raw SSE transcripts, and scenario manifests describing inputs, expected responses/events, timing bounds, and permitted nondeterminism. Use symbolic IDs and deterministic fake clocks in scenarios; bind runtime IDs when executing against a server. Include failure cases rather than only successful examples.
+The [versioned bundle](../contracts/README.md) contains OpenAPI and referenced
+schemas, valid and invalid JSON fixtures, SSE transcripts, a hand-authored
+parallel presentation sequence and scenario manifests. The scenario descriptions
+use symbolic IDs. Bind real returned IDs when executing against a bridge.
 
 The direct HTTP/SSE runner must not import the Python client or its model/validation code. It can be written in Python using ordinary HTTP tooling; the scenario data and expected outcomes remain language-neutral. A fake backend exercises actual server handlers and can trigger disconnects, delayed/unknown outcomes, and saturation without a robot. Separate hardware evidence establishes physical behavior.
 

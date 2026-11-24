@@ -69,6 +69,7 @@ class Recognition(object):
         self.transition_lock = threading.Lock()
         self.service = None
         self.links = []
+        self._callback_sources = {}
         self.subscription = "nao_bridge_" + uuid.uuid4().hex
         self.subscribed = False
         self.subscribe_attempted = False
@@ -128,7 +129,10 @@ class Recognition(object):
             sources.append(("ALSpeechRecognition/ActiveListening", self.readiness))
         try:
             for name, callback in sources:
-                subscriber = self.call(self.memory, "subscriber", name)
+                # Reusing the proxies avoids native allocation on every pause and resume.
+                if name not in self._callback_sources:
+                    self._callback_sources[name] = self.call(self.memory, "subscriber", name)
+                subscriber = self._callback_sources[name]
                 callback = guarded(callback)
                 link = subscriber.signal.connect(callback)
                 self.links.append((subscriber, link, callback))
@@ -222,6 +226,7 @@ class Recognition(object):
                     write("unsubscribe", self.subscription)
                 self.subscribed = self.subscribe_attempted = False
                 self.disconnect_callbacks()
+                self._callback_sources.clear()
             else:
                 write("pause", True)
                 self.callbacks()
@@ -274,6 +279,7 @@ class Recognition(object):
             return False
         try:
             self.disconnect_callbacks()
+            self._callback_sources.clear()
             if self.subscribe_attempted:
                 try:
                     self.call(self.service, "unsubscribe", self.subscription)

@@ -1,0 +1,417 @@
+# Increment 4 implementation
+
+This branch continues the [increment 4 delivery plan](delivery-plan.md#increment-4--expression-composition-media-and-complete-release)
+on the increment 3 Wanderer branch. Physical acceptance remains open on
+NAO6/NAOqi 2.8 and NAOv5/NAOqi 2.1.
+
+## Lights
+
+Contract 1.10.0 delivers common light groups, bounded color/brightness fades,
+shared light samples, and sync/async Python SDK helpers. Discovery and ownership
+use actual native group membership. A combined eye group holds both eye
+resources, and disjoint groups can run concurrently. Successful fades retain
+ownership for the session. Session cleanup leaves the resulting light levels
+in place.
+
+The agent reads actuator levels in one ALMemory batch on the shared sampler.
+Missing or mixed levels are explicit. Native fade completion, actuator readings
+and visible output are separate observations. An accepted cancellation can
+fence queued work. An in-flight fade retains ownership until confirmed completion
+or explicit recovery.
+
+The native-container suite exercised RGB and monochrome writes and read-back,
+mixed group levels, and light samples over SSE using SDK-independent HTTP.
+`make check` passed 612 server/integration tests and 47 SDK tests, with
+coverage of resource overlap, cancellation, session cleanup, and both Python
+clients. The contract compatibility guard passed against PR #38.
+
+Physical acceptance still needs to confirm group discovery, color and brightness
+on both robots, the effect of robot-side autonomous changes, and the response
+when a fade is interrupted.
+
+See [the lights HTTP/SDK contract](http-api.md#lights),
+[NAOqi group discovery and fades](https://doc.aldebaran.com/2-1/naoqi/sensors/alleds-api.html),
+and the documented LED layouts for
+[NAOv5](https://doc.aldebaran.com/2-1/family/robots/leds_robot.html) and
+[NAO6](https://doc.aldebaran.com/2-8/family/nao_technical/leds_naov6.html).
+
+## Speech options and animated speech
+
+Contract 1.11.0 adds session-free options discovery and typed sync/async Python
+helpers. The route reports voice, language and bounds from the active contract.
+Existing plain utterances retain their per-call settings and audio-only
+ownership. Contextual animated speech routes through the separate NAOqi service.
+The bridge also reserves every discovered joint and light resource and
+locomotion. Animated utterances verify motion readiness before dispatch.
+
+Both software fixtures support animated speech. The native-container fixture
+exercised the documented local configuration and stopped independent fixture
+audio and motion before the operation reported cancellation. Physical
+availability remains gated. Both generations still need measured acceptance
+for contextual movement, per-utterance audio settings and cancellation.
+The native backend currently exposes the discovered default voice. Guarded
+selection of other installed voices remains separate work.
+
+`make check` passed 622 server/integration tests and 47 SDK tests.
+`make test-container` passed, including animated-speech completion and stop.
+The contract guard passed against PR #38 and contract 1.10.0.
+
+See the [speech contract](http-api.md#speech) and the
+[NAOqi local animated-speech configuration](https://doc.aldebaran.com/2-8/naoqi/audio/alanimatedspeech-api.html).
+
+## Installed behaviors
+
+Contract 1.12.0 adds paginated installed behavior discovery, observed running
+sets over HTTP/SSE and sync/async Python support. The private agent reads the
+installed catalog once per connection. Bounded pages avoid oversized IPC
+frames, including when the robot has a large catalog. Discovery and
+observation are independent of the native run acceptance gate.
+
+Runs reserve speech output and all discovered joint, locomotion and light
+resources. The fixture verifies run completion, named cancellation, event
+delivery and same-name foreign-run rejection. A cancellation retains
+ownership until the named stop returns, the original run settles and the
+native service reports inactivity.
+
+`make check` passed 631 server/integration tests and 47 SDK tests.
+`make test-container` passed raw HTTP paging, a completed run, native SSE
+start/end observations and named cancellation. The contract guard passed
+against PR #38 and contract 1.11.0.
+
+On each physical robot, acceptance still needs to verify discovery, running
+callbacks, observed completion of chosen installed behaviors and the
+distinction between the named behavior ending and its physical effects.
+Physical runs remain gated.
+
+See [installed behaviors](http-api.md#installed-behaviors) and the
+[NAOqi behavior manager API](https://doc.aldebaran.com/2-8/naoqi/core/albehaviormanager-api.html).
+
+## Built-in gestures
+
+Contract 1.13.0 adds wave, nod, and shake discovery and finite execution
+through HTTP and both Python clients. Gesture resources come from the
+variant and the discovered joint catalog. Wave and head motion can
+reserve disjoint joints, and plain speech and eye lighting can run
+alongside a wave. Trajectories start at the observed pose, validate
+waypoints against discovered limits, and end at the starting pose on a
+normal run. Pre-dispatch checks reject stale starting positions and a
+changed required posture.
+
+The supported fixtures use the normal trajectory command lane and a
+scoped joint stop with explicit confirmation. `make check` passed 638
+server/integration tests and 47 SDK tests. The native container exercised
+a wave alongside plain speech and eye lighting, and confirmed cancellation
+of a separate wave. The contract guard passed against PR #38 and 1.12.0.
+
+Physical gesture timing, position and cancellation are still open on both robot generations.
+The tested waveform parameters, posture bounds, and gesture gate should
+be assessed on actual robots before enabling execution.
+
+See [gesture discovery and execution](http-api.md#built-in-gestures) and
+the NAO joint references for [2.1](https://doc.aldebaran.com/2-1/family/robots/bodyparts.html)
+and [2.8](https://doc.aldebaran.com/2-8/family/nao_technical/bodyparts_naov6.html).
+
+## Server-side sequences
+
+Contract 1.14.0 adds the portable schema, dry validation, the pure Python
+builder, and sync/async execution. Validation checks each action and the
+whole resource graph, with an estimated timeline and explicit unknowns.
+Sequence admission reserves history and the peak native command count
+alongside resources. Children recheck live prerequisites, and each child
+is individually observable through the operation API and SSE.
+
+The executor stops pending actions and cancels running siblings on failure
+or parent cancellation. Unconfirmed children keep the parent quarantined.
+All-motion stop also stops the other running children of an affected
+sequence. Fenced session recovery follows the existing unknown-outcome rules.
+Completed actions retain any effects and session-owned configuration.
+
+The raw fixture runs a hand-authored wake, stand, parallel speech/wave/lights,
+sit and rest sequence, reads all seven child results and checks that the
+parallel children overlapped. Hardware-dependent actions retain their
+individual capability gates.
+
+`make check` passed 647 server/integration tests and 47 SDK tests.
+The updated sync-client renewal test and nine sequence cases passed
+together. The native-container and contract checks passed.
+
+See [sequence API and Python usage](http-api.md#sequences) and the
+[portable presentation document](../contracts/fixtures/presentation-sequence.json).
+
+## Autonomy profiles and observations
+
+Contract 1.15.0 adds `manual`, `presentation` and `interactive` profiles,
+with session-free discovery and application in both Python clients. Discovery
+shows desired settings and unsupported entries for the current connection.
+Strict application preflights the entire bundle. Partial application uses
+the same per-setting results and ownership as explicit autonomy transitions.
+Where available, the legacy awareness start/stop adapter supplies the
+profile's awareness setting.
+
+`autonomy.changed` reports changes in shared state observed by the bridge,
+including settings changed through other software. The first observation
+establishes a baseline after each connection generation change.
+
+The native-container conformance scenario applied the interactive and
+presentation profiles and received the observed life and awareness changes
+over SSE. The HTTP tests exercised strict rejection, the legacy fallback,
+partial reporting, and idempotency. Both clients exercised discovery and
+application against the HTTP service.
+
+Contract 1.16.0 adds guarded opt-in restoration on orderly close and lease
+expiry. Restoration uses fresh agent read-back, same-generation authority,
+and the usual reservations. The cleanup operation records restored, skipped,
+and unknown settings. Both Python clients retain the cleanup operation for
+inspection after the context ends. Explicit revocation skips restoration.
+The combined-container fixture applied a profile and restored life to its
+previous value on close. Focused tests cover lease expiry, external change,
+an old fence epoch, reconnect, and priority stop before a restore dispatch.
+Physical verification of profile and restoration effects remains pending.
+See [autonomy profiles](http-api.md#autonomy-profiles) and
+[guarded restoration](http-api.md#guarded-restoration).
+
+## Presentation example
+
+The [runnable presentation](../examples/presentation/README.md) inspects the
+profile and validates its choreography before changing robot state. Execution
+applies the profile, wakes, stands, speaks with the wave and eye light running
+in parallel, then sits and rests. The child operation IDs and outcomes are
+printed on completion or failure. The optional animated utterance runs as a
+separate step while standing. Profile fallback and restoration are opt-in.
+
+The executable test exercises a session-free dry run, then an animated prelude
+and plain parallel choreography through the public SDK, including the result
+from autonomy cleanup. Physical presentation effects remain pending.
+
+## Camera acquisition
+
+The Python 2 agent can now keep one named video-device subscription open and
+acquire at 1–5 frames per second on its dedicated camera worker. It suppresses
+duplicate native timestamps when available. Still capture uses the same
+subscription, read-back, and cleanup code. The bridge transfers RGB pixels and
+frame metadata together through a single atomic latest-frame slot. Each frame
+is tagged with the feed ID and a sequence number, so a reader can detect gaps
+and reject data from an old feed.
+
+The pinned SDK fixture delivered successive VGA frames while all four ordinary
+command workers were occupied. Scoped cancellation ended the feed and a
+new still capture succeeded. These checks cover acquisition and handoff in
+the container. Both supported robot generations still need camera rate,
+timestamp, and concurrent-use measurements.
+
+[NAOqi 2.1 video API](https://doc.aldebaran.com/2-1/naoqi/vision/alvideodevice-api.html)
+and [NAOqi 2.8 image acquisition](https://doc.aldebaran.com/2-8/dev/python/examples/vision/get_image.html).
+
+### Managed JPEG preview
+
+Contract 1.17.0 exposes session-owned previews over multipart HTTP. Identical
+settings share one camera feed and one JPEG encoder. A matching still can
+use the latest fresh RGB frame. Each stream advances independently and can
+skip frames. Separate stream limits and send timeouts bound slow readers.
+Session close and lease expiry release demand, and the last preview stop
+waits for the native result. Both Python clients expose frame iterators.
+
+The raw HTTP fixture checks shared preview, conflicting settings and still
+capture while the stream is open. Socket tests exercise both SDKs and
+independent session cleanup.
+See [managed JPEG preview](http-api.md#managed-jpeg-preview).
+
+### Durable camera video
+
+Contract 1.18.0 adds the `camera` recording source and the `recordings.camera`
+capability. The Linux runtime remuxes JPEG frames from the shared camera feed
+into seekable MJPEG AVI. Each recording reserves its maximum asset size,
+and the writer enforces it through both frame admission and a file size
+limit on FFmpeg. Finalization hashes the bytes after FFmpeg seals the file
+and its index. Preview, still capture, and matching recordings use the same
+acquisition. Frame gaps and size limits finalize the captured frames as
+partial assets with explicit error and gap metadata.
+
+The SDK fixture verifies decoding, seeking, and playable partial output
+after a missing frame or a size limit. Raw HTTP verifies the AVI signature,
+checksum, and range response. The native container fixture kills the API
+during sample and video recording and verifies recovery of both partial
+assets on restart. Camera rate, timing, and throughput on both robot
+generations remain unverified.
+See [camera video recording](http-api.md#camera-video-recording).
+
+### Native microphone acquisition
+
+The Python 2 agent registers a uniquely named `ALAudioDevice` callback for
+the front microphone at 16 kHz, mono, signed 16-bit PCM. A dedicated worker
+transfers a rolling window of up to eight timestamped blocks through a
+private binary slot. Sequence numbers identify overruns. Scoped stop waits
+for unsubscribe and unregister, and an unconfirmed cleanup blocks another
+capture on the same connection. The fixture checks exact PCM bytes and
+reacquisition while all four command workers are occupied.
+
+Contract 1.19.0 adds `recordings.microphone` and the `microphone` recording
+source to HTTP and both Python clients. WAV assets use the recording quota,
+retention, checksums, ranged downloads, and partial-asset lifecycle. On
+restart, storage derives the header and frame count from the intact PCM.
+Both Python clients record through the public API in socket tests. Raw HTTP
+verifies the WAV header, checksum and byte ranges, and the native fixture
+recovers a playable partial WAV after killing the API process.
+See [microphone recording](http-api.md#microphone-recording).
+
+Robot testing needs to verify callback reachability from the default Docker
+deployment, sample timing, and native teardown on NAOqi 2.1 and 2.8.
+See the [NAOqi remote microphone example](https://doc.aldebaran.com/2-5/dev/python/examples/audio/audio_soundprocessing.html).
+
+### WAV audio upload
+
+Contract 1.20.0 accepts bounded PCM WAV uploads as immutable assets. The
+bridge validates RIFF framing, sample format, duration, and frame alignment
+before publication. Uploads share asset quotas and leave robot command
+admission available while storage completes. Both Python clients expose
+upload, and an explicit async retry preserves the original binary request.
+Raw HTTP conformance verifies the upload, digest, identical retry, and
+download in the pinned container. Local tests cover competing requests,
+lost responses, malformed files, byte limits, and storage recovery.
+See [audio upload](http-api.md#audio-upload).
+
+### WAV playback
+
+Contract 1.21.0 plays retained uploads and microphone WAV assets through
+`audio.playback` operations. The modern process uses the pinned FFmpeg
+runtime for rate conversion and clip volume. The native agent submits
+paced stereo PCM in 40 ms blocks on a dedicated worker, with a native
+acknowledgement for each block. It reads the speaker rate and neither changes
+that setting nor flushes the shared mixer. Playback shares speech ownership
+and listener suppression. Unknown output stops keep that ownership fenced.
+
+The pinned SDK fixture exercises scoped cancellation and PCM submission
+alongside blocked command workers. Physical sound, duration, and audible
+stop timing are still open on NAOqi 2.1 and 2.8.
+See [audio playback](http-api.md#audio-playback).
+
+### NAOmark observation
+
+Contract 1.22.0 adds managed NAOmark detection through the existing vision
+observer routes and `vision.detections` SSE event. Each detector maintains
+its own native subscription and producer revision. The bridge sends angular
+geometry, marker codes, the reported camera, and source timestamps. It
+gates availability on native extractor and camera discovery.
+
+The pinned fixture exercises native face and landmark producers together,
+including face teardown while landmark events continue. Physical marker
+delivery, camera naming, and concurrent use still need NAOqi 2.1 and 2.8
+coverage. See [landmark observations](http-api.md#naomark-landmark-observations)
+and the [NAOqi landmark example](https://doc.aldebaran.com/2-8/dev/python/examples/vision/landmark.html).
+
+### People observation
+
+Contract 1.23.0 adds `vision.people` discovery and managed visible-person
+frames through the shared vision observer API. The adapter uses native
+camera selection and filters the reported camera when requested. It forwards
+native tracks, angles, and available range over SSE. Availability depends on
+the robot exposing `ALPeoplePerception`.
+
+The pinned fixture covers subscription, filtering, frame delivery without a
+fixed camera query, missing range, and teardown. Physical detections and range
+quality on both robot generations remain open. See
+[people observations](http-api.md#people-observations) and the
+[NAOqi 2.1 people perception API](https://doc.aldebaran.com/2-1/naoqi/peopleperception/alpeopleperception-api.html).
+
+### Head-only face tracking
+
+Contract 1.24.0 defines managed face trackers through HTTP, SSE, and both
+Python clients. Tracking reserves both head joints and uses a dedicated
+agent worker. The agent checks Head mode and the effector, confirms an
+idle tracker, and owns only the face registration it creates. Scoped stop
+checks native inactivity, applies a measured hold, and removes that
+registration. Unconfirmed outcomes keep the head reservation fenced.
+
+The pinned fixture reports searching, tracking, and lost states and
+confirms scoped teardown and measured hold with ordinary command workers
+occupied. Raw HTTP covers creation retry, ownership, and the final stop
+result. Local tests cover uncertain cleanup and foreign target preservation.
+
+Real robot dispatch remains disabled until the hardware acceptance checks
+cover head motion, scoped stop, and hold on NAOqi 2.1 and 2.8. See
+[head-only face tracking](http-api.md#head-only-face-tracking) and the
+[NAOqi tracker API](https://doc.aldebaran.com/2-8/naoqi/trackers/altracker-api.html).
+
+### Reference applications
+
+Recorder displays and explicitly applies the bridge's manual autonomy profile.
+The browser can capture a camera AVI or microphone WAV alongside its existing
+joint-sample workflow, request early finalization, download a checksum-verified
+clip, and play a WAV through the robot's speaker operation.
+
+Wanderer can inspect and explicitly apply the same profile while idle. It saves
+a verified camera clip alongside its still-image workflow when recording is
+available. Both examples use the public Python SDK for all bridge calls. The
+integration tests exercise these paths through a fake bridge over HTTP/SSE.
+Recording quality, profile effects and audible playback remain hardware checks.
+
+### Client contract archive
+
+CI builds a ZIP named for the OpenAPI version. It preserves the schema and
+guide paths and includes a SHA-256 manifest, the direct HTTP/SSE runner,
+portable trajectory and sequence files, and an SSE reattachment transcript.
+Repeated exports from the same files produce identical bytes. The runner
+completed 33 checks against the fake backend from an extracted archive.
+See the [contract bundle](../contracts/README.md).
+
+### Coverage and release preparation
+
+Contract 1.25.0 adds the `point` gesture for either arm. It uses the same
+guarded trajectory and ownership path as wave. Local tests cover mirroring,
+the held pose, and return to the measured start. Raw HTTP on the production
+SDK fixture verified discovery, resources and native completion. Physical
+gesture dispatch remains gated. Both Python clients also expose read-back
+of a previously created camera preview by ID in the owning session.
+
+Container replacement with a named asset volume retained a 9,749-byte NDJSON
+recording with the same SHA-256. Both old process-local IDs returned 404.
+The optional hardware acceptance run now checks back-of-hand and foot-bumper
+state together with two subscription streams. See the [API coverage map](api-coverage.md),
+[release evidence](release-readiness.md), and [guided contact checks](hardware-acceptance.md#optional-hand-and-foot-contacts).
+
+Run `make soak-container` to start the isolated 30-minute native fixture
+workload. It records API/agent RSS and thread counts, scoped stop and command
+latency, stream cleanup, quota rejection and recovery, and checksum/range
+verification of sample, camera and microphone assets. `SOAK_SECONDS=12` runs
+a short rehearsal for harness changes.
+
+### Native mixed-load result
+
+The Linux amd64 container ran the workload for 1,800.7 seconds with Docker
+networking disabled. It used contract 1.24.0 from `96a0e65` and local image
+`sha256:2bf6921fd0efa99e63860a692d3c437f7db916758fcc837e9d959af9ebbd3ec4`.
+The contract 1.25.0 changes separately passed `make test-container`, including
+the new point gesture and direct measured-pose playback workflow.
+
+| Measurement | Result |
+| --- | --- |
+| Streams | The unread SSE viewer detached within the first minute. The live viewer received 15,756 state samples and 3,596 touch events. The camera viewer read 8,996 JPEG frames. |
+| Recording and storage | 70 samples, 70 AVI and 70 WAV assets passed size, SHA-256, ETag and byte-range checks. Zero partial assets. The 1 MiB quota rejected 202 reservations, and recording resumed after explicit deletion. Peak retained content was 693,079 bytes. |
+| Finite command admission | 1,327 utterances, 7.54 ms p95 and 12.12 ms maximum. |
+| Scoped motion stop | 266 confirmed stops, 110.10 ms p95 and 124.54 ms maximum from HTTP request to confirmed outcome. |
+| Threads and subprocesses | API 6 at baseline, 10 peak, 7 after cleanup. Agent 70, 71, 70. The API peaked at three child processes and ended with the agent only. |
+| Resident memory | API 63,548 / 70,060 / 70,016 KiB at baseline/peak/after cleanup. Agent 33,208 / 96,708 / 95,176 KiB. |
+| Cleanup | The native callback count returned to the baseline of 15. No stream, recording, or operation remained active. Bridge and connection identity stayed the same during the workload. |
+
+The agent's RSS continued rising near the end of this initial run. Repeated
+speech with an active vocabulary listener reproduced much of that growth.
+[Recognition follow-up](increment-2-status.md)
+
+The repeat passed on contract 1.25.0 from `556dfe8`, image
+`sha256:d955a02bd7d53d158ee135961e05436a5f8975a51bf2e04e7d1c1b3860d06d4d`.
+Both runs verified 210 recordings, admitted 1,327 speech commands, and confirmed
+266 scoped stops. Native callback counts returned to 15, and the slow SSE viewer
+detached while the live viewer and preview stayed active.
+
+| Measurement | Initial run | Repeat with subscriber reuse |
+| --- | ---: | ---: |
+| Agent RSS baseline | 33,208 KiB | 32,960 KiB |
+| Agent RSS peak | 96,708 KiB | 66,256 KiB |
+| Agent RSS after cleanup | 95,176 KiB | 63,520 KiB |
+| Agent peak RSS growth above baseline | 63,500 KiB | 33,296 KiB |
+| Speech admission p95 | 7.54 ms | 7.63 ms |
+| Scoped stop completion p95 | 110.10 ms | 117.62 ms |
+
+The repeat's agent RSS high-water mark rose 1,280 KiB over approximately the
+last ten minutes. These measurements cover the local SDK fixture. Physical
+stop time, media timing and measured hold remain hardware checks.

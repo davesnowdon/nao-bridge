@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Generator
 from typing import Any, Generic, Literal, TypeVar
 
 from .async_client import AsyncNao, AsyncOperation, AsyncSubscription
@@ -12,10 +12,16 @@ from .listeners import AsyncListener
 from .models import (
     AssetData,
     AssetsPage,
+    AutonomyProfileCatalog,
+    BehaviorPage,
+    CameraPreviewData,
     CamerasData,
     Capabilities,
     Event,
+    GestureCatalog,
     JointCatalog,
+    LightCatalog,
+    LightSample,
     ListenerData,
     OdometrySample,
     OperationData,
@@ -24,11 +30,15 @@ from .models import (
     RobotInfo,
     Sensor,
     SensorObserverData,
+    SequenceValidation,
+    SpeechOptions,
     State,
     StreamNotice,
     SubscriptionData,
     VisionObserverData,
+    VisionTrackerData,
 )
+from .previews import AsyncCameraPreview, CameraPreviewFrame
 from .recordings import AsyncRecording
 from .sensor_observers import AsyncObserver, ObserverData
 from .trajectory import Trajectory
@@ -51,7 +61,11 @@ class Nao:
         self.vision = Vision(self)
         self.motion = Motion(self)
         self.autonomy = Autonomy(self)
+        self.lights = Lights(self)
+        self.behaviors = Behaviors(self)
+        self.sequences = Sequences(self)
         self.speech = Speech(self)
+        self.audio = Audio(self)
         self.operations = Operations(self)
         self.events = Events(self)
         self.recordings = Recordings(self)
@@ -104,6 +118,10 @@ class Nao:
     @property
     def cleanup_error(self) -> Exception | None:
         return self._async.cleanup_error
+
+    @property
+    def cleanup_result(self) -> OperationData | None:
+        return self._async.cleanup_result
 
     @property
     def last_pending_request(self):
@@ -365,6 +383,33 @@ class Motion:
             ),
         )
 
+    def gestures(self) -> GestureCatalog:
+        return self._nao._run(self._nao._async.motion.gestures())
+
+    def gesture(
+        self,
+        name: str,
+        *,
+        side: Literal["left", "right"] | None = None,
+        repetitions: int | None = None,
+        strength: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.motion.gesture(
+                name,
+                side=side,
+                repetitions=repetitions,
+                strength=strength,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
+
     def play(
         self,
         trajectory: Trajectory | dict[str, Any],
@@ -486,10 +531,37 @@ class Vision:
     def cameras(self) -> CamerasData:
         return self._nao._run(self._nao._async.vision.cameras())
 
+    def preview(
+        self,
+        camera: str | None = None,
+        *,
+        resolution: str | None = None,
+        frame_rate: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> CameraPreview:
+        return CameraPreview(
+            self._nao,
+            self._nao._run(
+                self._nao._async.vision.preview(
+                    camera,
+                    resolution=resolution,
+                    frame_rate=frame_rate,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def get_preview(self, preview_id: str) -> CameraPreview:
+        return CameraPreview(
+            self._nao, self._nao._run(self._nao._async.vision.get_preview(preview_id))
+        )
+
     def observe(
         self,
         *,
-        faces: bool = True,
+        faces: bool | None = None,
+        landmarks: bool = False,
+        people: bool = False,
         camera: str | None = None,
         rate_hz: int | None = None,
         idempotency_key: str | None = None,
@@ -499,11 +571,24 @@ class Vision:
             self._nao._run(
                 self._nao._async.vision.observe(
                     faces=faces,
+                    landmarks=landmarks,
+                    people=people,
                     camera=camera,
                     rate_hz=rate_hz,
                     idempotency_key=idempotency_key,
                 )
             ),
+        )
+
+    def track(self, target: str = "face", *, idempotency_key: str | None = None) -> VisionTracker:
+        return VisionTracker(
+            self._nao,
+            self._nao._run(self._nao._async.vision.track(target, idempotency_key=idempotency_key)),
+        )
+
+    def get_tracker(self, tracker_id: str) -> VisionTracker:
+        return VisionTracker(
+            self._nao, self._nao._run(self._nao._async.vision.get_tracker(tracker_id))
         )
 
     def get_observer(self, observer_id: str) -> VisionObserver:
@@ -532,9 +617,126 @@ class Vision:
         return Operation(self._nao, operation)
 
 
+class Sequences:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def schema(self) -> dict[str, Any]:
+        return self._nao._run(self._nao._async.sequences.schema())
+
+    def validate(self, script: dict[str, Any]) -> SequenceValidation:
+        return self._nao._run(self._nao._async.sequences.validate(script))
+
+    def run(
+        self,
+        script: dict[str, Any],
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.sequences.run(
+                script, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+            )
+        )
+        return Operation(self._nao, operation)
+
+
+class Behaviors:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def list(self, *, cursor: str | None = None, limit: int = 12) -> BehaviorPage:
+        return self._nao._run(self._nao._async.behaviors.list(cursor=cursor, limit=limit))
+
+    def run(
+        self,
+        name: str,
+        *,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.behaviors.run(
+                name, wait=wait, timeout=timeout, idempotency_key=idempotency_key
+            )
+        )
+        return Operation(self._nao, operation)
+
+
+class Lights:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def groups(self) -> LightCatalog:
+        return self._nao._run(self._nao._async.lights.groups())
+
+    def state(
+        self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
+    ) -> LightSample:
+        return self._nao._run(
+            self._nao._async.lights.state(
+                max_age_ms=max_age_ms,
+                wait_for_fresh_ms=wait_for_fresh_ms,
+                require_fresh=require_fresh,
+            )
+        )
+
+    def set(
+        self,
+        group: str,
+        *,
+        color: str | None = None,
+        brightness: float | None = None,
+        duration: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.lights.set(
+                group,
+                color=color,
+                brightness=brightness,
+                duration=duration,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
+
+
 class Autonomy:
     def __init__(self, nao: Nao):
         self._nao = nao
+
+    def profiles(self) -> AutonomyProfileCatalog:
+        return self._nao._run(self._nao._async.autonomy.profiles())
+
+    def apply(
+        self,
+        profile: str,
+        *,
+        allow_partial: bool = False,
+        restore_on_close: bool = False,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        operation = self._nao._run(
+            self._nao._async.autonomy.apply(
+                profile,
+                allow_partial=allow_partial,
+                restore_on_close=restore_on_close,
+                wait=wait,
+                timeout=timeout,
+                idempotency_key=idempotency_key,
+            )
+        )
+        return Operation(self._nao, operation)
 
     def state(
         self, *, max_age_ms: int = 250, wait_for_fresh_ms: int = 0, require_fresh: bool = False
@@ -572,9 +774,39 @@ class Autonomy:
         )
 
 
+class Audio:
+    def __init__(self, nao: Nao):
+        self._nao = nao
+
+    def play(
+        self,
+        asset_id: str,
+        *,
+        volume: float | None = None,
+        wait: bool = True,
+        timeout: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> Operation:
+        return Operation(
+            self._nao,
+            self._nao._run(
+                self._nao._async.audio.play(
+                    asset_id,
+                    volume=volume,
+                    wait=wait,
+                    timeout=timeout,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+
 class Speech:
     def __init__(self, nao: Nao):
         self._nao = nao
+
+    def options(self) -> SpeechOptions:
+        return self._nao._run(self._nao._async.speech.options())
 
     def listen(
         self,
@@ -768,6 +1000,25 @@ class VisionObserver(_Observer[VisionObserverData]):
     pass
 
 
+class VisionTracker(_Observer[VisionTrackerData]):
+    pass
+
+
+class CameraPreview(_Observer[CameraPreviewData]):
+    def frames(self) -> Generator[CameraPreviewFrame, None, None]:
+        assert isinstance(self._async, AsyncCameraPreview)
+        source = self._async.frames()
+        try:
+            while True:
+                try:
+                    yield self._nao._run(source.__anext__())
+                except StopAsyncIteration:
+                    return
+        finally:
+            if self._nao._loop is not None:
+                self._nao._run(source.aclose())
+
+
 class Recordings:
     def __init__(self, nao: Nao):
         self._nao = nao
@@ -789,6 +1040,48 @@ class Recordings:
                     duration=duration,
                     max_bytes=max_bytes,
                     allow_lower_rate=allow_lower_rate,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def camera(
+        self,
+        camera: str | None = None,
+        *,
+        duration: float,
+        resolution: str | None = None,
+        frame_rate: int | None = None,
+        max_bytes: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.camera(
+                    camera,
+                    duration=duration,
+                    resolution=resolution,
+                    frame_rate=frame_rate,
+                    max_bytes=max_bytes,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+
+    def microphone(
+        self,
+        *,
+        duration: float,
+        max_bytes: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> Recording:
+        return Recording(
+            self._nao,
+            self._nao._run(
+                self._nao._async.recordings.microphone(
+                    duration=duration,
+                    max_bytes=max_bytes,
                     idempotency_key=idempotency_key,
                 )
             ),
@@ -889,6 +1182,13 @@ class Assets:
 
     def delete(self, asset_id: str) -> None:
         self._nao._run(self._nao._async.assets.delete(asset_id))
+
+    def upload(
+        self, source: str | os.PathLike[str], *, idempotency_key: str | None = None
+    ) -> AssetData:
+        return self._nao._run(
+            self._nao._async.assets.upload(source, idempotency_key=idempotency_key)
+        )
 
     def download(
         self,
